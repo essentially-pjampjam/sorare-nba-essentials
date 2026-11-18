@@ -1,0 +1,1848 @@
+import { LINEUP_FORMAT_TARGETS } from "../shared/constants";
+import type {
+  BargainListing,
+  CardRarity,
+  CurrentLineupEntry,
+  GalleryCard,
+  InjuryReportEntry,
+  InjuryStatus,
+  LineupFormat,
+  ProjectionSource,
+} from "../shared/types";
+
+export interface EvaluatedLineupCard {
+  card: GalleryCard;
+  baseProjection: number;
+  injuryAdjustedBase: number;
+  effectiveScore: number;
+  injury: InjuryReportEntry | null;
+  injuryStatus: InjuryStatus;
+  gamesInSlate: number;
+  allSources: {
+    sorareProjected: number | null;
+    l10: number | null;
+    l5: number | null;
+    custom: number | null;
+    blended: number;
+  };
+}
+
+export interface LineupSlotPick {
+  slotLabel: "MVP" | "G" | "F" | "C" | "FLEX";
+  evaluated: EvaluatedLineupCard;
+  isCaptainOrMvp: boolean;
+  slotScore: number;
+}
+
+export interface SuggestedLineup {
+  rank: number;
+  format: LineupFormat;
+  slots: LineupSlotPick[];
+  totalScore: number;
+  totalStars: number;
+  capUsed: number;
+  capLimit: number | null;
+  inSeasonCount: number;
+  hasInjuryRisk: boolean;
+  /** Estimated win probabilities (%) against target thresholds */
+  odds: {
+    essenceTarget: number;
+    essencePct: number;
+    tier1Target: number;
+    tier1Pct: number;
+    podiumTarget: number;
+    podiumPct: number;
+  };
+}
+
+export interface AutoBuildOptions {
+  format: LineupFormat;
+  rarityFilter: CardRarity | "ALL";
+  projectionSource: ProjectionSource;
+  customProjectionsRaw: string;
+  injuriesByName: Record<string, InjuryReportEntry>;
+  gamesPerTeam: Record<string, number>;
+  excludeOut: boolean;
+  excludeQuestionable: boolean;
+  inSeasonOnly: boolean;
+  minInSeasonCards: number;
+  disjointAcrossLineups: boolean;
+  excludeSubmittedCards?: boolean;
+  excludedCardSlugs?: string[];
+  maxLineups: number;
+  captainBonusPct?: number;
+  targets?: {
+    essenceTarget: number;
+    tier1Target: number;
+    podiumTarget: number;
+  };
+}
+
+export function normalizePlayerName(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Maps L10 average score to Sorare NBA Star cost (1.0 - 5.0 in 0.5 increments).
+ */
+export function computeStarCost(l10: number | null): number {
+  const val = l10 ?? 0;
+  if (val >= 50) return 5.0;
+  if (val >= 44) return 4.5;
+  if (val >= 38) return 4.0;
+  if (val >= 32) return 3.5;
+  if (val >= 26) return 3.0;
+  if (val >= 21) return 2.5;
+  if (val >= 16) return 2.0;
+  if (val >= 11) return 1.5;
+  return 1.0;
+}
+
+export interface StarTierShiftInfo {
+  currentStars: number;
+  projectedStars: number;
+  direction: "value_lock" | "cap_drop" | "stable";
+  label: string | null;
+}
+
+/**
+ * Predicts upcoming ★ star-tier shifts by comparing current L10 star tier against recent L5 momentum.
+ */
+export function evaluateStarTierShift(
+  l10: number | null,
+  l5: number | null,
+): StarTierShiftInfo {
+  const currentStars = computeStarCost(l10);
+  if (l10 === null || l5 === null) {
+    return {
+      currentStars,
+      projectedStars: currentStars,
+      direction: "stable",
+      label: null,
+    };
+  }
+  const blendedNextL10 = l10 * 0.65 + l5 * 0.35;
+  const l5Stars = computeStarCost(l5);
+  const nextStars = computeStarCost(blendedNextL10);
+
+  if (l5Stars > currentStars) {
+    return {
+      currentStars,
+      projectedStars: l5Stars,
+      direction: "value_lock",
+      label: `${currentStars}★→${l5Stars}★ Form`,
+    };
+  }
+  if (nextStars < currentStars || l5Stars < currentStars) {
+    const target = Math.min(nextStars, l5Stars);
+    return {
+      currentStars,
+      projectedStars: target,
+      direction: "cap_drop",
+      label: `${currentStars}★→${target}★ Drop`,
+    };
+  }
+  return {
+    currentStars,
+    projectedStars: currentStars,
+    direction: "stable",
+    label: null,
+  };
+}
+
+export function parseCustomProjections(rawText: string): Map<string, number> {
+  const map = new Map<string, number>();
+  if (!rawText.trim()) return map;
+
+  const lines = rawText.split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const parts = trimmed.split(/[\t,;]+/).map((s) => s.trim());
+    if (parts.length < 2) continue;
+    const score = Number(parts[parts.length - 1]);
+    const name = parts.slice(0, -1).join(" ");
+    if (name && Number.isFinite(score) && score >= 0) {
+      map.set(normalizePlayerName(name), score);
+    }
+  }
+  return map;
+}
+
+function injuryFactor(status: InjuryStatus): number {
+  switch (status) {
+    case "OUT":
+      return 0;
+    case "DOUBTFUL":
+      return 0.25;
+    case "QUESTIONABLE":
+    case "DAY_TO_DAY":
+      return 0.8;
+    case "ACTIVE":
+    default:
+      return 1;
+  }
+}
+
+function slatePeakMultiplier(gamesInSlate: number): number {
+  if (gamesInSlate <= 0) return 0.25;
+  if (gamesInSlate === 1) return 1.0;
+  if (gamesInSlate === 2) return 1.12;
+  if (gamesInSlate === 3) return 1.19;
+  return 1.24;
+}
+
+export function evaluateCardForLineup(
+  card: GalleryCard,
+  projectionSource: ProjectionSource,
+  customMap: Map<string, number>,
+  injuriesByName: Record<string, InjuryReportEntry>,
+  gamesPerTeam: Record<string, number>,
+): EvaluatedLineupCard {
+  const normName = normalizePlayerName(card.playerName);
+  const injury = injuriesByName[normName] ?? null;
+  const injuryStatus: InjuryStatus = injury?.status ?? "ACTIVE";
+  const hasSchedule = Object.keys(gamesPerTeam).length > 0;
+  const gamesInSlate =
+    hasSchedule && card.teamSlug ? (gamesPerTeam[card.teamSlug] ?? 0) : 1;
+
+  const sorareProj =
+    card.sorareClassicProjected && card.sorareClassicProjected > 0
+      ? card.sorareClassicProjected
+      : card.sorareDailyProjected && card.sorareDailyProjected > 0
+        ? card.sorareDailyProjected
+        : null;
+  const l10 = card.l10 ?? null;
+  const l5 = card.l5 ?? null;
+  const custom = customMap.get(normName) ?? null;
+
+  const peakMult = hasSchedule ? slatePeakMultiplier(gamesInSlate) : 1;
+  const avgAdjL10 = l10 !== null ? l10 * peakMult : null;
+  const avgAdjL5 = l5 !== null ? l5 * peakMult : null;
+
+  // Smart consensus blends Sorare projected + schedule-adjusted L5 + baseline L10
+  const projWeight = sorareProj !== null ? 0.45 : 0;
+  const l5Weight = avgAdjL5 !== null ? 0.30 : 0;
+  const l10Weight = avgAdjL10 !== null ? 0.25 : 0;
+  const totalW = projWeight + l5Weight + l10Weight;
+  const blended =
+    totalW > 0
+      ? ((sorareProj ?? 0) * projWeight +
+          (avgAdjL5 ?? 0) * l5Weight +
+          (avgAdjL10 ?? 0) * l10Weight) /
+        totalW
+      : 0;
+
+  let baseProjection = blended;
+  switch (projectionSource) {
+    case "sorare_projected":
+      baseProjection = sorareProj ?? avgAdjL10 ?? avgAdjL5 ?? 0;
+      break;
+    case "sorare_l10":
+      baseProjection = avgAdjL10 ?? sorareProj ?? avgAdjL5 ?? 0;
+      break;
+    case "sorare_l5":
+      baseProjection = avgAdjL5 ?? sorareProj ?? avgAdjL10 ?? 0;
+      break;
+    case "custom_csv":
+      baseProjection =
+        custom !== null ? custom * peakMult : blended;
+      break;
+    case "blended_smart":
+    default:
+      baseProjection = blended;
+      break;
+  }
+
+  const mult =
+    projectionSource === "blended_smart" || projectionSource === "custom_csv"
+      ? injuryFactor(injuryStatus)
+      : injuryStatus === "OUT"
+        ? 0
+        : 1;
+
+  const injuryAdjustedBase =
+    baseProjection * mult * (hasSchedule && gamesInSlate === 0 ? 0.25 : 1);
+  const effectiveScore = injuryAdjustedBase * card.powerMultiplier;
+
+  return {
+    card,
+    baseProjection,
+    injuryAdjustedBase,
+    effectiveScore,
+    injury,
+    injuryStatus,
+    gamesInSlate,
+    allSources: {
+      sorareProjected: sorareProj,
+      l10,
+      l5,
+      custom,
+      blended,
+    },
+  };
+}
+
+/** Standard normal CDF approximation (Abramowitz & Stegun) */
+export function normalCdf(z: number): number {
+  const t = 1 / (1 + 0.2316419 * Math.abs(z));
+  const d = 0.39894228 * Math.exp((-z * z) / 2);
+  const p =
+    d *
+    t *
+    (0.31938153 +
+      t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+  return z > 0 ? 1 - p : p;
+}
+
+function estimateWinProbability(
+  meanScore: number,
+  stdDev: number,
+  targetScore: number,
+): number {
+  if (stdDev <= 0) return meanScore >= targetScore ? 100 : 0;
+  const z = (meanScore - targetScore) / stdDev;
+  return Math.max(0, Math.min(99.9, (1 - normalCdf(-z)) * 100));
+}
+
+function assignSlotLabels(
+  picks: EvaluatedLineupCard[],
+  format: LineupFormat,
+  captainBonusPct: number,
+): { slots: LineupSlotPick[]; totalScore: number; totalStars: number; capUsed: number } {
+  const sorted = [...picks].sort((a, b) => b.effectiveScore - a.effectiveScore);
+  const mvpOrCaptainIdx = 0;
+
+  let totalScore = 0;
+  let totalStars = 0;
+  let capUsed = 0;
+
+  const slots: LineupSlotPick[] = sorted.map((ev, idx) => {
+    const isCaptainOrMvp =
+      (format === "daily_120_mvp" || captainBonusPct > 0) &&
+      idx === mvpOrCaptainIdx;
+    const boost = isCaptainOrMvp ? 1 + captainBonusPct / 100 : 1;
+    const slotScore = ev.effectiveScore * boost;
+    totalScore += slotScore;
+    totalStars += ev.card.starCost;
+
+    if (format === "daily_120_mvp") {
+      if (!isCaptainOrMvp) capUsed += ev.card.l10 ?? 0;
+    } else if (format === "champion_16" || format === "contender_11") {
+      capUsed += ev.card.starCost;
+    } else {
+      capUsed += ev.card.l10 ?? 0;
+    }
+
+    let slotLabel: LineupSlotPick["slotLabel"] = "FLEX";
+    if (isCaptainOrMvp) {
+      slotLabel = "MVP";
+    } else if (ev.card.positions.includes("basketball_guard")) {
+      slotLabel = "G";
+    } else if (ev.card.positions.includes("basketball_forward")) {
+      slotLabel = "F";
+    } else if (ev.card.positions.includes("basketball_center")) {
+      slotLabel = "C";
+    }
+
+    return {
+      slotLabel,
+      evaluated: ev,
+      isCaptainOrMvp,
+      slotScore,
+    };
+  });
+
+  return {
+    slots,
+    totalScore: Math.round(totalScore * 10) / 10,
+    totalStars: Math.round(totalStars * 10) / 10,
+    capUsed: Math.round(capUsed * 10) / 10,
+  };
+}
+
+/**
+ * Fast branch-and-bound auto-builder generating top N distinct 5-card lineups
+ * under Champion (16★), Contender (11★), Daily Pickup (120 + MVP), or Uncapped formats.
+ */
+export function generateTopLineups(
+  cards: GalleryCard[],
+  options: AutoBuildOptions,
+): {
+  lineups: SuggestedLineup[];
+  evaluatedPool: EvaluatedLineupCard[];
+} {
+  const customMap = parseCustomProjections(options.customProjectionsRaw);
+  const captainBonusPct = options.captainBonusPct ?? 0;
+  const targets = options.targets ?? LINEUP_FORMAT_TARGETS[options.format];
+
+  const excludedSet = new Set(options.excludedCardSlugs ?? []);
+  const evaluatedPool = cards
+    .filter((card) => {
+      if (options.rarityFilter !== "ALL" && card.rarity !== options.rarityFilter) {
+        return false;
+      }
+      if (options.inSeasonOnly && !card.inSeasonEligible) {
+        return false;
+      }
+      if (options.excludeSubmittedCards && card.openedLineupIds && card.openedLineupIds.length > 0) {
+        return false;
+      }
+      if (excludedSet.has(card.slug)) {
+        return false;
+      }
+      return true;
+    })
+    .map((card) =>
+      evaluateCardForLineup(
+        card,
+        options.projectionSource,
+        customMap,
+        options.injuriesByName,
+        options.gamesPerTeam,
+      ),
+    )
+    .filter((ev) => {
+      if (options.excludeOut && ev.injuryStatus === "OUT") return false;
+      if (
+        options.excludeQuestionable &&
+        (ev.injuryStatus === "QUESTIONABLE" ||
+          ev.injuryStatus === "DAY_TO_DAY" ||
+          ev.injuryStatus === "DOUBTFUL")
+      ) {
+        return false;
+      }
+      return ev.effectiveScore > 0;
+    })
+    .sort((a, b) => b.effectiveScore - a.effectiveScore);
+
+  const capLimit =
+    options.format === "champion_16"
+      ? 16
+      : options.format === "contender_11"
+        ? 11
+        : options.format === "daily_120_mvp"
+          ? 120
+          : null;
+
+  const maxToFind = Math.max(1, Math.min(10, options.maxLineups));
+  const targetPoolSize = Math.max(40, maxToFind * 5 + 16);
+
+  // Deduplicate by player when not stacking identical players, and keep low-star/L10
+  // enablers even if ranked outside the top raw-score slice so capped formats stay optimal.
+  let basePool = evaluatedPool;
+  if (!options.disjointAcrossLineups) {
+    const seenPlayers = new Set<string>();
+    basePool = evaluatedPool.filter((ev) => {
+      if (seenPlayers.has(ev.card.playerSlug)) return false;
+      seenPlayers.add(ev.card.playerSlug);
+      return true;
+    });
+  }
+
+  const head = basePool.slice(0, targetPoolSize);
+  const headSlugs = new Set(head.map((ev) => ev.card.slug));
+  const budgetEnablers = basePool
+    .filter((ev) => !headSlugs.has(ev.card.slug) && ev.card.starCost <= 2.0)
+    .slice(0, 8);
+  const pool = [...head, ...budgetEnablers];
+
+  const lineups: SuggestedLineup[] = [];
+  const usedCardSlugsGlobal = new Set<string>();
+
+  for (let pass = 0; pass < maxToFind; pass += 1) {
+    const available = options.disjointAcrossLineups
+      ? pool.filter((ev) => !usedCardSlugsGlobal.has(ev.card.slug))
+      : pool;
+
+    if (available.length < 5) break;
+
+    let bestScore = -1;
+    let bestCombo: EvaluatedLineupCard[] | null = null;
+    const seenLineupSignatures = new Set(
+      lineups.map((l) =>
+        l.slots
+          .map((s) => s.evaluated.card.slug)
+          .sort()
+          .join("|"),
+      ),
+    );
+
+    const n = available.length;
+    const chosen: EvaluatedLineupCard[] = [];
+    const chosenPlayers = new Set<string>();
+
+    const dfs = (
+      startIdx: number,
+      starSum: number,
+      nonMvpL10Sum: number,
+      inSeasonSum: number,
+      currentScoreSum: number,
+    ) => {
+      const remainingNeed = 5 - chosen.length;
+      if (remainingNeed === 0) {
+        if (inSeasonSum < options.minInSeasonCards) return;
+
+        // Validate cap rules
+        if (options.format === "champion_16" && starSum > 16) return;
+        if (options.format === "contender_11" && starSum > 11) return;
+        if (options.format === "daily_120_mvp" && nonMvpL10Sum > 120) return;
+
+        // Pool is sorted descending by effectiveScore so chosen[0] is deterministically MVP
+        const approxTotal =
+          Math.round(
+            (currentScoreSum + chosen[0].effectiveScore * (captainBonusPct / 100)) *
+              10,
+          ) / 10;
+        if (approxTotal <= bestScore) return;
+
+        const sig = chosen
+          .map((c) => c.card.slug)
+          .sort()
+          .join("|");
+        if (seenLineupSignatures.has(sig)) return;
+
+        const built = assignSlotLabels(chosen, options.format, captainBonusPct);
+        if (built.totalScore > bestScore) {
+          bestScore = built.totalScore;
+          bestCombo = [...chosen];
+        }
+        return;
+      }
+
+      if (startIdx + remainingNeed > n) return;
+      // Tight upper-bound pruning (captain bonus applies to 1 MVP slot only)
+      const capSlotBase =
+        chosen.length > 0
+          ? chosen[0].effectiveScore
+          : available[startIdx].effectiveScore;
+      const optimisticMax =
+        currentScoreSum +
+        available[startIdx].effectiveScore * remainingNeed +
+        capSlotBase * (captainBonusPct / 100);
+      if (optimisticMax <= bestScore) return;
+
+      for (let i = startIdx; i <= n - remainingNeed; i += 1) {
+        const candidate = available[i];
+        if (chosenPlayers.has(candidate.card.playerSlug)) continue;
+
+        const nextStarSum = starSum + candidate.card.starCost;
+        if (
+          (options.format === "champion_16" && nextStarSum > 16) ||
+          (options.format === "contender_11" && nextStarSum > 11)
+        ) {
+          continue;
+        }
+
+        const nextNonMvpL10 =
+          chosen.length === 0
+            ? nonMvpL10Sum
+            : nonMvpL10Sum + (candidate.card.l10 ?? 0);
+        if (options.format === "daily_120_mvp" && nextNonMvpL10 > 120) {
+          continue;
+        }
+
+        const nextInSeason = inSeasonSum + (candidate.card.inSeasonEligible ? 1 : 0);
+        if (nextInSeason + (remainingNeed - 1) < options.minInSeasonCards) {
+          continue;
+        }
+
+        chosen.push(candidate);
+        chosenPlayers.add(candidate.card.playerSlug);
+        dfs(
+          i + 1,
+          nextStarSum,
+          nextNonMvpL10,
+          nextInSeason,
+          currentScoreSum + candidate.effectiveScore,
+        );
+        chosen.pop();
+        chosenPlayers.delete(candidate.card.playerSlug);
+      }
+    };
+
+    dfs(0, 0, 0, 0, 0);
+
+    if (!bestCombo) break;
+    const pickedCombo = bestCombo as EvaluatedLineupCard[];
+
+    const assigned = assignSlotLabels(
+      pickedCombo,
+      options.format,
+      captainBonusPct,
+    );
+
+    // Lineup score stdDev (~22% per-player game variance summed in quadrature)
+    const variance = assigned.slots.reduce((sum, slot) => {
+      const sigma = Math.max(5, slot.slotScore * 0.22);
+      return sum + sigma * sigma;
+    }, 0);
+    const stdDev = Math.sqrt(variance);
+
+    const hasInjuryRisk = assigned.slots.some(
+      (s) => s.evaluated.injuryStatus !== "ACTIVE",
+    );
+
+    const lineup: SuggestedLineup = {
+      rank: pass + 1,
+      format: options.format,
+      slots: assigned.slots,
+      totalScore: assigned.totalScore,
+      totalStars: assigned.totalStars,
+      capUsed: assigned.capUsed,
+      capLimit,
+      inSeasonCount: assigned.slots.filter(
+        (s) => s.evaluated.card.inSeasonEligible,
+      ).length,
+      hasInjuryRisk,
+      odds: {
+        essenceTarget: targets.essenceTarget,
+        essencePct: Math.round(
+          estimateWinProbability(
+            assigned.totalScore,
+            stdDev,
+            targets.essenceTarget,
+          ),
+        ),
+        tier1Target: targets.tier1Target,
+        tier1Pct: Math.round(
+          estimateWinProbability(
+            assigned.totalScore,
+            stdDev,
+            targets.tier1Target,
+          ),
+        ),
+        podiumTarget: targets.podiumTarget,
+        podiumPct: Math.round(
+          estimateWinProbability(
+            assigned.totalScore,
+            stdDev,
+            targets.podiumTarget,
+          ),
+        ),
+      },
+    };
+
+    lineups.push(lineup);
+    for (const s of assigned.slots) {
+      usedCardSlugsGlobal.add(s.evaluated.card.slug);
+    }
+  }
+
+  return { lineups, evaluatedPool };
+}
+
+export interface FormatRecommendation {
+  recommendedFormat: LineupFormat;
+  reason: string;
+  eliteCardCount: number;
+  activePoolCount: number;
+  candidates: Array<{
+    format: LineupFormat;
+    topScore: number | null;
+    essencePct: number;
+    tier1Pct: number;
+    podiumPct: number;
+    compositeScore: number;
+  }>;
+}
+
+/**
+ * Recommends which Sorare NBA competition format gives the highest chance of placing
+ * given the user's available card pool (prioritizing Contender when elite 4-5★ depth is thin).
+ */
+export function recommendBestFormat(
+  cards: GalleryCard[],
+  options: Omit<AutoBuildOptions, "format" | "maxLineups">,
+): FormatRecommendation {
+  const formats: LineupFormat[] = ["contender_11", "champion_16", "daily_120_mvp"];
+  let eliteCardCount = 0;
+  let activePoolCount = 0;
+
+  const candidates = formats.map((fmt) => {
+    const res = generateTopLineups(cards, {
+      ...options,
+      format: fmt,
+      maxLineups: 1,
+    });
+    if (fmt === "contender_11") {
+      activePoolCount = res.evaluatedPool.length;
+      eliteCardCount = res.evaluatedPool.filter(
+        (ev) => ev.card.starCost >= 4,
+      ).length;
+    }
+    const top = res.lineups[0] ?? null;
+    const essencePct = top?.odds.essencePct ?? 0;
+    const tier1Pct = top?.odds.tier1Pct ?? 0;
+    const podiumPct = top?.odds.podiumPct ?? 0;
+    const compositeScore = essencePct * 0.55 + tier1Pct * 0.3 + podiumPct * 0.15;
+
+    return {
+      format: fmt,
+      topScore: top?.totalScore ?? null,
+      essencePct,
+      tier1Pct,
+      podiumPct,
+      compositeScore,
+    };
+  });
+
+  const sorted = [...candidates].sort((a, b) => {
+    if (b.compositeScore !== a.compositeScore) {
+      return b.compositeScore - a.compositeScore;
+    }
+    if (a.format === "contender_11") return -1;
+    if (b.format === "contender_11") return 1;
+    return 0;
+  });
+
+  const best = sorted[0] ?? candidates[0];
+  let reason = "";
+
+  if (best.format === "contender_11") {
+    reason =
+      eliteCardCount < 2
+        ? `Thin elite depth (${eliteCardCount} cards ≥ 4★ across ${activePoolCount} active cards) makes Contender 11★ your highest-EV entry (${best.essencePct}% Essence odds) without competing against stacked 16★ Superteam rosters.`
+        : `Balanced ${activePoolCount}-card pool projects strongest in Contender 11★ (${best.topScore?.toFixed(1) ?? "--"} pts • ${best.essencePct}% Essence / ${best.tier1Pct}% Tier 1).`;
+  } else if (best.format === "daily_120_mvp") {
+    reason = `Your best single anchor + low-L10 value pieces fit Daily Pickup 120+MVP strongest (${best.topScore?.toFixed(1) ?? "--"} pts • ${best.essencePct}% Essence odds).`;
+  } else {
+    reason = `With ${eliteCardCount} elite cards (≥ 4★), Champion 16★ maximizes ceiling (${best.topScore?.toFixed(1) ?? "--"} pts • ${best.tier1Pct}% Tier 1 odds).`;
+  }
+
+  return {
+    recommendedFormat: best.format,
+    reason,
+    eliteCardCount,
+    activePoolCount,
+    candidates,
+  };
+}
+
+export interface LineupSwapSuggestion {
+  outPlayer: string;
+  inPlayer: string;
+  deltaPts: number;
+}
+
+export interface CurrentLineupComparison {
+  entry: CurrentLineupEntry;
+  inferredFormat: LineupFormat;
+  currentProjected: number;
+  currentStars: number;
+  optimalProjected: number | null;
+  potentialGain: number;
+  swaps: LineupSwapSuggestion[];
+  betterCaptainName: string | null;
+}
+
+export function inferFormatFromLeaderboard(label: string): LineupFormat {
+  const lower = label.toLowerCase();
+  if (lower.includes("contender")) return "contender_11";
+  if (lower.includes("daily") || lower.includes("pickup") || lower.includes("120")) {
+    return "daily_120_mvp";
+  }
+  if (lower.includes("uncapped") || lower.includes("no cap")) return "uncapped";
+  return "champion_16";
+}
+
+/**
+ * Compares the user's open/submitted Sorare NBA lineups against the optimizer's best
+ * legal 5-card combination for the same format to surface concrete swap upgrades.
+ */
+export function compareCurrentVsOptimalLineups(
+  currentLineups: CurrentLineupEntry[],
+  cards: GalleryCard[],
+  options: Omit<AutoBuildOptions, "format" | "maxLineups">,
+): CurrentLineupComparison[] {
+  if (currentLineups.length === 0 || cards.length === 0) return [];
+  const customMap = parseCustomProjections(options.customProjectionsRaw);
+  const captainBonusPct = options.captainBonusPct ?? 0;
+
+  const evalBySlug = new Map<string, EvaluatedLineupCard>();
+  for (const c of cards) {
+    evalBySlug.set(
+      c.slug,
+      evaluateCardForLineup(
+        c,
+        options.projectionSource,
+        customMap,
+        options.injuriesByName,
+        options.gamesPerTeam,
+      ),
+    );
+  }
+
+  return currentLineups.map((entry) => {
+    const inferredFormat = inferFormatFromLeaderboard(
+      `${entry.leaderboardName} ${entry.leaderboardSlug} ${entry.name}`,
+    );
+    const currentEvaluated = entry.cardSlugs
+      .map((s) => evalBySlug.get(s))
+      .filter((v): v is EvaluatedLineupCard => Boolean(v));
+
+    let currentProjected = 0;
+    let currentStars = 0;
+    let bestCurrentNonCap: EvaluatedLineupCard | null = null;
+    let currentCaptainEv: EvaluatedLineupCard | null = null;
+
+    for (const ev of currentEvaluated) {
+      const isCap = entry.captainCardSlug === ev.card.slug;
+      const mult = isCap ? 1 + captainBonusPct / 100 : 1;
+      currentProjected += ev.effectiveScore * mult;
+      currentStars += ev.card.starCost;
+      if (isCap) {
+        currentCaptainEv = ev;
+      } else if (
+        !bestCurrentNonCap ||
+        ev.effectiveScore > bestCurrentNonCap.effectiveScore
+      ) {
+        bestCurrentNonCap = ev;
+      }
+    }
+
+    const betterCaptainName =
+      (inferredFormat === "daily_120_mvp" || captainBonusPct > 0) &&
+      currentCaptainEv &&
+      bestCurrentNonCap &&
+      bestCurrentNonCap.effectiveScore > currentCaptainEv.effectiveScore + 1.5
+        ? bestCurrentNonCap.card.playerName
+        : null;
+
+    const optimal = generateTopLineups(cards, {
+      ...options,
+      format: inferredFormat,
+      maxLineups: 1,
+    }).lineups[0];
+
+    if (!optimal) {
+      return {
+        entry,
+        inferredFormat,
+        currentProjected: Math.round(currentProjected * 10) / 10,
+        currentStars: Math.round(currentStars * 10) / 10,
+        optimalProjected: null,
+        potentialGain: 0,
+        swaps: [],
+        betterCaptainName,
+      };
+    }
+
+    const currentSlugSet = new Set(entry.cardSlugs);
+    const optSlugSet = new Set(optimal.slots.map((s) => s.evaluated.card.slug));
+
+    const toRemove = currentEvaluated
+      .filter((ev) => !optSlugSet.has(ev.card.slug))
+      .sort((a, b) => a.effectiveScore - b.effectiveScore);
+    const toAdd = optimal.slots
+      .map((s) => s.evaluated)
+      .filter((ev) => !currentSlugSet.has(ev.card.slug))
+      .sort((a, b) => b.effectiveScore - a.effectiveScore);
+
+    const swaps: LineupSwapSuggestion[] = [];
+    const pairCount = Math.min(toRemove.length, toAdd.length);
+    for (let i = 0; i < pairCount; i += 1) {
+      swaps.push({
+        outPlayer: toRemove[i].card.playerName,
+        inPlayer: toAdd[i].card.playerName,
+        deltaPts:
+          Math.round((toAdd[i].effectiveScore - toRemove[i].effectiveScore) * 10) / 10,
+      });
+    }
+
+    return {
+      entry,
+      inferredFormat,
+      currentProjected: Math.round(currentProjected * 10) / 10,
+      currentStars: Math.round(currentStars * 10) / 10,
+      optimalProjected: optimal.totalScore,
+      potentialGain:
+        Math.round(Math.max(0, optimal.totalScore - currentProjected) * 10) / 10,
+      swaps,
+      betterCaptainName,
+    };
+  });
+}
+
+export interface BudgetLineupSlotMeta {
+  costCents: number;
+  isOwned: boolean;
+  isPrimaryOffer: boolean;
+  saleType: "owned" | "instant_buy" | "auction";
+  marketUrl: string;
+}
+
+export interface BudgetLineupPick extends SuggestedLineup {
+  totalCostCents: number;
+  remainingBudgetCents: number;
+  marketBuysCount: number;
+  slotCostBySlug: Record<string, BudgetLineupSlotMeta>;
+}
+
+export interface BudgetBuildOptions {
+  format: LineupFormat;
+  rarityFilter: CardRarity | "ALL";
+  projectionSource: ProjectionSource;
+  customProjectionsRaw: string;
+  injuriesByName: Record<string, InjuryReportEntry>;
+  gamesPerTeam: Record<string, number>;
+  budgetCents: number;
+  includeOwned: boolean;
+  inSeasonOnly: boolean;
+  minInSeasonCards?: number;
+  captainBonusPct?: number;
+}
+
+/**
+ * Builds up to 2 optimal hybrid lineups (owned cards at €0 + live market deals within budget)
+ * respecting both competition star/L10 caps and cash budget.
+ */
+export function buildBudgetLineups(
+  ownedCards: GalleryCard[],
+  marketListings: BargainListing[],
+  options: BudgetBuildOptions,
+): BudgetLineupPick[] {
+  const customMap = parseCustomProjections(options.customProjectionsRaw);
+  const captainBonusPct = options.captainBonusPct ?? 0;
+  const targets = LINEUP_FORMAT_TARGETS[options.format];
+  const minInSeason = options.minInSeasonCards ?? (options.inSeasonOnly ? 5 : 0);
+
+  const slotCostBySlug: Record<string, BudgetLineupSlotMeta> = {};
+  const candidateCards: GalleryCard[] = [];
+  const seenPlayerCost = new Map<string, number>();
+
+  if (options.includeOwned) {
+    for (const c of ownedCards) {
+      if (options.rarityFilter !== "ALL" && c.rarity !== options.rarityFilter) {
+        continue;
+      }
+      if (minInSeason >= 5 && !c.inSeasonEligible) continue;
+      if (seenPlayerCost.has(c.playerSlug)) continue;
+      seenPlayerCost.set(c.playerSlug, 0);
+      slotCostBySlug[c.slug] = {
+        costCents: 0,
+        isOwned: true,
+        isPrimaryOffer: Boolean(c.isFirstOwner),
+        saleType: "owned",
+        marketUrl: `https://sorare.com/nba/cards/${c.slug}`,
+      };
+      candidateCards.push(c);
+    }
+  }
+
+  const affordableMarket = [...marketListings]
+    .filter((m) => {
+      if (m.priceCents === null || m.priceCents > options.budgetCents) {
+        return false;
+      }
+      if (options.rarityFilter !== "ALL" && m.rarity !== options.rarityFilter) {
+        return false;
+      }
+      if (minInSeason >= 5 && !m.inSeasonEligible) return false;
+      return true;
+    })
+    .sort((a, b) => (a.priceCents ?? 0) - (b.priceCents ?? 0));
+
+  for (const m of affordableMarket) {
+    if (m.priceCents === null) continue;
+    const prevCost = seenPlayerCost.get(m.playerSlug);
+    if (prevCost !== undefined && prevCost <= m.priceCents) continue;
+    seenPlayerCost.set(m.playerSlug, m.priceCents);
+
+    const syntheticCard: GalleryCard = {
+      slug: m.cardSlug,
+      rarity: m.rarity,
+      seasonYear: m.seasonYear,
+      inSeasonEligible: m.inSeasonEligible,
+      grade: 1,
+      powerMultiplier: m.inSeasonEligible ? 1.05 : 1.0,
+      pictureUrl: m.pictureUrl ?? null,
+      isFirstOwner: Boolean(m.isFirstOwnerEligible || m.isPrimaryOffer),
+      teamName: m.teamName,
+      teamSlug: m.teamSlug ?? null,
+      playerSlug: m.playerSlug,
+      playerName: m.playerName,
+      positions: m.positions,
+      l10: m.l10,
+      l5: m.l5,
+      sorareClassicProjected: m.projected,
+      sorareDailyProjected: null,
+      starCost: m.starCost,
+    };
+
+    slotCostBySlug[m.cardSlug] = {
+      costCents: m.priceCents,
+      isOwned: false,
+      isPrimaryOffer: Boolean(m.isPrimaryOffer),
+      saleType: m.saleType,
+      marketUrl: m.marketUrl,
+    };
+    candidateCards.push(syntheticCard);
+  }
+
+  const evaluated = candidateCards
+    .map((card) =>
+      evaluateCardForLineup(
+        card,
+        options.projectionSource,
+        customMap,
+        options.injuriesByName,
+        options.gamesPerTeam,
+      ),
+    )
+    .filter((ev) => ev.injuryStatus !== "OUT" && ev.effectiveScore > 0)
+    .sort((a, b) => b.effectiveScore - a.effectiveScore);
+
+  const head = evaluated.slice(0, 32);
+  const headSlugs = new Set(head.map((e) => e.card.slug));
+  const cheapEnablers = evaluated
+    .filter(
+      (e) =>
+        !headSlugs.has(e.card.slug) &&
+        ((minInSeason > 0 && e.card.inSeasonEligible) ||
+          e.card.starCost <= 2 ||
+          (slotCostBySlug[e.card.slug]?.costCents ?? 999999) <= 250),
+    )
+    .slice(0, 12);
+  const pool = [...head, ...cheapEnablers];
+
+  const capLimit =
+    options.format === "champion_16"
+      ? 16
+      : options.format === "contender_11"
+        ? 11
+        : options.format === "daily_120_mvp"
+          ? 120
+          : null;
+
+  const picks: BudgetLineupPick[] = [];
+  const usedSignatures = new Set<string>();
+
+  for (let pass = 0; pass < 2; pass += 1) {
+    if (pool.length < 5) break;
+    let bestScore = -1;
+    let bestCombo: EvaluatedLineupCard[] | null = null;
+    const chosen: EvaluatedLineupCard[] = [];
+    const usedPlayers = new Set<string>();
+
+    const dfs = (
+      startIdx: number,
+      starSum: number,
+      nonMvpL10: number,
+      costSum: number,
+      inSeasonSum: number,
+      rawScoreSum: number,
+    ) => {
+      if (chosen.length === 5) {
+        if (inSeasonSum < minInSeason) return;
+        const sig = chosen
+          .map((c) => c.card.slug)
+          .sort()
+          .join("|");
+        if (usedSignatures.has(sig)) return;
+        const maxEff = Math.max(...chosen.map((c) => c.effectiveScore));
+        const total = rawScoreSum + maxEff * (captainBonusPct / 100);
+        if (total > bestScore) {
+          bestScore = total;
+          bestCombo = [...chosen];
+        }
+        return;
+      }
+
+      const rem = 5 - chosen.length;
+      if (pool.length - startIdx < rem) return;
+      if (inSeasonSum + rem < minInSeason) return;
+
+      let optimistic = rawScoreSum;
+      let taken = 0;
+      let optMax = 0;
+      for (const item of chosen) {
+        if (item.effectiveScore > optMax) optMax = item.effectiveScore;
+      }
+      for (let k = startIdx; k < pool.length && taken < rem; k += 1) {
+        const item = pool[k];
+        if (usedPlayers.has(item.card.playerSlug)) continue;
+        optimistic += item.effectiveScore;
+        if (item.effectiveScore > optMax) optMax = item.effectiveScore;
+        taken += 1;
+      }
+      if (taken < rem) return;
+      if (optimistic + optMax * (captainBonusPct / 100) <= bestScore) return;
+
+      for (let i = startIdx; i <= pool.length - rem; i += 1) {
+        const cand = pool[i];
+        if (usedPlayers.has(cand.card.playerSlug)) continue;
+
+        const candCost = slotCostBySlug[cand.card.slug]?.costCents ?? 0;
+        if (costSum + candCost > options.budgetCents) continue;
+
+        const nextStar = starSum + cand.card.starCost;
+        if (
+          (options.format === "champion_16" ||
+            options.format === "contender_11") &&
+          capLimit !== null &&
+          nextStar > capLimit
+        ) {
+          continue;
+        }
+
+        const nextL10 =
+          options.format === "daily_120_mvp" && chosen.length > 0
+            ? nonMvpL10 + (cand.card.l10 ?? 0)
+            : nonMvpL10;
+        if (options.format === "daily_120_mvp" && nextL10 > 120) continue;
+
+        chosen.push(cand);
+        usedPlayers.add(cand.card.playerSlug);
+        dfs(
+          i + 1,
+          nextStar,
+          nextL10,
+          costSum + candCost,
+          inSeasonSum + (cand.card.inSeasonEligible ? 1 : 0),
+          rawScoreSum + cand.effectiveScore,
+        );
+        chosen.pop();
+        usedPlayers.delete(cand.card.playerSlug);
+      }
+    };
+
+    dfs(0, 0, 0, 0, 0, 0);
+    if (!bestCombo) break;
+    const picked = bestCombo as EvaluatedLineupCard[];
+    const sig = picked
+      .map((c) => c.card.slug)
+      .sort()
+      .join("|");
+    usedSignatures.add(sig);
+
+    const assigned = assignSlotLabels(picked, options.format, captainBonusPct);
+    let totalCostCents = 0;
+    let marketBuysCount = 0;
+    const pickedMeta: Record<string, BudgetLineupSlotMeta> = {};
+
+    for (const s of assigned.slots) {
+      const meta = slotCostBySlug[s.evaluated.card.slug];
+      if (meta) {
+        pickedMeta[s.evaluated.card.slug] = meta;
+        totalCostCents += meta.costCents;
+        if (!meta.isOwned) marketBuysCount += 1;
+      }
+    }
+
+    const variance = assigned.slots.reduce((sum, slot) => {
+      const sigma = Math.max(5, slot.slotScore * 0.22);
+      return sum + sigma * sigma;
+    }, 0);
+    const stdDev = Math.sqrt(variance);
+
+    picks.push({
+      rank: pass + 1,
+      format: options.format,
+      slots: assigned.slots,
+      totalScore: assigned.totalScore,
+      totalStars: assigned.totalStars,
+      capUsed: assigned.capUsed,
+      capLimit,
+      inSeasonCount: assigned.slots.filter(
+        (s) => s.evaluated.card.inSeasonEligible,
+      ).length,
+      hasInjuryRisk: assigned.slots.some(
+        (s) => s.evaluated.injuryStatus !== "ACTIVE",
+      ),
+      odds: {
+        essenceTarget: targets.essenceTarget,
+        essencePct: Math.round(
+          estimateWinProbability(
+            assigned.totalScore,
+            stdDev,
+            targets.essenceTarget,
+          ),
+        ),
+        tier1Target: targets.tier1Target,
+        tier1Pct: Math.round(
+          estimateWinProbability(
+            assigned.totalScore,
+            stdDev,
+            targets.tier1Target,
+          ),
+        ),
+        podiumTarget: targets.podiumTarget,
+        podiumPct: Math.round(
+          estimateWinProbability(
+            assigned.totalScore,
+            stdDev,
+            targets.podiumTarget,
+          ),
+        ),
+      },
+      totalCostCents,
+      remainingBudgetCents: Math.max(0, options.budgetCents - totalCostCents),
+      marketBuysCount,
+      slotCostBySlug: pickedMeta,
+    });
+  }
+
+  return picks;
+}
+
+export interface VaultVsSellAdvice {
+  action: "SEAL_VAULT" | "SELL_CASH" | "HOLD_DEPTH";
+  vaultPoints: number;
+  label: string;
+  reason: string;
+}
+
+/**
+ * Compares prior-season Sorare Vault contribution against live cash liquidity
+ * to advise sealing vs. selling on the market.
+ */
+export function evaluateVaultVsSellRoi(card: GalleryCard): VaultVsSellAdvice {
+  const rarityMult =
+    card.rarity === "unique"
+      ? 25
+      : card.rarity === "super_rare"
+        ? 10
+        : card.rarity === "rare"
+          ? 4
+          : 1;
+  const vaultPoints = Math.max(
+    10,
+    Math.round((card.l10 ?? 12) * rarityMult * (card.isFirstOwner ? 1.2 : 1)),
+  );
+
+  if (card.inSeasonEligible || (card.openedLineupIds?.length ?? 0) > 0) {
+    return {
+      action: "HOLD_DEPTH",
+      vaultPoints,
+      label: "Active Roster",
+      reason: card.inSeasonEligible
+        ? "In-season card eligible for Pro leaderboards."
+        : "Locked inside an open Gameweek lineup.",
+    };
+  }
+
+  const askCents = card.lowestAskCents ?? 0;
+  if (askCents >= 250 && (card.l10 ?? 0) < 28) {
+    return {
+      action: "SELL_CASH",
+      vaultPoints,
+      label: "💶 Sell > Seal",
+      reason: `Strong floor liquidity vs +${vaultPoints} VP Vault contribution.`,
+    };
+  }
+
+  if ((card.l10 ?? 0) >= 15) {
+    return {
+      action: "SEAL_VAULT",
+      vaultPoints,
+      label: `🔒 Seal (+${vaultPoints} VP)`,
+      reason: "Unlocked prior-season contributor adds efficient Vault score.",
+    };
+  }
+
+  return {
+    action: "HOLD_DEPTH",
+    vaultPoints,
+    label: `+${vaultPoints} VP`,
+    reason: "Low L10 depth card; hold or scrap/seal as needed.",
+  };
+}
+
+export interface PortfolioSlateResult {
+  lineups: SuggestedLineup[];
+  totalProjectedPts: number;
+  combinedEssenceScore: number;
+  atLeastOneEssencePct: number;
+  cardsUsedCount: number;
+}
+
+function permuteFormats(formats: LineupFormat[]): LineupFormat[][] {
+  if (formats.length <= 1) return [formats];
+  const out: LineupFormat[][] = [];
+  for (let i = 0; i < formats.length; i += 1) {
+    const rest = formats.filter((_, idx) => idx !== i);
+    for (const sub of permuteFormats(rest)) {
+      out.push([formats[i], ...sub]);
+    }
+  }
+  return out;
+}
+
+/**
+ * Jointly optimizes across multiple Sorare NBA competitions with zero overlapping cards
+ * to maximize total combined Essence winning odds across the Gameweek slate.
+ */
+export function optimizeMultiCompetitionPortfolio(
+  cards: GalleryCard[],
+  options: Omit<
+    AutoBuildOptions,
+    "format" | "maxLineups" | "disjointAcrossLineups"
+  >,
+  formats: LineupFormat[] = ["champion_16", "contender_11", "daily_120_mvp"],
+): PortfolioSlateResult {
+  const uniqueFormats = formats.slice(0, 4);
+  const orders = permuteFormats(uniqueFormats);
+
+  let bestCombinedScore = -1;
+  let bestMap = new Map<LineupFormat, SuggestedLineup>();
+
+  for (const order of orders) {
+    let remaining = [...cards];
+    const usedPlayerSlugs = new Set<string>();
+    const chosenMap = new Map<LineupFormat, SuggestedLineup>();
+    let combinedScore = 0;
+
+    for (const fmt of order) {
+      const built = generateTopLineups(remaining, {
+        ...options,
+        format: fmt,
+        maxLineups: 1,
+        disjointAcrossLineups: true,
+      }).lineups[0];
+
+      if (!built) continue;
+      chosenMap.set(fmt, built);
+      combinedScore += built.odds.essencePct * 1.5 + built.totalScore * 0.2;
+
+      const usedCards = new Set(built.slots.map((s) => s.evaluated.card.slug));
+      for (const s of built.slots) {
+        usedPlayerSlugs.add(s.evaluated.card.playerSlug);
+      }
+      remaining = remaining.filter(
+        (c) => !usedCards.has(c.slug) && !usedPlayerSlugs.has(c.playerSlug),
+      );
+    }
+
+    if (
+      chosenMap.size > bestMap.size ||
+      (chosenMap.size === bestMap.size && combinedScore > bestCombinedScore)
+    ) {
+      bestCombinedScore = combinedScore;
+      bestMap = chosenMap;
+    }
+  }
+
+  const orderedLineups = uniqueFormats
+    .map((fmt) => bestMap.get(fmt))
+    .filter((l): l is SuggestedLineup => Boolean(l))
+    .map((l, idx) => ({ ...l, rank: idx + 1 }));
+
+  const totalProjectedPts =
+    Math.round(orderedLineups.reduce((s, l) => s + l.totalScore, 0) * 10) / 10;
+  const missAllProb = orderedLineups.reduce(
+    (prod, l) => prod * (1 - Math.max(0, Math.min(99, l.odds.essencePct)) / 100),
+    1,
+  );
+  const atLeastOneEssencePct =
+    orderedLineups.length > 0 ? Math.round((1 - missAllProb) * 100) : 0;
+
+  return {
+    lineups: orderedLineups,
+    totalProjectedPts,
+    combinedEssenceScore: Math.round(bestCombinedScore * 10) / 10,
+    atLeastOneEssencePct,
+    cardsUsedCount: orderedLineups.reduce((s, l) => s + l.slots.length, 0),
+  };
+}
+
+export type LineupSeasonRule = "4_in_1_classic" | "5_in_season" | "any_season";
+export type BuyAdvisorRankMode = "best_value" | "max_upgrade" | "quest_synergy";
+
+export interface LineupBuyRecommendation {
+  listing: BargainListing;
+  slotTarget: "classic_slot" | "in_season_slot";
+  replacesCardSlug: string;
+  replacesPlayerName: string;
+  replacesSlotLabel: LineupSlotPick["slotLabel"];
+  replacesIsInSeason: boolean;
+  projectedCandidateScore: number;
+  deltaLineupPts: number;
+  ptsGainPerEuro: number;
+  newLineupScore: number;
+  newTotalStars: number;
+  advancesCollection: boolean;
+  questSynergyLabels: string[];
+  synergyScore: number;
+}
+
+export interface DualLineupBuyRecommendations {
+  classicSlotBuys: LineupBuyRecommendation[];
+  inSeasonSlotBuys: LineupBuyRecommendation[];
+  topOverallBuys: LineupBuyRecommendation[];
+}
+
+export interface RecommendLineupBuysOptions {
+  format: LineupFormat;
+  rarityFilter: CardRarity | "ALL";
+  seasonRule: LineupSeasonRule;
+  rankMode: BuyAdvisorRankMode;
+  maxPriceCents?: number | null;
+  projectionSource: ProjectionSource;
+  customProjectionsRaw: string;
+  injuriesByName: Record<string, InjuryReportEntry>;
+  gamesPerTeam: Record<string, number>;
+  excludeOut?: boolean;
+  excludeQuestionable?: boolean;
+  captainBonusPct?: number;
+}
+
+/**
+ * Recommends targeted market buys for both the 1 allowed Out-of-Season (Classic) slot
+ * and In-Season slots on a given base lineup, ranked by value (+Pts/EUR), max upgrade, or quest synergy.
+ */
+export function recommendLineupMarketBuys(
+  baseLineup: SuggestedLineup,
+  ownedPlayerSlugs: Set<string>,
+  collectionNeedSlugs: Set<string>,
+  marketListings: BargainListing[],
+  options: RecommendLineupBuysOptions,
+): DualLineupBuyRecommendations {
+  const customMap = parseCustomProjections(options.customProjectionsRaw);
+  const captainBonusPct = options.captainBonusPct ?? 0;
+  const minInSeason =
+    options.seasonRule === "5_in_season"
+      ? 5
+      : options.seasonRule === "4_in_1_classic"
+        ? 4
+        : 0;
+  const lineupPlayerSlugs = new Set(
+    baseLineup.slots.map((s) => s.evaluated.card.playerSlug),
+  );
+
+  const rawRecs: LineupBuyRecommendation[] = [];
+
+  for (const m of marketListings) {
+    if (m.priceCents === null || m.priceCents <= 0) continue;
+    if (
+      options.maxPriceCents !== undefined &&
+      options.maxPriceCents !== null &&
+      m.priceCents > options.maxPriceCents
+    ) {
+      continue;
+    }
+    if (options.rarityFilter !== "ALL" && m.rarity !== options.rarityFilter) {
+      continue;
+    }
+    if (options.seasonRule === "5_in_season" && !m.inSeasonEligible) {
+      continue;
+    }
+    if (lineupPlayerSlugs.has(m.playerSlug) || ownedPlayerSlugs.has(m.playerSlug)) {
+      continue;
+    }
+
+    const syntheticCard: GalleryCard = {
+      slug: m.cardSlug,
+      rarity: m.rarity,
+      seasonYear: m.seasonYear,
+      inSeasonEligible: m.inSeasonEligible,
+      grade: 1,
+      powerMultiplier: m.inSeasonEligible ? 1.05 : 1.0,
+      pictureUrl: m.pictureUrl ?? null,
+      isFirstOwner: Boolean(m.isFirstOwnerEligible || m.isPrimaryOffer),
+      teamName: m.teamName,
+      teamSlug: m.teamSlug ?? null,
+      playerSlug: m.playerSlug,
+      playerName: m.playerName,
+      positions: m.positions,
+      l10: m.l10,
+      l5: m.l5,
+      sorareClassicProjected: m.projected,
+      sorareDailyProjected: null,
+      starCost: m.starCost,
+    };
+
+    const candEv = evaluateCardForLineup(
+      syntheticCard,
+      options.projectionSource,
+      customMap,
+      options.injuriesByName,
+      options.gamesPerTeam,
+    );
+    if (options.excludeOut !== false && candEv.injuryStatus === "OUT") continue;
+    if (
+      options.excludeQuestionable &&
+      (candEv.injuryStatus === "QUESTIONABLE" ||
+        candEv.injuryStatus === "DAY_TO_DAY" ||
+        candEv.injuryStatus === "DOUBTFUL")
+    ) {
+      continue;
+    }
+    if (candEv.effectiveScore <= 0) continue;
+
+    let bestSlotRec: Omit<
+      LineupBuyRecommendation,
+      "ptsGainPerEuro" | "advancesCollection" | "questSynergyLabels" | "synergyScore"
+    > | null = null;
+
+    for (let idx = 0; idx < baseLineup.slots.length; idx += 1) {
+      const targetSlot = baseLineup.slots[idx];
+      const nextEvaluated = baseLineup.slots.map((s, i) =>
+        i === idx ? candEv : s.evaluated,
+      );
+
+      const inSeasonCount = nextEvaluated.filter(
+        (ev) => ev.card.inSeasonEligible,
+      ).length;
+      if (inSeasonCount < minInSeason) continue;
+
+      const starSum = nextEvaluated.reduce(
+        (sum, ev) => sum + ev.card.starCost,
+        0,
+      );
+      if (options.format === "champion_16" && starSum > 16) continue;
+      if (options.format === "contender_11" && starSum > 11) continue;
+
+      const built = assignSlotLabels(
+        nextEvaluated,
+        options.format,
+        captainBonusPct,
+      );
+      if (options.format === "daily_120_mvp" && built.capUsed > 120) continue;
+
+      const deltaLineupPts =
+        Math.round((built.totalScore - baseLineup.totalScore) * 10) / 10;
+      if (deltaLineupPts < 0.5) continue;
+
+      if (!bestSlotRec || deltaLineupPts > bestSlotRec.deltaLineupPts) {
+        bestSlotRec = {
+          listing: m,
+          slotTarget: m.inSeasonEligible ? "in_season_slot" : "classic_slot",
+          replacesCardSlug: targetSlot.evaluated.card.slug,
+          replacesPlayerName: targetSlot.evaluated.card.playerName,
+          replacesSlotLabel: targetSlot.slotLabel,
+          replacesIsInSeason: targetSlot.evaluated.card.inSeasonEligible,
+          projectedCandidateScore:
+            Math.round(candEv.effectiveScore * 10) / 10,
+          deltaLineupPts,
+          newLineupScore: built.totalScore,
+          newTotalStars: built.totalStars,
+        };
+      }
+    }
+
+    if (!bestSlotRec) continue;
+    const priceEuros = Math.max(0.25, m.priceCents / 100);
+    const ptsGainPerEuro =
+      Math.round((bestSlotRec.deltaLineupPts / priceEuros) * 10) / 10;
+    const advancesCollection = collectionNeedSlugs.has(m.playerSlug);
+    const questSynergyLabels = m.questLabels ?? [];
+    const synergyScore =
+      Math.round(
+        (bestSlotRec.deltaLineupPts +
+          (advancesCollection ? 8 : 0) +
+          questSynergyLabels.length * 4 +
+          (m.isFirstOwnerEligible ? 3 : 0)) *
+          10,
+      ) / 10;
+
+    rawRecs.push({
+      ...bestSlotRec,
+      ptsGainPerEuro,
+      advancesCollection,
+      questSynergyLabels,
+      synergyScore,
+    });
+  }
+
+  const compareRecs = (a: LineupBuyRecommendation, b: LineupBuyRecommendation) => {
+    if (options.rankMode === "max_upgrade") {
+      if (b.deltaLineupPts !== a.deltaLineupPts) {
+        return b.deltaLineupPts - a.deltaLineupPts;
+      }
+      return b.ptsGainPerEuro - a.ptsGainPerEuro;
+    }
+    if (options.rankMode === "quest_synergy") {
+      if (b.synergyScore !== a.synergyScore) {
+        return b.synergyScore - a.synergyScore;
+      }
+      return b.ptsGainPerEuro - a.ptsGainPerEuro;
+    }
+    if (b.ptsGainPerEuro !== a.ptsGainPerEuro) {
+      return b.ptsGainPerEuro - a.ptsGainPerEuro;
+    }
+    return b.deltaLineupPts - a.deltaLineupPts;
+  };
+
+  const sorted = [...rawRecs].sort(compareRecs);
+  return {
+    classicSlotBuys: sorted
+      .filter((r) => r.slotTarget === "classic_slot")
+      .slice(0, 6),
+    inSeasonSlotBuys: sorted
+      .filter((r) => r.slotTarget === "in_season_slot")
+      .slice(0, 6),
+    topOverallBuys: sorted.slice(0, 8),
+  };
+}
+
+export interface TwoCardComboSwapRecommendation {
+  outPlayers: [string, string];
+  outSlotLabels: [LineupSlotPick["slotLabel"], LineupSlotPick["slotLabel"]];
+  inCards: [
+    {
+      playerName: string;
+      starCost: number;
+      isOwned: boolean;
+      priceCents: number;
+      marketUrl: string;
+      inSeasonEligible: boolean;
+      seasonYear: number;
+    },
+    {
+      playerName: string;
+      starCost: number;
+      isOwned: boolean;
+      priceCents: number;
+      marketUrl: string;
+      inSeasonEligible: boolean;
+      seasonYear: number;
+    },
+  ];
+  totalCostCents: number;
+  deltaLineupPts: number;
+  ptsGainPerEuro: number;
+  newLineupScore: number;
+  newTotalStars: number;
+}
+
+/**
+ * Finds 2-for-2 cap-reallocation combos (e.g., downgrading a medium card to a cheap low-★
+ * enabler to unlock a high-ceiling superstar buy) when 1-for-1 swaps are star-capped.
+ */
+export function recommendTwoCardComboSwaps(
+  baseLineup: SuggestedLineup,
+  ownedCards: GalleryCard[],
+  marketListings: BargainListing[],
+  options: RecommendLineupBuysOptions,
+): TwoCardComboSwapRecommendation[] {
+  if (baseLineup.slots.length !== 5 || marketListings.length === 0) return [];
+
+  const customMap = parseCustomProjections(options.customProjectionsRaw);
+  const captainBonusPct = options.captainBonusPct ?? 0;
+  const minInSeason =
+    options.seasonRule === "5_in_season"
+      ? 5
+      : options.seasonRule === "4_in_1_classic"
+        ? 4
+        : 0;
+
+  const baseCardSlugs = new Set(baseLineup.slots.map((s) => s.evaluated.card.slug));
+  const basePlayerSlugs = new Set(
+    baseLineup.slots.map((s) => s.evaluated.card.playerSlug),
+  );
+
+  interface PoolCandidate {
+    ev: EvaluatedLineupCard;
+    isOwned: boolean;
+    priceCents: number;
+    marketUrl: string;
+  }
+
+  const byPlayerSlug = new Map<string, PoolCandidate>();
+
+  for (const c of ownedCards) {
+    if (baseCardSlugs.has(c.slug) || basePlayerSlugs.has(c.playerSlug)) continue;
+    if (options.rarityFilter !== "ALL" && c.rarity !== options.rarityFilter) continue;
+    if (options.seasonRule === "5_in_season" && !c.inSeasonEligible) continue;
+    const ev = evaluateCardForLineup(
+      c,
+      options.projectionSource,
+      customMap,
+      options.injuriesByName,
+      options.gamesPerTeam,
+    );
+    if (options.excludeOut !== false && ev.injuryStatus === "OUT") continue;
+    if (ev.effectiveScore <= 0) continue;
+    if (!byPlayerSlug.has(c.playerSlug)) {
+      byPlayerSlug.set(c.playerSlug, {
+        ev,
+        isOwned: true,
+        priceCents: 0,
+        marketUrl: `https://sorare.com/nba/cards/${c.slug}`,
+      });
+    }
+  }
+
+  for (const m of marketListings) {
+    if (m.priceCents === null || m.priceCents <= 0) continue;
+    if (
+      options.maxPriceCents !== undefined &&
+      options.maxPriceCents !== null &&
+      m.priceCents > options.maxPriceCents
+    ) {
+      continue;
+    }
+    if (options.rarityFilter !== "ALL" && m.rarity !== options.rarityFilter) continue;
+    if (options.seasonRule === "5_in_season" && !m.inSeasonEligible) continue;
+    if (basePlayerSlugs.has(m.playerSlug)) continue;
+    const prev = byPlayerSlug.get(m.playerSlug);
+    if (prev && (prev.isOwned || prev.priceCents <= m.priceCents)) continue;
+
+    const synthetic: GalleryCard = {
+      slug: m.cardSlug,
+      rarity: m.rarity,
+      seasonYear: m.seasonYear,
+      inSeasonEligible: m.inSeasonEligible,
+      grade: 1,
+      powerMultiplier: m.inSeasonEligible ? 1.05 : 1.0,
+      pictureUrl: m.pictureUrl ?? null,
+      isFirstOwner: Boolean(m.isFirstOwnerEligible || m.isPrimaryOffer),
+      teamName: m.teamName,
+      teamSlug: m.teamSlug ?? null,
+      playerSlug: m.playerSlug,
+      playerName: m.playerName,
+      positions: m.positions,
+      l10: m.l10,
+      l5: m.l5,
+      sorareClassicProjected: m.projected,
+      sorareDailyProjected: null,
+      starCost: m.starCost,
+    };
+    const ev = evaluateCardForLineup(
+      synthetic,
+      options.projectionSource,
+      customMap,
+      options.injuriesByName,
+      options.gamesPerTeam,
+    );
+    if (options.excludeOut !== false && ev.injuryStatus === "OUT") continue;
+    if (ev.effectiveScore <= 0) continue;
+    byPlayerSlug.set(m.playerSlug, {
+      ev,
+      isOwned: false,
+      priceCents: m.priceCents,
+      marketUrl: m.marketUrl,
+    });
+  }
+
+  const allCands = [...byPlayerSlug.values()].sort(
+    (a, b) => b.ev.effectiveScore - a.ev.effectiveScore,
+  );
+  const topStars = allCands.slice(0, 12);
+  const topSet = new Set(topStars.map((c) => c.ev.card.slug));
+  const enablers = allCands
+    .filter((c) => !topSet.has(c.ev.card.slug) && c.ev.card.starCost <= 2.0)
+    .slice(0, 10);
+  const pool = [...topStars, ...enablers];
+  if (pool.length < 2) return [];
+
+  const results: TwoCardComboSwapRecommendation[] = [];
+
+  for (let i = 0; i < 4; i += 1) {
+    for (let j = i + 1; j < 5; j += 1) {
+      const outA = baseLineup.slots[i];
+      const outB = baseLineup.slots[j];
+      const kept3 = baseLineup.slots
+        .filter((_, idx) => idx !== i && idx !== j)
+        .map((s) => s.evaluated);
+
+      for (let a = 0; a < pool.length - 1; a += 1) {
+        const candA = pool[a];
+        for (let b = a + 1; b < pool.length; b += 1) {
+          const candB = pool[b];
+          if (candA.ev.card.playerSlug === candB.ev.card.playerSlug) continue;
+          if (candA.isOwned && candB.isOwned) continue;
+
+          const totalCostCents = candA.priceCents + candB.priceCents;
+          if (
+            options.maxPriceCents !== undefined &&
+            options.maxPriceCents !== null &&
+            totalCostCents > options.maxPriceCents
+          ) {
+            continue;
+          }
+
+          const combo5 = [...kept3, candA.ev, candB.ev];
+          const inSeasonCount = combo5.filter(
+            (ev) => ev.card.inSeasonEligible,
+          ).length;
+          if (inSeasonCount < minInSeason) continue;
+
+          const starSum = combo5.reduce((s, ev) => s + ev.card.starCost, 0);
+          if (options.format === "champion_16" && starSum > 16) continue;
+          if (options.format === "contender_11" && starSum > 11) continue;
+
+          const built = assignSlotLabels(
+            combo5,
+            options.format,
+            captainBonusPct,
+          );
+          if (options.format === "daily_120_mvp" && built.capUsed > 120) {
+            continue;
+          }
+
+          const deltaLineupPts =
+            Math.round((built.totalScore - baseLineup.totalScore) * 10) / 10;
+          if (deltaLineupPts < 2.0) continue;
+
+          const ptsGainPerEuro =
+            Math.round(
+              (deltaLineupPts / Math.max(0.25, totalCostCents / 100)) * 10,
+            ) / 10;
+
+          results.push({
+            outPlayers: [
+              outA.evaluated.card.playerName,
+              outB.evaluated.card.playerName,
+            ],
+            outSlotLabels: [outA.slotLabel, outB.slotLabel],
+            inCards: [
+              {
+                playerName: candA.ev.card.playerName,
+                starCost: candA.ev.card.starCost,
+                isOwned: candA.isOwned,
+                priceCents: candA.priceCents,
+                marketUrl: candA.marketUrl,
+                inSeasonEligible: candA.ev.card.inSeasonEligible,
+                seasonYear: candA.ev.card.seasonYear,
+              },
+              {
+                playerName: candB.ev.card.playerName,
+                starCost: candB.ev.card.starCost,
+                isOwned: candB.isOwned,
+                priceCents: candB.priceCents,
+                marketUrl: candB.marketUrl,
+                inSeasonEligible: candB.ev.card.inSeasonEligible,
+                seasonYear: candB.ev.card.seasonYear,
+              },
+            ],
+            totalCostCents,
+            deltaLineupPts,
+            ptsGainPerEuro,
+            newLineupScore: built.totalScore,
+            newTotalStars: built.totalStars,
+          });
+        }
+      }
+    }
+  }
+
+  results.sort((a, b) =>
+    options.rankMode === "best_value"
+      ? b.ptsGainPerEuro - a.ptsGainPerEuro ||
+        b.deltaLineupPts - a.deltaLineupPts
+      : b.deltaLineupPts - a.deltaLineupPts ||
+        b.ptsGainPerEuro - a.ptsGainPerEuro,
+  );
+
+  const uniqueCombos: TwoCardComboSwapRecommendation[] = [];
+  const seenPairs = new Set<string>();
+  for (const r of results) {
+    const sig = [r.inCards[0].playerName, r.inCards[1].playerName]
+      .sort()
+      .join("|");
+    if (seenPairs.has(sig)) continue;
+    seenPairs.add(sig);
+    uniqueCombos.push(r);
+    if (uniqueCombos.length >= 3) break;
+  }
+
+  return uniqueCombos;
+}

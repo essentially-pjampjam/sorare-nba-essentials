@@ -1,0 +1,644 @@
+import { describe, expect, it } from "vitest";
+import {
+  buildBudgetLineups,
+  compareCurrentVsOptimalLineups,
+  computeStarCost,
+  evaluateStarTierShift,
+  evaluateVaultVsSellRoi,
+  generateTopLineups,
+  optimizeMultiCompetitionPortfolio,
+  parseCustomProjections,
+  recommendBestFormat,
+  recommendLineupMarketBuys,
+  recommendTwoCardComboSwaps,
+} from "./lineupOptimizerMath";
+import type {
+  BargainListing,
+  CurrentLineupEntry,
+  GalleryCard,
+  InjuryReportEntry,
+} from "../shared/types";
+
+function makeCard(
+  playerSlug: string,
+  playerName: string,
+  l10: number,
+  proj: number,
+  overrides: Partial<GalleryCard> = {},
+): GalleryCard {
+  return {
+    slug: `${playerSlug}-card`,
+    rarity: "limited",
+    seasonYear: 2026,
+    inSeasonEligible: true,
+    grade: 1,
+    powerMultiplier: 1.06,
+    teamName: "Charlotte Hornets",
+    teamSlug: "charlotte-hornets",
+    playerSlug,
+    playerName,
+    positions: ["basketball_guard"],
+    l10,
+    l5: l10 + 2,
+    sorareClassicProjected: proj,
+    sorareDailyProjected: null,
+    starCost: computeStarCost(l10),
+    ...overrides,
+  };
+}
+
+describe("lineupOptimizerMath", () => {
+  it("builds valid Champion 16-star lineups, excludes OUT players, and calculates odds", () => {
+    const cards: GalleryCard[] = [
+      makeCard("p1", "Star One", 50, 52), // 5.0 stars
+      makeCard("p2", "Star Two", 44, 46), // 4.5 stars
+      makeCard("p3", "Starter Three", 28, 30), // 3.0 stars
+      makeCard("p4", "Role Four", 18, 22), // 2.0 stars
+      makeCard("p5", "Value Five", 12, 16), // 1.5 stars -> total = 16.0 stars!
+      makeCard("p6", "Injured Ace", 52, 55), // OUT via ESPN -> must be excluded
+      makeCard("p7", "Bench Six", 14, 15), // 1.5 stars
+    ];
+
+    const injuries: Record<string, InjuryReportEntry> = {
+      "injured ace": {
+        playerName: "Injured Ace",
+        normalizedName: "injured ace",
+        teamName: "Charlotte Hornets",
+        status: "OUT",
+        rawStatus: "Out",
+        comment: "Out for Tuesday",
+      },
+    };
+
+    const { lineups } = generateTopLineups(cards, {
+      format: "champion_16",
+      rarityFilter: "limited",
+      projectionSource: "sorare_projected",
+      customProjectionsRaw: "",
+      injuriesByName: injuries,
+      gamesPerTeam: {},
+      excludeOut: true,
+      excludeQuestionable: false,
+      inSeasonOnly: true,
+      minInSeasonCards: 0,
+      disjointAcrossLineups: false,
+      maxLineups: 2,
+    });
+
+    expect(lineups.length).toBeGreaterThanOrEqual(1);
+    const best = lineups[0];
+    expect(best.totalStars).toBeLessThanOrEqual(16);
+    expect(best.slots).toHaveLength(5);
+    expect(
+      best.slots.some((s) => s.evaluated.card.playerSlug === "p6"),
+    ).toBe(false);
+    expect(best.odds.essencePct).toBeGreaterThan(0);
+    expect(best.odds.essencePct).toBeGreaterThanOrEqual(best.odds.tier1Pct);
+  });
+
+  it("supports switching to external custom CSV projections and Daily 120 + MVP format", () => {
+    const cards: GalleryCard[] = [
+      makeCard("mvp", "Big MVP", 60, 40),
+      makeCard("a", "Guard A", 35, 30),
+      makeCard("b", "Guard B", 30, 30),
+      makeCard("c", "Guard C", 25, 30),
+      makeCard("d", "Guard D", 25, 30), // 4 non-MVP sum = 115 <= 120!
+      makeCard("e", "Expensive E", 45, 30),
+    ];
+
+    const customCsv = "Big MVP, 72\nGuard A, 42";
+    const parsed = parseCustomProjections(customCsv);
+    expect(parsed.get("big mvp")).toBe(72);
+
+    const { lineups } = generateTopLineups(cards, {
+      format: "daily_120_mvp",
+      rarityFilter: "ALL",
+      projectionSource: "custom_csv",
+      customProjectionsRaw: customCsv,
+      injuriesByName: {},
+      gamesPerTeam: {},
+      excludeOut: true,
+      excludeQuestionable: false,
+      inSeasonOnly: false,
+      minInSeasonCards: 0,
+      disjointAcrossLineups: true,
+      maxLineups: 1,
+    });
+
+    expect(lineups).toHaveLength(1);
+    expect(lineups[0].capUsed).toBeLessThanOrEqual(120);
+    expect(lineups[0].slots[0].slotLabel).toBe("MVP");
+    expect(lineups[0].slots[0].evaluated.card.playerSlug).toBe("mvp");
+  });
+
+  it("prioritizes Contender 11-star when user has few elite 4-star+ cards and suggests upgrades", () => {
+    const budgetCards: GalleryCard[] = [
+      makeCard("a", "Mid Ace", 28, 30), // 3.0★
+      makeCard("b", "Solid Two", 22, 24), // 2.5★
+      makeCard("c", "Solid Three", 18, 22), // 2.0★
+      makeCard("d", "Role Four", 14, 19), // 1.5★
+      makeCard("e", "Value Five", 12, 18), // 1.5★ -> sum 10.5★ <= 11★, proj ~125
+      makeCard("f", "Upgrade Bench", 24, 28), // 2.5★
+    ];
+
+    const rec = recommendBestFormat(budgetCards, {
+      rarityFilter: "limited",
+      projectionSource: "sorare_projected",
+      customProjectionsRaw: "",
+      injuriesByName: {},
+      gamesPerTeam: {},
+      excludeOut: true,
+      excludeQuestionable: false,
+      inSeasonOnly: false,
+      minInSeasonCards: 0,
+      disjointAcrossLineups: false,
+    });
+
+    expect(rec.recommendedFormat).toBe("contender_11");
+    expect(rec.eliteCardCount).toBe(0);
+
+    const contenderCandidate = rec.candidates.find(
+      (c) => c.format === "contender_11",
+    );
+    expect(contenderCandidate?.essencePct).toBeGreaterThan(50);
+
+    const submitted: CurrentLineupEntry[] = [
+      {
+        id: "ln-1",
+        name: "My Daily",
+        leaderboardSlug: "nba-daily-120-limited",
+        leaderboardName: "Limited Daily Pickup 120",
+        draft: false,
+        cardSlugs: ["a-card", "b-card", "c-card", "d-card", "e-card"],
+        captainCardSlug: "e-card",
+      },
+      {
+        id: "ln-2",
+        name: "My Contender",
+        leaderboardSlug: "nba-contender-limited",
+        leaderboardName: "Limited Contender",
+        draft: false,
+        cardSlugs: ["a-card", "b-card", "c-card", "d-card", "e-card"],
+        captainCardSlug: "e-card",
+      },
+    ];
+    const cmps = compareCurrentVsOptimalLineups(submitted, budgetCards, {
+      rarityFilter: "limited",
+      projectionSource: "sorare_projected",
+      customProjectionsRaw: "",
+      injuriesByName: {},
+      gamesPerTeam: {},
+      excludeOut: true,
+      excludeQuestionable: false,
+      inSeasonOnly: false,
+      minInSeasonCards: 0,
+      disjointAcrossLineups: false,
+    });
+
+    expect(cmps).toHaveLength(2);
+    expect(cmps[0].betterCaptainName).toBe("Mid Ace");
+    expect(cmps[1].betterCaptainName).toBeNull();
+  });
+
+  it("evaluates L10 star tier shifts for value locks and cap drops", () => {
+    expect(evaluateStarTierShift(18, 30)).toEqual({
+      currentStars: 2.0,
+      projectedStars: 3.0,
+      direction: "value_lock",
+      label: "2★→3★ Form",
+    });
+
+    const drop = evaluateStarTierShift(24, 14);
+    expect(drop.direction).toBe("cap_drop");
+    expect(drop.currentStars).toBe(2.5);
+    expect(drop.projectedStars).toBe(1.5);
+    expect(drop.label).toBe("2.5★→1.5★ Drop");
+
+    expect(evaluateStarTierShift(18, 19).direction).toBe("stable");
+  });
+
+  it("builds hybrid budget lineups from owned cards and affordable market listings under caps", () => {
+    const ownedCards: GalleryCard[] = [
+      makeCard("owned-g", "Owned Guard", 26, 30, {
+        positions: ["basketball_guard"],
+      }), // 3.0★
+      makeCard("owned-f", "Owned Forward", 22, 26, {
+        positions: ["basketball_forward"],
+      }), // 2.5★
+      makeCard("owned-c", "Owned Center", 18, 22, {
+        positions: ["basketball_center"],
+      }), // 2.0★
+    ];
+
+    const makeDeal = (
+      slug: string,
+      name: string,
+      pos: GalleryCard["positions"],
+      l10: number,
+      projected: number,
+      priceCents: number,
+      isPrimaryOffer = false,
+    ): BargainListing => ({
+      cardSlug: `${slug}-market`,
+      assetId: `asset-${slug}`,
+      playerSlug: slug,
+      playerName: name,
+      teamName: "Orlando Magic",
+      teamSlug: "orlando-magic",
+      isPrimaryOffer,
+      isFirstOwnerEligible: isPrimaryOffer,
+      positions: pos,
+      rarity: "limited",
+      seasonYear: 2026,
+      inSeasonEligible: true,
+      l10,
+      l5: l10 + 1,
+      projected,
+      starCost: computeStarCost(l10),
+      saleType: "instant_buy",
+      priceCents,
+      currency: "EUR",
+      endDate: null,
+      bidsCount: null,
+      centsPerL10: Math.round(priceCents / Math.max(l10, 1)),
+      valueScore: projected,
+      marketUrl: `https://sorare.com/nba/cards/${slug}-market`,
+    });
+
+    const marketListings: BargainListing[] = [
+      makeDeal("cheap-f", "Budget Forward", ["basketball_forward"], 16, 21, 350, true), // 2.0★, €3.50
+      makeDeal("cheap-g", "Budget Guard", ["basketball_guard"], 12, 17, 250, false), // 1.5★, €2.50 -> sum 11.0★, cost €6.00
+      makeDeal("pricey-mvp", "Too Expensive Star", ["basketball_center"], 16, 40, 2500, true), // €25 > €10 budget
+    ];
+
+    const picks = buildBudgetLineups(ownedCards, marketListings, {
+      format: "contender_11",
+      rarityFilter: "limited",
+      projectionSource: "sorare_projected",
+      customProjectionsRaw: "",
+      injuriesByName: {},
+      gamesPerTeam: {},
+      budgetCents: 1000,
+      includeOwned: true,
+      inSeasonOnly: true,
+    });
+
+    expect(picks.length).toBeGreaterThan(0);
+    const best = picks[0];
+    expect(best.totalStars).toBeLessThanOrEqual(11);
+    expect(best.totalCostCents).toBe(600);
+    expect(best.remainingBudgetCents).toBe(400);
+    expect(best.marketBuysCount).toBe(2);
+    expect(best.slots.some((s) => s.evaluated.card.playerSlug === "pricey-mvp")).toBe(false);
+    expect(best.slotCostBySlug["owned-g-card"]?.isOwned).toBe(true);
+    expect(best.slotCostBySlug["cheap-f-market"]?.isPrimaryOffer).toBe(true);
+    expect(best.slotCostBySlug["cheap-g-market"]?.costCents).toBe(250);
+  });
+
+  it("advises Seal vs Sell Cash ROI for prior-season cards", () => {
+    const cheapVeteran = makeCard("vet-seal", "Veteran Seal", 22, 23, {
+      inSeasonEligible: false,
+      seasonYear: 2024,
+      isFirstOwner: true,
+      lowestAskCents: 90,
+    });
+    expect(evaluateVaultVsSellRoi(cheapVeteran).action).toBe("SEAL_VAULT");
+
+    const liquidRole = makeCard("vet-sell", "Liquid Role", 20, 21, {
+      inSeasonEligible: false,
+      seasonYear: 2024,
+      lowestAskCents: 450,
+    });
+    expect(evaluateVaultVsSellRoi(liquidRole).action).toBe("SELL_CASH");
+  });
+
+  it("jointly optimizes disjoint lineups across multiple competitions", () => {
+    const deepRoster: GalleryCard[] = [
+      makeCard("p1", "Ace One", 42, 46, { positions: ["basketball_guard"] }),
+      makeCard("p2", "Ace Two", 38, 42, { positions: ["basketball_forward"] }),
+      makeCard("p3", "Ace Three", 30, 35, { positions: ["basketball_center"] }),
+      makeCard("p4", "Mid One", 24, 28, { positions: ["basketball_guard"] }),
+      makeCard("p5", "Mid Two", 22, 26, { positions: ["basketball_forward"] }),
+      makeCard("p6", "Mid Three", 20, 25, { positions: ["basketball_center"] }),
+      makeCard("p7", "Val One", 18, 22, { positions: ["basketball_guard"] }),
+      makeCard("p8", "Val Two", 16, 20, { positions: ["basketball_forward"] }),
+      makeCard("p9", "Val Three", 15, 19, { positions: ["basketball_center"] }),
+      makeCard("p10", "Min One", 12, 17, { positions: ["basketball_guard"] }),
+    ];
+
+    const portfolio = optimizeMultiCompetitionPortfolio(
+      deepRoster,
+      {
+        rarityFilter: "limited",
+        projectionSource: "sorare_projected",
+        customProjectionsRaw: "",
+        injuriesByName: {},
+        gamesPerTeam: {},
+        excludeOut: true,
+        excludeQuestionable: false,
+        inSeasonOnly: true,
+        minInSeasonCards: 0,
+      },
+      ["champion_16", "contender_11"],
+    );
+
+    expect(portfolio.lineups).toHaveLength(2);
+    expect(portfolio.cardsUsedCount).toBe(10);
+    const usedSlugs = portfolio.lineups.flatMap((l) =>
+      l.slots.map((s) => s.evaluated.card.slug),
+    );
+    expect(new Set(usedSlugs).size).toBe(10);
+    expect(portfolio.atLeastOneEssencePct).toBeGreaterThan(0);
+  });
+
+  it("enforces 4 In-Season + 1 Classic in buildBudgetLineups and ranks dual Classic vs In-Season buys", () => {
+    const ownedCards: GalleryCard[] = [
+      makeCard("in-1", "In Guard One", 22, 26, {
+        inSeasonEligible: true,
+        positions: ["basketball_guard"],
+      }), // 2.5★
+      makeCard("in-2", "In Forward One", 20, 24, {
+        inSeasonEligible: true,
+        positions: ["basketball_forward"],
+      }), // 2.0★
+      makeCard("in-3", "In Center One", 18, 22, {
+        inSeasonEligible: true,
+        positions: ["basketball_center"],
+      }), // 2.0★
+      makeCard("in-4", "In Guard Two", 16, 18, {
+        inSeasonEligible: true,
+        positions: ["basketball_guard"],
+      }), // 2.0★
+      makeCard("in-5", "Weak In Five", 11, 13, {
+        inSeasonEligible: true,
+        positions: ["basketball_forward"],
+      }), // 1.5★
+    ];
+
+    const classicSteal: BargainListing = {
+      cardSlug: "classic-vet-card",
+      assetId: "a-classic",
+      playerSlug: "classic-vet",
+      playerName: "Classic Vet Steal",
+      teamName: "Miami Heat",
+      teamSlug: "miami-heat",
+      positions: ["basketball_forward"],
+      rarity: "limited",
+      seasonYear: 2024,
+      inSeasonEligible: false,
+      l10: 18,
+      l5: 25,
+      projected: 27,
+      starCost: 2.0,
+      saleType: "instant_buy",
+      priceCents: 120,
+      currency: "EUR",
+      endDate: null,
+      bidsCount: null,
+      centsPerL10: 7,
+      valueScore: 27,
+      marketUrl: "https://sorare.com/nba/cards/classic-vet-card",
+    };
+
+    const inSeasonUpgrade: BargainListing = {
+      cardSlug: "inseason-rookie-card",
+      assetId: "a-in",
+      playerSlug: "inseason-rookie",
+      playerName: "InSeason Rookie Upgrade",
+      teamName: "Orlando Magic",
+      teamSlug: "orlando-magic",
+      isPrimaryOffer: true,
+      isFirstOwnerEligible: true,
+      questLabels: ["Draft 26'"],
+      positions: ["basketball_forward"],
+      rarity: "limited",
+      seasonYear: 2026,
+      inSeasonEligible: true,
+      l10: 18,
+      l5: 22,
+      projected: 29,
+      starCost: 2.0,
+      saleType: "instant_buy",
+      priceCents: 450,
+      currency: "EUR",
+      endDate: null,
+      bidsCount: null,
+      centsPerL10: 25,
+      valueScore: 29,
+      marketUrl: "https://sorare.com/nba/cards/inseason-rookie-card",
+    };
+
+    const budgetPicks = buildBudgetLineups(
+      ownedCards,
+      [classicSteal, inSeasonUpgrade],
+      {
+        format: "contender_11",
+        rarityFilter: "limited",
+        projectionSource: "sorare_projected",
+        customProjectionsRaw: "",
+        injuriesByName: {},
+        gamesPerTeam: {},
+        budgetCents: 200,
+        includeOwned: true,
+        inSeasonOnly: false,
+        minInSeasonCards: 4,
+      },
+    );
+
+    expect(budgetPicks.length).toBeGreaterThan(0);
+    expect(budgetPicks[0].inSeasonCount).toBe(4);
+    expect(
+      budgetPicks[0].slots.some(
+        (s) => s.evaluated.card.playerSlug === "classic-vet",
+      ),
+    ).toBe(true);
+
+    const baseLineup = generateTopLineups(ownedCards, {
+      format: "contender_11",
+      rarityFilter: "limited",
+      projectionSource: "sorare_projected",
+      customProjectionsRaw: "",
+      injuriesByName: {},
+      gamesPerTeam: {},
+      excludeOut: true,
+      excludeQuestionable: false,
+      inSeasonOnly: true,
+      minInSeasonCards: 5,
+      disjointAcrossLineups: false,
+      maxLineups: 1,
+    }).lineups[0];
+    expect(baseLineup).toBeDefined();
+
+    const valueRecs = recommendLineupMarketBuys(
+      baseLineup,
+      new Set(ownedCards.map((c) => c.playerSlug)),
+      new Set(["inseason-rookie"]),
+      [classicSteal, inSeasonUpgrade],
+      {
+        format: "contender_11",
+        rarityFilter: "limited",
+        seasonRule: "4_in_1_classic",
+        rankMode: "best_value",
+        projectionSource: "sorare_projected",
+        customProjectionsRaw: "",
+        injuriesByName: {},
+        gamesPerTeam: {},
+      },
+    );
+    expect(valueRecs.classicSlotBuys).toHaveLength(1);
+    expect(valueRecs.inSeasonSlotBuys).toHaveLength(1);
+    expect(valueRecs.topOverallBuys[0].listing.playerSlug).toBe("classic-vet");
+
+    const maxRecs = recommendLineupMarketBuys(
+      baseLineup,
+      new Set(ownedCards.map((c) => c.playerSlug)),
+      new Set(["inseason-rookie"]),
+      [classicSteal, inSeasonUpgrade],
+      {
+        format: "contender_11",
+        rarityFilter: "limited",
+        seasonRule: "4_in_1_classic",
+        rankMode: "max_upgrade",
+        projectionSource: "sorare_projected",
+        customProjectionsRaw: "",
+        injuriesByName: {},
+        gamesPerTeam: {},
+      },
+    );
+    expect(maxRecs.topOverallBuys[0].listing.playerSlug).toBe(
+      "inseason-rookie",
+    );
+
+    const synergyRecs = recommendLineupMarketBuys(
+      baseLineup,
+      new Set(ownedCards.map((c) => c.playerSlug)),
+      new Set(["inseason-rookie"]),
+      [classicSteal, inSeasonUpgrade],
+      {
+        format: "contender_11",
+        rarityFilter: "limited",
+        seasonRule: "4_in_1_classic",
+        rankMode: "quest_synergy",
+        projectionSource: "sorare_projected",
+        customProjectionsRaw: "",
+        injuriesByName: {},
+        gamesPerTeam: {},
+      },
+    );
+    expect(synergyRecs.topOverallBuys[0].advancesCollection).toBe(true);
+    expect(synergyRecs.topOverallBuys[0].questSynergyLabels).toContain(
+      "Draft 26'",
+    );
+  });
+
+  it("finds 2-card cap-reallocation combo swaps when a star requires downsizing another slot", () => {
+    const cappedLineupCards: GalleryCard[] = [
+      makeCard("b1", "Guard Cap", 22, 24, {
+        inSeasonEligible: true,
+        positions: ["basketball_guard"],
+      }), // 2.5★
+      makeCard("b2", "Forward Cap", 22, 23, {
+        inSeasonEligible: true,
+        positions: ["basketball_forward"],
+      }), // 2.5★
+      makeCard("b3", "Center Cap", 21, 22, {
+        inSeasonEligible: true,
+        positions: ["basketball_center"],
+      }), // 2.5★
+      makeCard("b4", "Guard Four", 16, 18, {
+        inSeasonEligible: true,
+        positions: ["basketball_guard"],
+      }), // 2.0★
+      makeCard("b5", "Forward Five", 12, 14, {
+        inSeasonEligible: true,
+        positions: ["basketball_forward"],
+      }), // 1.5★ -> exact 11.0★ cap
+    ];
+
+    const baseLineup = generateTopLineups(cappedLineupCards, {
+      format: "contender_11",
+      rarityFilter: "limited",
+      projectionSource: "sorare_projected",
+      customProjectionsRaw: "",
+      injuriesByName: {},
+      gamesPerTeam: {},
+      excludeOut: true,
+      excludeQuestionable: false,
+      inSeasonOnly: true,
+      minInSeasonCards: 5,
+      disjointAcrossLineups: false,
+      maxLineups: 1,
+    }).lineups[0];
+
+    const superstarClassic: BargainListing = {
+      cardSlug: "superstar-classic-card",
+      assetId: "a-ss",
+      playerSlug: "superstar-classic",
+      playerName: "Superstar Classic",
+      teamName: "Boston Celtics",
+      teamSlug: "boston-celtics",
+      positions: ["basketball_guard"],
+      rarity: "limited",
+      seasonYear: 2024,
+      inSeasonEligible: false,
+      l10: 30,
+      l5: 36,
+      projected: 44,
+      starCost: 3.0,
+      saleType: "instant_buy",
+      priceCents: 300,
+      currency: "EUR",
+      endDate: null,
+      bidsCount: null,
+      centsPerL10: 10,
+      valueScore: 44,
+      marketUrl: "https://sorare.com/nba/cards/superstar-classic-card",
+    };
+
+    const cheapEnablerInSeason: BargainListing = {
+      cardSlug: "cheap-enabler-card",
+      assetId: "a-ce",
+      playerSlug: "cheap-enabler",
+      playerName: "Cheap Enabler",
+      teamName: "Orlando Magic",
+      teamSlug: "orlando-magic",
+      positions: ["basketball_forward"],
+      rarity: "limited",
+      seasonYear: 2026,
+      inSeasonEligible: true,
+      l10: 10,
+      l5: 13,
+      projected: 16,
+      starCost: 1.0,
+      saleType: "instant_buy",
+      priceCents: 90,
+      currency: "EUR",
+      endDate: null,
+      bidsCount: null,
+      centsPerL10: 9,
+      valueScore: 16,
+      marketUrl: "https://sorare.com/nba/cards/cheap-enabler-card",
+    };
+
+    const combos = recommendTwoCardComboSwaps(
+      baseLineup,
+      cappedLineupCards,
+      [superstarClassic, cheapEnablerInSeason],
+      {
+        format: "contender_11",
+        rarityFilter: "limited",
+        seasonRule: "4_in_1_classic",
+        rankMode: "max_upgrade",
+        projectionSource: "sorare_projected",
+        customProjectionsRaw: "",
+        injuriesByName: {},
+        gamesPerTeam: {},
+      },
+    );
+
+    expect(combos.length).toBeGreaterThan(0);
+    expect(combos[0].newTotalStars).toBeLessThanOrEqual(11);
+    expect(combos[0].deltaLineupPts).toBeGreaterThan(10);
+    expect(combos[0].totalCostCents).toBe(390);
+  });
+});

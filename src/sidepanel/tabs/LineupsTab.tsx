@@ -1,0 +1,2300 @@
+import {
+  Activity,
+  ArrowLeftRight,
+  ArrowRight,
+  Calendar,
+  Check,
+  ChevronRight,
+  Copy,
+  Crown,
+  ExternalLink,
+  FileSpreadsheet,
+  Flame,
+  HeartPulse,
+  Layers,
+  Lock,
+  Send,
+  SlidersHorizontal,
+  Snowflake,
+  Sparkles,
+  Target,
+  Timer,
+  TrendingUp,
+  Trophy,
+  Wallet,
+  Wand2,
+  Zap,
+} from "lucide-react";
+import { useMemo, useState } from "react";
+import {
+  buildSetTeams,
+  rankDailyPickerCandidates,
+  type SetBuildMode,
+} from "../../calculators/commonSetMath";
+import {
+  buildBudgetLineups,
+  compareCurrentVsOptimalLineups,
+  generateTopLineups,
+  optimizeMultiCompetitionPortfolio,
+  recommendBestFormat,
+  recommendLineupMarketBuys,
+  recommendTwoCardComboSwaps,
+  type BuyAdvisorRankMode,
+  type LineupBuyRecommendation,
+  type LineupSeasonRule,
+  type LineupSlotPick,
+} from "../../calculators/lineupOptimizerMath";
+import { buildTeamOutStarMap } from "../../calculators/questOptimizerMath";
+import { BOOSTING_GUIDE_RULES, NBA_POSITION_LABELS } from "../../shared/constants";
+import type {
+  BargainListing,
+  BargainsResult,
+  Currency,
+  GalleryResult,
+  InjuryStatus,
+  LineupFormat,
+  ProjectionSource,
+  Rarity,
+  WalletBalanceInfo,
+} from "../../shared/types";
+import { applyLineupHighlight, openInActiveTab } from "../api";
+import { HeadToHeadCompareBox } from "../components/HeadToHeadCompareBox";
+import { PlayerCardRow } from "../components/PlayerCardRow";
+import { formatMoney, formatTimeLeft } from "../utils/format";
+
+interface LineupsTabProps {
+  gallery: GalleryResult | null;
+  bargains?: BargainsResult | null;
+  allScannedBargains?: BargainListing[];
+  collectionNeedSlugs?: Set<string>;
+  walletBalance?: WalletBalanceInfo;
+  currency?: Currency;
+  activeRarity: Rarity;
+  projectionSource: ProjectionSource;
+  customProjectionsRaw: string;
+  hasUsername: boolean;
+  isLoading: boolean;
+  isMarketLoading?: boolean;
+  onUpdateProjectionSource: (source: ProjectionSource) => void;
+  onSaveCustomProjections: (raw: string) => void;
+  onLoadGallery: (forceRefresh?: boolean) => void;
+  onScanMarketForBudget?: () => void;
+}
+
+const FORMAT_OPTIONS: Array<{ id: LineupFormat; label: string; sub: string }> = [
+  { id: "champion_16", label: "Champion", sub: "16★ Cap" },
+  { id: "contender_11", label: "Contender", sub: "11★ Cap" },
+  { id: "daily_120_mvp", label: "Daily Pickup", sub: "120 + MVP" },
+  { id: "uncapped", label: "Uncapped", sub: "Raw Best" },
+];
+
+const SOURCE_OPTIONS: Array<{ id: ProjectionSource; label: string }> = [
+  { id: "blended_smart", label: "Smart Consensus (Inj-Adj)" },
+  { id: "sorare_projected", label: "Sorare Fixture Predictor" },
+  { id: "sorare_l10", label: "Sorare L10 Baseline" },
+  { id: "sorare_l5", label: "Sorare L5 Recent Form" },
+  { id: "custom_csv", label: "External CSV / Custom Paste" },
+];
+
+function slotBadgeClass(slotLabel: LineupSlotPick["slotLabel"]): string {
+  switch (slotLabel) {
+    case "MVP":
+      return "border-amber-400/50 bg-amber-400/20 text-amber-200";
+    case "G":
+      return "border-sky-400/45 bg-sky-500/15 text-sky-200";
+    case "F":
+      return "border-emerald-400/45 bg-emerald-500/15 text-emerald-200";
+    case "C":
+    case "FLEX":
+    default:
+      return "border-violet-400/45 bg-violet-500/15 text-violet-200";
+  }
+}
+
+function injuryBadge(status: InjuryStatus): {
+  label: string;
+  cls: string;
+} | null {
+  switch (status) {
+    case "OUT":
+      return {
+        label: "OUT",
+        cls: "border-rose-400/50 bg-rose-500/20 text-rose-200",
+      };
+    case "DOUBTFUL":
+      return {
+        label: "DBT",
+        cls: "border-rose-400/40 bg-rose-500/15 text-rose-200",
+      };
+    case "QUESTIONABLE":
+    case "DAY_TO_DAY":
+      return {
+        label: "GTD",
+        cls: "border-amber-400/45 bg-amber-500/15 text-amber-200",
+      };
+    case "ACTIVE":
+    default:
+      return null;
+  }
+}
+
+function dvpTagClass(tag: "EASY" | "NEUTRAL" | "TOUGH"): string {
+  if (tag === "EASY") {
+    return "border-emerald-400/35 bg-emerald-500/15 text-emerald-300";
+  }
+  if (tag === "TOUGH") {
+    return "border-rose-400/35 bg-rose-500/15 text-rose-300";
+  }
+  return "border-white/10 bg-white/5 text-slate-300";
+}
+
+function primaryPosKey(positions: readonly string[]): "G" | "F" | "C" {
+  const first = positions[0] ?? "";
+  if (first === "basketball_center") return "C";
+  if (first === "basketball_forward") return "F";
+  return "G";
+}
+
+export function LineupsTab({
+  gallery,
+  bargains,
+  allScannedBargains = [],
+  collectionNeedSlugs,
+  walletBalance,
+  currency = "EUR",
+  activeRarity,
+  projectionSource,
+  customProjectionsRaw,
+  hasUsername,
+  isLoading,
+  isMarketLoading = false,
+  onUpdateProjectionSource,
+  onSaveCustomProjections,
+  onLoadGallery,
+  onScanMarketForBudget,
+}: LineupsTabProps) {
+  const [arenaMode, setArenaMode] = useState<"pro" | "set_common">("pro");
+  const [format, setFormat] = useState<LineupFormat>("contender_11");
+  const [rarityScope, setRarityScope] = useState<Rarity | "ALL">(activeRarity);
+  const [excludeOut, setExcludeOut] = useState(true);
+  const [excludeQuestionable, setExcludeQuestionable] = useState(false);
+  const [seasonRule, setSeasonRule] =
+    useState<LineupSeasonRule>("4_in_1_classic");
+  const [buyRankMode, setBuyRankMode] =
+    useState<BuyAdvisorRankMode>("best_value");
+  const [buyMaxPriceEuros, setBuyMaxPriceEuros] = useState<string>("");
+  const [buySlotFilter, setBuySlotFilter] = useState<
+    "split" | "classic" | "in_season"
+  >("split");
+  const [compareSlugs, setCompareSlugs] = useState<string[]>([]);
+  const [disjointLineups, setDisjointLineups] = useState(true);
+  const [excludeSubmittedCards, setExcludeSubmittedCards] = useState(false);
+  const [excludedCardSlugs, setExcludedCardSlugs] = useState<string[]>([]);
+  const [expandedSlotSlug, setExpandedSlotSlug] = useState<string | null>(null);
+  const [setBuildMode, setSetBuildMode] = useState<SetBuildMode>("solo");
+  const [setTeamCount, setSetTeamCount] = useState<number>(4);
+  const [showCustomEditor, setShowCustomEditor] = useState(false);
+  const [customDraft, setCustomDraft] = useState(customProjectionsRaw);
+  const [copiedRank, setCopiedRank] = useState<number | null>(null);
+  const [buildSeed, setBuildSeed] = useState(0);
+  const [budgetCents, setBudgetCents] = useState<number>(1000);
+  const [includeOwnedInBudget, setIncludeOwnedInBudget] = useState<boolean>(true);
+
+  const strictInSeasonOnly = seasonRule === "5_in_season";
+  const minInSeasonCards =
+    seasonRule === "5_in_season" ? 5 : seasonRule === "4_in_1_classic" ? 4 : 0;
+
+  const toggleCompareCard = (slug: string) => {
+    setCompareSlugs((prev) => {
+      if (prev.includes(slug)) return prev.filter((s) => s !== slug);
+      if (prev.length >= 2) return [prev[1], slug];
+      return [...prev, slug];
+    });
+  };
+
+  const openFixture =
+    gallery?.fixtures.find((f) => f.aasmState === "opened") ??
+    gallery?.fixtures[0] ??
+    null;
+
+  const teamOutBoostMap = useMemo(() => {
+    if (!gallery) return {};
+    return buildTeamOutStarMap(
+      [...gallery.cards, ...(gallery.commonCards ?? [])],
+      gallery.injuriesByName,
+    );
+  }, [gallery]);
+
+  const submittedCardsCount = useMemo(() => {
+    if (!gallery) return 0;
+    return gallery.cards.filter(
+      (c) => c.openedLineupIds && c.openedLineupIds.length > 0,
+    ).length;
+  }, [gallery]);
+
+  const formatRec = useMemo(() => {
+    if (!gallery) return null;
+    return recommendBestFormat(gallery.cards, {
+      rarityFilter: rarityScope,
+      projectionSource,
+      customProjectionsRaw,
+      injuriesByName: gallery.injuriesByName,
+      gamesPerTeam: gallery.gamesPerTeam,
+      excludeOut,
+      excludeQuestionable,
+      inSeasonOnly: strictInSeasonOnly,
+      minInSeasonCards,
+      disjointAcrossLineups: disjointLineups,
+      captainBonusPct: 0,
+    });
+  }, [
+    customProjectionsRaw,
+    disjointLineups,
+    excludeOut,
+    excludeQuestionable,
+    gallery,
+    minInSeasonCards,
+    projectionSource,
+    rarityScope,
+    strictInSeasonOnly,
+  ]);
+
+  const currentLineupComparisons = useMemo(() => {
+    if (!gallery || !gallery.currentLineups?.length) return [];
+    return compareCurrentVsOptimalLineups(gallery.currentLineups, gallery.cards, {
+      rarityFilter: rarityScope,
+      projectionSource,
+      customProjectionsRaw,
+      injuriesByName: gallery.injuriesByName,
+      gamesPerTeam: gallery.gamesPerTeam,
+      excludeOut,
+      excludeQuestionable,
+      inSeasonOnly: strictInSeasonOnly,
+      minInSeasonCards,
+      disjointAcrossLineups: false,
+      captainBonusPct: 0,
+    });
+  }, [
+    customProjectionsRaw,
+    excludeOut,
+    excludeQuestionable,
+    gallery,
+    minInSeasonCards,
+    projectionSource,
+    rarityScope,
+    strictInSeasonOnly,
+  ]);
+
+  const commonPool = gallery?.commonCards ?? [];
+
+  const dailyPickerPicks = useMemo(() => {
+    if (!gallery || commonPool.length === 0) return [];
+    return rankDailyPickerCandidates(
+      commonPool,
+      gallery.injuriesByName,
+      gallery.gamesPerTeam,
+      5,
+    );
+  }, [commonPool, gallery]);
+
+  const setAutoBuilt = useMemo(() => {
+    if (!gallery || commonPool.length === 0) return null;
+    void buildSeed;
+    return buildSetTeams(commonPool, {
+      mode: setBuildMode,
+      teamCount: setTeamCount,
+      projectionSource,
+      customProjectionsRaw,
+      injuriesByName: gallery.injuriesByName,
+      gamesPerTeam: gallery.gamesPerTeam,
+      excludeOut,
+      disjointAcrossTeams: disjointLineups,
+    });
+  }, [
+    buildSeed,
+    commonPool,
+    customProjectionsRaw,
+    disjointLineups,
+    excludeOut,
+    gallery,
+    projectionSource,
+    setBuildMode,
+    setTeamCount,
+  ]);
+
+  const built = useMemo(() => {
+    if (!gallery) return null;
+    // Reference buildSeed so clicking Auto-Build triggers explicit recomputation feedback
+    void buildSeed;
+    return generateTopLineups(gallery.cards, {
+      format,
+      rarityFilter: rarityScope,
+      projectionSource,
+      customProjectionsRaw,
+      injuriesByName: gallery.injuriesByName,
+      gamesPerTeam: gallery.gamesPerTeam,
+      excludeOut,
+      excludeQuestionable,
+      inSeasonOnly: strictInSeasonOnly,
+      minInSeasonCards,
+      disjointAcrossLineups: disjointLineups,
+      excludeSubmittedCards,
+      excludedCardSlugs,
+      maxLineups: 3,
+      captainBonusPct: 0,
+    });
+  }, [
+    buildSeed,
+    customProjectionsRaw,
+    disjointLineups,
+    excludeOut,
+    excludeQuestionable,
+    excludeSubmittedCards,
+    excludedCardSlugs,
+    format,
+    gallery,
+    minInSeasonCards,
+    projectionSource,
+    rarityScope,
+    strictInSeasonOnly,
+  ]);
+
+  const effectiveMarketListings = useMemo(
+    () =>
+      allScannedBargains.length > 0
+        ? allScannedBargains
+        : (bargains?.listings ?? []),
+    [allScannedBargains, bargains],
+  );
+
+  const budgetLineups = useMemo(() => {
+    if (!gallery || effectiveMarketListings.length === 0) return [];
+    return buildBudgetLineups(gallery.cards, effectiveMarketListings, {
+      format,
+      rarityFilter: rarityScope,
+      projectionSource,
+      customProjectionsRaw,
+      injuriesByName: gallery.injuriesByName,
+      gamesPerTeam: gallery.gamesPerTeam,
+      budgetCents,
+      includeOwned: includeOwnedInBudget,
+      inSeasonOnly: strictInSeasonOnly,
+      minInSeasonCards,
+      captainBonusPct: 0,
+    });
+  }, [
+    budgetCents,
+    customProjectionsRaw,
+    effectiveMarketListings,
+    format,
+    gallery,
+    includeOwnedInBudget,
+    minInSeasonCards,
+    projectionSource,
+    rarityScope,
+    strictInSeasonOnly,
+  ]);
+
+  const portfolio = useMemo(() => {
+    if (!gallery || arenaMode !== "pro") return null;
+    void buildSeed;
+    return optimizeMultiCompetitionPortfolio(gallery.cards, {
+      rarityFilter: rarityScope,
+      projectionSource,
+      customProjectionsRaw,
+      injuriesByName: gallery.injuriesByName,
+      gamesPerTeam: gallery.gamesPerTeam,
+      excludeOut,
+      excludeQuestionable,
+      inSeasonOnly: strictInSeasonOnly,
+      minInSeasonCards,
+      excludeSubmittedCards,
+      excludedCardSlugs,
+      captainBonusPct: 0,
+    });
+  }, [
+    arenaMode,
+    buildSeed,
+    customProjectionsRaw,
+    excludeOut,
+    excludeQuestionable,
+    excludeSubmittedCards,
+    excludedCardSlugs,
+    gallery,
+    minInSeasonCards,
+    projectionSource,
+    rarityScope,
+    strictInSeasonOnly,
+  ]);
+
+  const sortedSchedule = useMemo(() => {
+    const map = gallery?.scheduleByTeam ?? {};
+    return Object.values(map).sort((a, b) => {
+      if (b.games !== a.games) return b.games - a.games;
+      return a.teamName.localeCompare(b.teamName);
+    });
+  }, [gallery]);
+
+  const dualBuyAdvisor = useMemo(() => {
+    const topLineup = built?.lineups[0];
+    if (!gallery || !topLineup || effectiveMarketListings.length === 0) {
+      return null;
+    }
+    const ownedPlayerSlugs = new Set(gallery.cards.map((c) => c.playerSlug));
+    const maxPriceNum = Number(buyMaxPriceEuros);
+    const maxPriceCents =
+      buyMaxPriceEuros.trim() && Number.isFinite(maxPriceNum) && maxPriceNum > 0
+        ? Math.round(maxPriceNum * 100)
+        : null;
+    return recommendLineupMarketBuys(
+      topLineup,
+      ownedPlayerSlugs,
+      collectionNeedSlugs ?? new Set<string>(),
+      effectiveMarketListings,
+      {
+        format,
+        rarityFilter: rarityScope,
+        seasonRule,
+        rankMode: buyRankMode,
+        maxPriceCents,
+        projectionSource,
+        customProjectionsRaw,
+        injuriesByName: gallery.injuriesByName,
+        gamesPerTeam: gallery.gamesPerTeam,
+        excludeOut,
+        excludeQuestionable,
+        captainBonusPct: 0,
+      },
+    );
+  }, [
+    built,
+    buyMaxPriceEuros,
+    buyRankMode,
+    collectionNeedSlugs,
+    customProjectionsRaw,
+    effectiveMarketListings,
+    excludeOut,
+    excludeQuestionable,
+    format,
+    gallery,
+    projectionSource,
+    rarityScope,
+    seasonRule,
+  ]);
+
+  const comboSwaps = useMemo(() => {
+    const topLineup = built?.lineups[0];
+    if (!gallery || !topLineup || effectiveMarketListings.length === 0) {
+      return [];
+    }
+    const maxPriceNum = Number(buyMaxPriceEuros);
+    const maxPriceCents =
+      buyMaxPriceEuros.trim() && Number.isFinite(maxPriceNum) && maxPriceNum > 0
+        ? Math.round(maxPriceNum * 100)
+        : null;
+    return recommendTwoCardComboSwaps(
+      topLineup,
+      gallery.cards,
+      effectiveMarketListings,
+      {
+        format,
+        rarityFilter: rarityScope,
+        seasonRule,
+        rankMode: buyRankMode,
+        maxPriceCents,
+        projectionSource,
+        customProjectionsRaw,
+        injuriesByName: gallery.injuriesByName,
+        gamesPerTeam: gallery.gamesPerTeam,
+        excludeOut,
+        excludeQuestionable,
+        captainBonusPct: 0,
+      },
+    );
+  }, [
+    built,
+    buyMaxPriceEuros,
+    buyRankMode,
+    customProjectionsRaw,
+    effectiveMarketListings,
+    excludeOut,
+    excludeQuestionable,
+    format,
+    gallery,
+    projectionSource,
+    rarityScope,
+    seasonRule,
+  ]);
+
+  const compareCards = useMemo(() => {
+    if (!gallery || compareSlugs.length === 0) return [];
+    const cardMap = new Map(gallery.cards.map((c) => [c.slug, c]));
+    return compareSlugs
+      .map((s) => cardMap.get(s))
+      .filter((c): c is NonNullable<typeof c> => Boolean(c));
+  }, [compareSlugs, gallery]);
+
+  if (!gallery && !isLoading) {
+    return (
+      <div className="rounded-2xl border border-white/8 bg-[#111726] p-6 text-center">
+        <Wand2 className="mx-auto mb-2.5 h-7 w-7 text-amber-400" />
+        <h2 className="jam-heading-balance text-sm font-semibold text-slate-100">
+          Lineup Builder &amp; Auto-Optimizer
+        </h2>
+        <p className="mx-auto mt-1 max-w-xs text-xs leading-relaxed text-slate-400">
+          Loads your Sorare NBA gallery, upcoming Game Week schedule, and live
+          ESPN injury reports to auto-build top lineups and estimate win odds.
+        </p>
+        <button
+          type="button"
+          disabled={!hasUsername}
+          onClick={() => onLoadGallery(false)}
+          className="mt-3.5 rounded-xl bg-gradient-to-b from-amber-300 to-amber-500 px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-sm hover:from-amber-200 hover:to-amber-400 disabled:opacity-50"
+        >
+          {hasUsername ? "Load Gallery & Injuries" : "Enter Username First"}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Upcoming Game Week & Live External Injury Bar */}
+      {gallery && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/8 bg-[#111726] px-3 py-2 text-[11px]">
+          <div className="flex items-center gap-1.5 text-slate-200">
+            <Timer className="h-3.5 w-3.5 text-amber-400" />
+            {openFixture ? (
+              <span>
+                <strong>{openFixture.displayName}</strong> • Cutoff{" "}
+                <strong className="text-amber-300">
+                  {formatTimeLeft(openFixture.cutOffDate)}
+                </strong>
+              </span>
+            ) : (
+              <span>{gallery.cards.length} Pro + {commonPool.length} Common cards</span>
+            )}
+          </div>
+          <span className="inline-flex items-center gap-1 text-[10px] text-emerald-300">
+            <HeartPulse className="h-3 w-3" />
+            ESPN ({Object.keys(gallery.injuriesByName).length})
+          </span>
+        </div>
+      )}
+
+      {/* Pro vs Set/Common Mode Switcher */}
+      <div className="grid grid-cols-2 gap-1 rounded-2xl border border-white/8 bg-[#111726] p-1.5">
+        <button
+          type="button"
+          onClick={() => setArenaMode("pro")}
+          className={`rounded-xl py-1.5 text-[11px] font-semibold transition ${
+            arenaMode === "pro"
+              ? "bg-amber-400/20 text-amber-200 ring-1 ring-amber-400/40"
+              : "text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          Pro Lineups ({gallery?.cards.length ?? 0})
+        </button>
+        <button
+          type="button"
+          onClick={() => setArenaMode("set_common")}
+          className={`rounded-xl py-1.5 text-[11px] font-semibold transition ${
+            arenaMode === "set_common"
+              ? "bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-400/40"
+              : "text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          Set / Common ({commonPool.length})
+        </button>
+      </div>
+
+      {/* Optimal Entry Disclosure + Recommended Competition Priority */}
+      {arenaMode === "pro" && formatRec && (
+        <div className="rounded-2xl border border-sky-400/30 bg-[#101829] p-3">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-start gap-2">
+              <div className="mt-0.5 rounded-lg bg-sky-500/20 p-1.5 text-sky-300">
+                <SlidersHorizontal className="h-4 w-4" />
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs font-semibold text-sky-200">
+                    Recommended Entry:{" "}
+                    {FORMAT_OPTIONS.find((f) => f.id === formatRec.recommendedFormat)
+                      ?.label ?? formatRec.recommendedFormat}
+                  </span>
+                  <span className="rounded border border-sky-400/35 bg-sky-500/15 px-1 text-[9px] font-bold uppercase text-sky-200">
+                    Optimal EV
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-slate-300">
+                  {formatRec.reason}
+                </p>
+              </div>
+            </div>
+            {format !== formatRec.recommendedFormat && (
+              <button
+                type="button"
+                onClick={() => setFormat(formatRec.recommendedFormat)}
+                className="shrink-0 rounded-lg bg-sky-400 px-2.5 py-1 text-[10px] font-semibold text-slate-950 hover:bg-sky-300"
+              >
+                Switch
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Current Submitted/Open Lineups & Upgrade Swaps */}
+      {arenaMode === "pro" && gallery && (
+        <details className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
+          <summary className="flex w-full items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
+            <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
+              <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-sky-400" />
+              <SlidersHorizontal className="h-3.5 w-3.5 text-sky-400" />
+              Current Open Lineups &amp; Upgrade Swaps
+            </span>
+            <span className="text-[10px] text-slate-400">
+              {currentLineupComparisons.length} submitted
+            </span>
+          </summary>
+
+          <div className="space-y-2 border-t border-white/8 bg-[#0b101b] p-3 text-[11px]">
+            {currentLineupComparisons.length === 0 ? (
+              <div className="text-slate-400">
+                {gallery.cards.some((c) => c.powerBreakdown !== undefined)
+                  ? "No active open SO5 Pro lineups found on your cards for this Game Week."
+                  : "Enter your local Sorare API Key (FAST mode) or hit Refresh to inspect your live submitted SO5 lineups alongside optimal swap upgrades."}
+              </div>
+            ) : (
+              currentLineupComparisons.map((cmp) => {
+                const lowerName = cmp.entry.leaderboardName.toLowerCase();
+                const essTarget = lowerName.includes("contender")
+                  ? 105
+                  : lowerName.includes("daily")
+                    ? 135
+                    : 175;
+                const progressPct = Math.min(
+                  100,
+                  Math.round((cmp.currentProjected / essTarget) * 100),
+                );
+                const submittedCards = gallery.cards.filter((gc) =>
+                  cmp.entry.cardSlugs.includes(gc.slug),
+                );
+                const hotCount = submittedCards.filter(
+                  (gc) => gc.l5 !== null && gc.l10 !== null && gc.l5 - gc.l10 >= 3.5,
+                ).length;
+                const coldCount = submittedCards.filter(
+                  (gc) => gc.l5 !== null && gc.l10 !== null && gc.l5 - gc.l10 <= -3.5,
+                ).length;
+
+                let totalSlateGames = 0;
+                let completedSlateGames = 0;
+                let liveSlateGames = 0;
+                let remainingSlateGames = 0;
+                const liveClocks: string[] = [];
+                for (const gc of submittedCards) {
+                  const sched = gc.teamSlug
+                    ? gallery.scheduleByTeam?.[gc.teamSlug]
+                    : undefined;
+                  if (!sched) continue;
+                  totalSlateGames += sched.games;
+                  completedSlateGames += sched.completedGames ?? 0;
+                  liveSlateGames += sched.liveGames ?? 0;
+                  remainingSlateGames += sched.upcomingGames ?? 0;
+                  if (sched.liveClockLabel && liveClocks.length < 2) {
+                    liveClocks.push(sched.liveClockLabel);
+                  }
+                }
+                const paceBadge =
+                  progressPct >= 95
+                    ? { label: "On Pace", kind: "hot" as const, cls: "text-emerald-300" }
+                    : progressPct >= 80
+                      ? { label: "Close Sweat", kind: "close" as const, cls: "text-amber-300" }
+                      : { label: "Behind Cut", kind: "cold" as const, cls: "text-rose-300" };
+
+                return (
+                <div
+                  key={cmp.entry.id}
+                  className="rounded-xl border border-white/8 bg-[#111726] p-2.5"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-semibold text-slate-100">
+                      {cmp.entry.leaderboardName}
+                      {cmp.entry.draft && (
+                        <span className="ml-1.5 rounded bg-amber-500/20 px-1 text-[9px] text-amber-300">
+                          DRAFT
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px]">
+                      <span className="font-semibold text-slate-200">
+                        {cmp.currentProjected.toFixed(1)}
+                      </span>
+                      {cmp.optimalProjected !== null && (
+                        <span className="text-slate-400">
+                          {" "}
+                          / Opt {cmp.optimalProjected.toFixed(1)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-1 flex items-center gap-2 text-[9.5px] text-slate-400">
+                    <div className="h-1 flex-1 overflow-hidden rounded-full bg-black/50">
+                      <div
+                        className="h-full bg-emerald-400"
+                        style={{ width: `${progressPct}%` }}
+                      />
+                    </div>
+                    <span className="inline-flex flex-wrap items-center gap-1">
+                      <span>{progressPct}% of {essTarget} pts Essence</span>
+                      <strong className={`inline-flex items-center gap-0.5 ${paceBadge.cls}`}>
+                        {paceBadge.kind === "hot" ? (
+                          <Flame className="h-2.5 w-2.5" />
+                        ) : paceBadge.kind === "close" ? (
+                          <Zap className="h-2.5 w-2.5" />
+                        ) : (
+                          <Snowflake className="h-2.5 w-2.5" />
+                        )}
+                        {paceBadge.label}
+                      </strong>
+                      {hotCount > 0 && (
+                        <span className="inline-flex items-center gap-0.5 text-amber-300">
+                          <Flame className="h-2.5 w-2.5" />
+                          {hotCount}
+                        </span>
+                      )}
+                      {coldCount > 0 && (
+                        <span className="inline-flex items-center gap-0.5 text-sky-300">
+                          <Snowflake className="h-2.5 w-2.5" />
+                          {coldCount}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  {totalSlateGames > 0 && (
+                    <div className="mt-1 flex flex-wrap items-center justify-between gap-1 text-[9.5px] text-slate-400">
+                      <span>
+                        GW Sweat: {completedSlateGames}/{totalSlateGames}G played •{" "}
+                        {liveSlateGames > 0 && (
+                          <strong className="text-emerald-300">
+                            {liveSlateGames} LIVE •{" "}
+                          </strong>
+                        )}
+                        {remainingSlateGames}G left
+                      </span>
+                      {liveClocks.length > 0 && (
+                        <span className="text-sky-300">{liveClocks.join(" • ")}</span>
+                      )}
+                    </div>
+                  )}
+                  {cmp.swaps.length > 0 ? (
+                    <div className="mt-1.5 space-y-1">
+                      {cmp.swaps.map((sw, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between gap-2 rounded-lg bg-[#0b101b] px-2 py-1 text-[10px]"
+                        >
+                          <span className="flex items-center gap-1 text-slate-300">
+                            <span className="text-rose-300">{sw.outPlayer}</span>
+                            <ArrowRight className="h-2.5 w-2.5 text-slate-500" />
+                            <span className="text-emerald-300">{sw.inPlayer}</span>
+                          </span>
+                          <span
+                            className={`font-semibold ${
+                              sw.deltaPts >= 0 ? "text-emerald-300" : "text-slate-400"
+                            }`}
+                          >
+                            {sw.deltaPts >= 0 ? "+" : ""}
+                            {sw.deltaPts.toFixed(1)} pts
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-1 text-[10px] text-emerald-300">
+                      Matches optimal core ({cmp.currentStars}★).
+                    </div>
+                  )}
+                  {cmp.betterCaptainName && (
+                    <div className="mt-1 text-[10px] text-amber-300">
+                      MVP Slot Tip: Assign Cap-Free MVP to{" "}
+                      <strong>{cmp.betterCaptainName}</strong>.
+                    </div>
+                  )}
+                </div>
+                );
+              })
+            )}
+          </div>
+        </details>
+      )}
+
+      {/* Collapsible Boosting & Captain Optimization Guide */}
+      <details className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
+        <summary className="flex w-full items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
+          <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
+            <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-amber-400" />
+            <Flame className="h-3.5 w-3.5 text-amber-400" />
+            Best Boosting, Captain &amp; Multiplier Guide
+          </span>
+          <span className="text-[10px] text-slate-400">
+            {BOOSTING_GUIDE_RULES.length} rules
+          </span>
+        </summary>
+        <div className="space-y-1.5 border-t border-white/8 bg-[#0b101b] p-3 text-[11px]">
+          {BOOSTING_GUIDE_RULES.map((rule) => (
+            <div
+              key={rule.id}
+              className="rounded-xl border border-white/8 bg-[#111726] p-2"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold text-amber-200">
+                  {rule.title}
+                </span>
+                <span className="rounded bg-amber-400/15 px-1.5 py-0.5 text-[9px] font-semibold text-amber-300">
+                  {rule.tag}
+                </span>
+              </div>
+              <p className="mt-0.5 text-[10px] leading-relaxed text-slate-400">
+                {rule.detail}
+              </p>
+            </div>
+          ))}
+        </div>
+      </details>
+
+      {/* Collapsible 4-Day Gameweek Schedule & Matchup Difficulty Grid */}
+      {arenaMode === "pro" && sortedSchedule.length > 0 && (
+        <details className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
+          <summary className="flex w-full items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
+            <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
+              <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-emerald-400" />
+              <Calendar className="h-3.5 w-3.5 text-emerald-400" />
+              4-Day Gameweek Schedule &amp; Matchups
+            </span>
+            <span className="text-[10px] text-slate-400">
+              {sortedSchedule.length} teams
+            </span>
+          </summary>
+          <div className="grid grid-cols-1 gap-1.5 border-t border-white/8 bg-[#0b101b] p-3 sm:grid-cols-2">
+            {sortedSchedule.map((tm) => (
+              <div
+                key={tm.teamSlug}
+                className="flex items-center justify-between gap-2 rounded-xl border border-white/6 bg-[#111726] px-2.5 py-1.5 text-[10px]"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-bold text-slate-100">{tm.abbr}</span>
+                    <span
+                      className={`rounded px-1 text-[9px] font-bold ${
+                        tm.games >= 3
+                          ? "bg-emerald-500/20 text-emerald-300"
+                          : tm.games === 2
+                            ? "bg-sky-500/15 text-sky-300"
+                            : "bg-white/8 text-slate-300"
+                      }`}
+                    >
+                      {tm.games}G
+                    </span>
+                    {tm.hasBackToBack && (
+                      <span className="rounded bg-amber-400/15 px-1 text-[8.5px] font-semibold text-amber-300">
+                        B2B
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-0.5 truncate text-[9.5px] text-slate-400">
+                    {tm.matchups.join(" • ")}
+                  </div>
+                  {tm.dvpByPos && (
+                    <div className="mt-1 flex flex-wrap gap-1 text-[8.5px]">
+                      {(["G", "F", "C"] as const).map((pos) => (
+                        <span
+                          key={pos}
+                          className={`rounded border px-1 font-semibold ${dvpTagClass(tm.dvpByPos![pos])}`}
+                        >
+                          vs {pos}: {tm.dvpByPos![pos]}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <span
+                  className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold ${
+                    tm.difficultyTag === "EASY"
+                      ? "border border-emerald-400/35 bg-emerald-500/15 text-emerald-300"
+                      : tm.difficultyTag === "TOUGH"
+                        ? "border border-rose-400/35 bg-rose-500/15 text-rose-300"
+                        : "border border-white/10 bg-white/5 text-slate-300"
+                  }`}
+                >
+                  {tm.difficultyTag}
+                </span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
+      {/* SET / COMMON MODE WORKSPACE */}
+      {arenaMode === "set_common" && (
+        <div className="space-y-3">
+          {/* Set Quests & Arcade Guide */}
+          <details className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
+            <summary className="flex w-full items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
+              <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
+                <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
+                Set Daily Quests, Picker &amp; Arcade Guide
+              </span>
+              <span className="text-[10px] text-slate-400">Common Mode</span>
+            </summary>
+            <div className="space-y-1.5 border-t border-white/8 bg-[#0b101b] p-3 text-[10px] text-slate-300">
+              <div>
+                <strong className="text-emerald-300">1. Daily Quests:</strong>{" "}
+                Open Daily Pack • Buy a Pack • Play Daily Picker • Collect ≥ 3★
+                player to stack Energy &amp; Set Essence.
+              </div>
+              <div>
+                <strong className="text-amber-300">2. Daily Picker:</strong>{" "}
+                Must score{" "}
+                <strong className="text-slate-100">
+                  both ≥ L10 + 7 pts AND ≥ 20 pts
+                </strong>
+                . Ideal picks are healthy high-minute starters whose L10 is
+                temporarily dipped (e.g. L10 = 12-18, projected ≥ 24).
+              </div>
+              <div>
+                <strong className="text-sky-300">3. Solo vs Squad Mode:</strong>{" "}
+                Solo Arcade prioritizes your single highest-ceiling active
+                anchor per step; Squad Mode builds multiple Cap 120 + MVP teams
+                for leaderboard checkpoints.
+              </div>
+            </div>
+          </details>
+
+          {/* Daily Picker Finder */}
+          <div className="rounded-2xl border border-emerald-400/25 bg-[#111726] p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <Target className="h-3.5 w-3.5 text-emerald-400" />
+                <span className="text-xs font-semibold text-slate-100">
+                  Daily Picker Best Odds (L10 + 7 &amp; ≥ 20)
+                </span>
+              </div>
+              <span className="inline-flex items-center gap-1 rounded border border-sky-400/35 bg-sky-500/15 px-1.5 py-0.5 text-[9px] font-bold text-sky-200">
+                <SlidersHorizontal className="h-2.5 w-2.5" />
+                Odds
+              </span>
+            </div>
+
+            {dailyPickerPicks.length === 0 ? (
+              <div className="text-xs text-slate-400">
+                Click Refresh above to load your Common / Set cards for Daily
+                Picker odds.
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {dailyPickerPicks.map((pick) => (
+                  <PlayerCardRow
+                    key={pick.card.slug}
+                    playerName={pick.card.playerName}
+                    teamSlug={pick.card.teamSlug}
+                    teamName={pick.card.teamName}
+                    rarity={pick.card.rarity}
+                    pictureUrl={pick.card.pictureUrl}
+                    subline={
+                      <>
+                        <span>{pick.card.teamName ?? "NBA"}</span>
+                        <span>• L10 {pick.l10}</span>
+                        <span>• Proj {pick.projectedScore}</span>
+                      </>
+                    }
+                    heroRight={
+                      <span className="text-emerald-300">
+                        {pick.hitChancePct}%
+                      </span>
+                    }
+                    subRight={
+                      <span>
+                        Need ≥{" "}
+                        <strong className="text-amber-300">
+                          {pick.targetScore}
+                        </strong>
+                      </span>
+                    }
+                    actionRight={
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void applyLineupHighlight(
+                            [pick.card.playerName],
+                            "Daily Picker",
+                            pick.projectedScore,
+                            [
+                              {
+                                slotLabel: "PICK",
+                                cardSlug: pick.card.slug,
+                                playerName: pick.card.playerName,
+                                rarity: pick.card.rarity,
+                                seasonYear: pick.card.seasonYear,
+                                isCaptain: false,
+                              },
+                            ],
+                          )
+                        }
+                        className="shrink-0 rounded-lg bg-emerald-500/20 px-2 py-1 text-[10px] font-semibold text-emerald-200 hover:bg-emerald-500/30"
+                      >
+                        Pin
+                      </button>
+                    }
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Configurable N Teams Auto-Builder for Solo / Squad */}
+          <div className="space-y-2.5 rounded-2xl border border-white/8 bg-[#111726] p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="grid grid-cols-2 gap-1 rounded-xl border border-white/8 bg-[#0b101b] p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setSetBuildMode("solo")}
+                  className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
+                    setBuildMode === "solo"
+                      ? "bg-emerald-500/20 text-emerald-200"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  Solo Mode
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSetBuildMode("squad")}
+                  className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
+                    setBuildMode === "squad"
+                      ? "bg-emerald-500/20 text-emerald-200"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  Squad Mode
+                </button>
+              </div>
+
+              <label className="inline-flex items-center gap-1.5 rounded-xl border border-white/8 bg-[#0b101b] px-2.5 py-1 text-[11px] text-slate-300">
+                Teams:
+                <input
+                  type="number"
+                  min={1}
+                  max={8}
+                  value={setTeamCount}
+                  onChange={(e) =>
+                    setSetTeamCount(
+                      Math.max(1, Math.min(8, Number(e.target.value) || 1)),
+                    )
+                  }
+                  className="w-8 bg-transparent text-center font-semibold text-amber-300 focus:outline-none"
+                />
+              </label>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setBuildSeed((s) => s + 1)}
+              className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-b from-emerald-300 to-emerald-500 py-2 text-xs font-semibold text-slate-950 shadow-sm hover:from-emerald-200 hover:to-emerald-400"
+            >
+              <Wand2 className="h-3.5 w-3.5" />
+              Auto-Build {setTeamCount}{" "}
+              {setBuildMode === "solo" ? "Solo Anchor Picks" : "Squad Teams"}
+            </button>
+
+            {setAutoBuilt && setBuildMode === "solo" && (
+              <div className="space-y-1.5">
+                {setAutoBuilt.soloPicks.map((ev, idx) => (
+                  <PlayerCardRow
+                    key={ev.card.slug}
+                    playerName={ev.card.playerName}
+                    teamSlug={ev.card.teamSlug}
+                    teamName={ev.card.teamName}
+                    rarity={ev.card.rarity}
+                    pictureUrl={ev.card.pictureUrl}
+                    leftBadge={
+                      <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300">
+                        #{idx + 1}
+                      </span>
+                    }
+                    subline={
+                      <>
+                        <span>{ev.card.teamName ?? "NBA"}</span>
+                        <span>• L10 {ev.card.l10 ?? "--"}</span>
+                      </>
+                    }
+                    heroRight={
+                      <span className="text-emerald-300">
+                        {ev.effectiveScore.toFixed(1)}
+                      </span>
+                    }
+                    subRight={<span>Proj</span>}
+                    actionRight={
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void applyLineupHighlight(
+                            [ev.card.playerName],
+                            `Set Solo #${idx + 1}`,
+                            ev.effectiveScore,
+                            [
+                              {
+                                slotLabel: `SOLO #${idx + 1}`,
+                                cardSlug: ev.card.slug,
+                                playerName: ev.card.playerName,
+                                rarity: ev.card.rarity,
+                                seasonYear: ev.card.seasonYear,
+                                isCaptain: false,
+                              },
+                            ],
+                          )
+                        }
+                        className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-emerald-500/20 px-2 py-1 text-[10px] font-semibold text-emerald-200 hover:bg-emerald-500/30"
+                      >
+                        <Send className="h-2.5 w-2.5" />
+                        Apply
+                      </button>
+                    }
+                  />
+                ))}
+              </div>
+            )}
+
+            {setAutoBuilt && setBuildMode === "squad" && (
+              <div className="space-y-2">
+                {setAutoBuilt.squadTeams.map((team) => {
+                  const names = team.slots.map((s) => s.evaluated.card.playerName);
+                  return (
+                    <div
+                      key={team.rank}
+                      className="rounded-xl border border-white/8 bg-[#0b101b] p-2.5"
+                    >
+                      <div className="mb-1.5 flex items-center justify-between text-xs">
+                        <span className="font-semibold text-emerald-300">
+                          Set Squad #{team.rank} • {team.totalScore.toFixed(1)}{" "}
+                          pts
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void applyLineupHighlight(
+                              names,
+                              `Set Squad #${team.rank}`,
+                              team.totalScore,
+                              team.slots.map((s) => ({
+                                slotLabel: s.slotLabel,
+                                cardSlug: s.evaluated.card.slug,
+                                playerName: s.evaluated.card.playerName,
+                                rarity: s.evaluated.card.rarity,
+                                seasonYear: s.evaluated.card.seasonYear,
+                                isCaptain: s.isCaptainOrMvp,
+                              })),
+                            )
+                          }
+                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-200"
+                        >
+                          <Send className="h-2.5 w-2.5" />
+                          Apply
+                        </button>
+                      </div>
+                      <div className="text-[11px] text-slate-300">
+                        {names.join(" • ")}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* PRO MODE: Format & Projection Reference Controls */}
+      {arenaMode === "pro" && (
+        <>
+          <div className="space-y-2 rounded-2xl border border-white/8 bg-[#111726] p-3">
+        <div className="grid grid-cols-4 gap-1">
+          {FORMAT_OPTIONS.map((opt) => {
+            const active = format === opt.id;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => setFormat(opt.id)}
+                className={`rounded-xl border px-1.5 py-1.5 text-center transition ${
+                  active
+                    ? "border-amber-400/50 bg-amber-400/15 text-amber-200"
+                    : "border-white/8 bg-[#0b101b] text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <div className="text-[10px] font-semibold leading-tight">
+                  {opt.label}
+                </div>
+                <div className="text-[9px] opacity-80">{opt.sub}</div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="grid grid-cols-12 gap-1.5 text-xs">
+          <div className="col-span-8">
+            <select
+              value={projectionSource}
+              onChange={(e) =>
+                onUpdateProjectionSource(e.target.value as ProjectionSource)
+              }
+              className="w-full rounded-xl border border-white/10 bg-[#0b101b] px-2.5 py-1.5 text-[11px] font-medium text-slate-100 focus:border-amber-400 focus:outline-none"
+              aria-label="Projection source"
+            >
+              {SOURCE_OPTIONS.map((src) => (
+                <option key={src.id} value={src.id}>
+                  Ref: {src.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="col-span-4">
+            <select
+              value={rarityScope}
+              onChange={(e) =>
+                setRarityScope(e.target.value as Rarity | "ALL")
+              }
+              className="w-full rounded-xl border border-white/10 bg-[#0b101b] px-2 py-1.5 text-[11px] font-medium text-slate-100 focus:border-amber-400 focus:outline-none"
+              aria-label="Gallery rarity scope"
+            >
+              <option value="ALL">All Rarities</option>
+              <option value="limited">Limited</option>
+              <option value="rare">Rare</option>
+              <option value="super_rare">Super Rare</option>
+              <option value="unique">Unique</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-1 rounded-xl border border-white/8 bg-[#0b101b] p-0.5 text-[10px]">
+          <button
+            type="button"
+            onClick={() => setSeasonRule("4_in_1_classic")}
+            className={`rounded-lg px-2 py-1 font-semibold transition ${
+              seasonRule === "4_in_1_classic"
+                ? "bg-amber-400/20 text-amber-200"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+            title="Allows 1 Out-of-Season Classic card alongside 4 In-Season (26-27) cards"
+          >
+            4 In-S + 1 Classic
+          </button>
+          <button
+            type="button"
+            onClick={() => setSeasonRule("5_in_season")}
+            className={`rounded-lg px-2 py-1 font-semibold transition ${
+              seasonRule === "5_in_season"
+                ? "bg-sky-500/20 text-sky-200"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+            title="Strictly 5/5 current 2026-27 In-Season cards"
+          >
+            5/5 In-Season
+          </button>
+          <button
+            type="button"
+            onClick={() => setSeasonRule("any_season")}
+            className={`rounded-lg px-2 py-1 font-semibold transition ${
+              seasonRule === "any_season"
+                ? "bg-violet-500/20 text-violet-200"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+            title="No In-Season minimum (unlimited Classic prior-season cards)"
+          >
+            Any Season
+          </button>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px]">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setExcludeOut((v) => !v)}
+              className={`rounded-lg border px-2 py-0.5 transition ${
+                excludeOut
+                  ? "border-rose-400/40 bg-rose-500/15 text-rose-200"
+                  : "border-white/8 bg-[#0b101b] text-slate-400"
+              }`}
+            >
+              Hide OUT
+            </button>
+            <button
+              type="button"
+              onClick={() => setExcludeQuestionable((v) => !v)}
+              className={`rounded-lg border px-2 py-0.5 transition ${
+                excludeQuestionable
+                  ? "border-amber-400/40 bg-amber-500/15 text-amber-200"
+                  : "border-white/8 bg-[#0b101b] text-slate-400"
+              }`}
+            >
+              Hide GTD
+            </button>
+            <button
+              type="button"
+              onClick={() => setDisjointLineups((v) => !v)}
+              className={`rounded-lg border px-2 py-0.5 transition ${
+                disjointLineups
+                  ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-200"
+                  : "border-white/8 bg-[#0b101b] text-slate-400"
+              }`}
+              title="Prevent reusing the same card across Lineup #1, #2, #3"
+            >
+              Unique Picks
+            </button>
+            {submittedCardsCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setExcludeSubmittedCards((v) => !v)}
+                className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 transition ${
+                  excludeSubmittedCards
+                    ? "border-violet-400/45 bg-violet-500/15 text-violet-200"
+                    : "border-white/8 bg-[#0b101b] text-slate-400"
+                }`}
+                title="Exclude cards already locked inside open Sorare Pro lineups"
+              >
+                <Lock className="h-2.5 w-2.5" />
+                Skip Locked ({submittedCardsCount})
+              </button>
+            )}
+            {excludedCardSlugs.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setExcludedCardSlugs([])}
+                className="rounded-lg border border-rose-400/35 bg-rose-500/10 px-2 py-0.5 text-rose-200 hover:bg-rose-500/20"
+              >
+                Reset ({excludedCardSlugs.length} skipped)
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowCustomEditor((v) => !v)}
+            className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-[#0b101b] px-2 py-0.5 text-[10px] text-slate-300 hover:border-amber-400/40"
+          >
+            <FileSpreadsheet className="h-3 w-3 text-amber-400" />
+            Import CSV
+          </button>
+        </div>
+
+        {showCustomEditor && (
+          <div className="rounded-xl border border-white/10 bg-[#0b101b] p-2.5 text-xs">
+            <div className="mb-1 text-[10px] text-slate-400">
+              Paste external projections (<code>Player Name, Score</code> per
+              line from RotoWire / Hashtag Basketball / SorareNBAJet):
+            </div>
+            <textarea
+              rows={4}
+              value={customDraft}
+              aria-label="Custom external player projections CSV"
+              onChange={(e) => setCustomDraft(e.target.value)}
+              placeholder={"Victor Wembanyama, 64.5\nLuka Doncic, 68.0"}
+              className="w-full rounded-lg border border-white/10 bg-[#141c2f] p-2 font-mono text-[11px] text-slate-100 placeholder-slate-500 focus:border-amber-400 focus:outline-none"
+            />
+            <div className="mt-1.5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowCustomEditor(false)}
+                className="text-[11px] text-slate-400 hover:text-slate-200"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onSaveCustomProjections(customDraft);
+                  onUpdateProjectionSource("custom_csv");
+                  setShowCustomEditor(false);
+                }}
+                className="rounded-lg bg-amber-400 px-2.5 py-1 text-[11px] font-semibold text-slate-950 hover:bg-amber-300"
+              >
+                Apply External Projections
+              </button>
+            </div>
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setBuildSeed((s) => s + 1)}
+          className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-b from-amber-300 to-amber-500 py-2 text-xs font-semibold text-slate-950 shadow-sm hover:from-amber-200 hover:to-amber-400"
+        >
+          <Wand2 className="h-3.5 w-3.5" />
+          Auto-Build Best Pro Lineups
+        </button>
+      </div>
+
+      {/* 2-Player Head-to-Head Compare Matrix */}
+      <HeadToHeadCompareBox
+        cards={compareCards}
+        currency={currency}
+        scheduleByTeam={gallery?.scheduleByTeam}
+        gamesPerTeam={gallery?.gamesPerTeam}
+        onRemove={(slug) =>
+          setCompareSlugs((prev) => prev.filter((s) => s !== slug))
+        }
+        onClear={() => setCompareSlugs([])}
+      />
+
+      {/* Suggested Top Pro Lineups */}
+      {built && built.lineups.length === 0 ? (
+        <div className="rounded-xl border border-white/8 bg-[#111726] p-4 text-center text-xs text-slate-400">
+          Not enough eligible cards ({built.evaluatedPool.length} available) to
+          form a 5-card lineup under current filters. Try switching to{" "}
+          <strong>All Rarities</strong> or <strong>Uncapped</strong>.
+        </div>
+      ) : (
+        built?.lineups.map((lineup) => {
+          const fmtLabel =
+            FORMAT_OPTIONS.find((f) => f.id === lineup.format)?.label ??
+            lineup.format;
+          const names = lineup.slots.map((s) => s.evaluated.card.playerName);
+
+          return (
+            <div
+              key={lineup.rank}
+              className="rounded-2xl border border-white/8 bg-[#111726] p-3"
+            >
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="rounded-md bg-amber-400/20 px-1.5 py-0.5 text-[10px] font-bold text-amber-300">
+                      #{lineup.rank}
+                    </span>
+                    <span className="text-sm font-bold text-slate-100">
+                      {lineup.totalScore.toFixed(1)}{" "}
+                      <span className="text-[11px] font-normal text-slate-400">
+                        proj pts
+                      </span>
+                    </span>
+                  </div>
+                  <div className="mt-0.5 text-[10px] text-slate-400">
+                    {lineup.format === "daily_120_mvp"
+                      ? `Cap: ${lineup.capUsed}/120 + MVP`
+                      : lineup.capLimit
+                        ? `${lineup.capUsed}/${lineup.capLimit}★`
+                        : `${lineup.totalStars}★ total`}{" "}
+                    • {lineup.inSeasonCount}/5 In-Season
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(names.join(", "));
+                      setCopiedRank(lineup.rank);
+                      window.setTimeout(() => setCopiedRank(null), 1500);
+                    }}
+                    className="rounded-lg border border-white/10 bg-[#0b101b] p-1.5 text-slate-300 hover:border-amber-400/40"
+                    title="Copy 5 players"
+                  >
+                    {copiedRank === lineup.rank ? (
+                      <Check className="h-3.5 w-3.5 text-emerald-400" />
+                    ) : (
+                      <Copy className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void applyLineupHighlight(
+                        names,
+                        fmtLabel,
+                        lineup.totalScore,
+                        lineup.slots.map((s) => ({
+                          slotLabel: s.slotLabel,
+                          cardSlug: s.evaluated.card.slug,
+                          playerName: s.evaluated.card.playerName,
+                          rarity: s.evaluated.card.rarity,
+                          seasonYear: s.evaluated.card.seasonYear,
+                          isCaptain: s.isCaptainOrMvp,
+                        })),
+                      )
+                    }
+                    className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2 py-1 text-[11px] font-semibold text-emerald-200 hover:bg-emerald-500/30"
+                    title="Launch Assisted / Semi-Auto Lineup Helper on sorare.com"
+                  >
+                    <Send className="h-3 w-3" />
+                    Apply
+                  </button>
+                </div>
+              </div>
+
+              {/* Estimated Win Odds Strip */}
+              <div className="mb-2.5 grid grid-cols-3 gap-1.5 text-center text-[10px]">
+                <div className="rounded-lg border border-white/6 bg-[#0b101b] py-1">
+                  <div className="text-slate-400">
+                    Essence (≥{lineup.odds.essenceTarget})
+                  </div>
+                  <div className="font-semibold text-emerald-300">
+                    {lineup.odds.essencePct}%
+                  </div>
+                </div>
+                <div className="rounded-lg border border-white/6 bg-[#0b101b] py-1">
+                  <div className="text-slate-400">
+                    Tier 1 (≥{lineup.odds.tier1Target})
+                  </div>
+                  <div className="font-semibold text-sky-300">
+                    {lineup.odds.tier1Pct}%
+                  </div>
+                </div>
+                <div className="rounded-lg border border-white/6 bg-[#0b101b] py-1">
+                  <div className="text-slate-400">
+                    Podium (≥{lineup.odds.podiumTarget})
+                  </div>
+                  <div className="font-semibold text-amber-300">
+                    {lineup.odds.podiumPct}%
+                  </div>
+                </div>
+              </div>
+
+              {/* Color-Coded 5-Slot Roster with Sorare Portraits */}
+              <div className="space-y-1">
+                {lineup.slots.map((slot) => {
+                  const ev = slot.evaluated;
+                  const c = ev.card;
+                  const inj = injuryBadge(ev.injuryStatus);
+                  const boostPct = Math.round((c.powerMultiplier - 1) * 100);
+                  const capDeltaPts =
+                    slot.isCaptainOrMvp
+                      ? Math.round(slot.slotScore - ev.effectiveScore)
+                      : 0;
+                  const usageBoost =
+                    c.teamSlug && ev.injuryStatus === "ACTIVE"
+                      ? teamOutBoostMap[c.teamSlug]
+                      : undefined;
+                  const posLabel =
+                    c.positions.map((p) => NBA_POSITION_LABELS[p]).join("/") ||
+                    "--";
+                  const formDelta =
+                    c.l5 !== null && c.l10 !== null
+                      ? Math.round((c.l5 - c.l10) * 10) / 10
+                      : null;
+                  const isOnFire = formDelta !== null && formDelta >= 3.5;
+                  const isCold = formDelta !== null && formDelta <= -3.5;
+                  const posKey = primaryPosKey(c.positions);
+                  const posDvp =
+                    c.teamSlug
+                      ? gallery?.scheduleByTeam?.[c.teamSlug]?.dvpByPos?.[posKey] ??
+                        gallery?.scheduleByTeam?.[c.teamSlug]?.difficultyTag
+                      : undefined;
+                  const isSlotOpen = expandedSlotSlug === `${lineup.rank}:${c.slug}`;
+
+                  return (
+                    <PlayerCardRow
+                      key={c.slug}
+                      playerName={c.playerName}
+                      teamSlug={c.teamSlug}
+                      teamName={c.teamName}
+                      rarity={c.rarity}
+                      pictureUrl={c.pictureUrl}
+                      leftBadge={
+                        <span
+                          className={`inline-flex w-9 items-center justify-center gap-0.5 rounded-md border py-0.5 text-[10px] font-bold ${slotBadgeClass(slot.slotLabel)}`}
+                        >
+                          {slot.isCaptainOrMvp && (
+                            <Crown className="h-2.5 w-2.5" />
+                          )}
+                          {slot.slotLabel}
+                        </span>
+                      }
+                      statusBadge={
+                        <div className="flex flex-wrap items-center gap-1">
+                          {inj && (
+                            <span
+                              className={`shrink-0 rounded border px-1 text-[9px] font-semibold ${inj.cls}`}
+                            >
+                              {inj.label}
+                            </span>
+                          )}
+                          {isOnFire && (
+                            <span className="inline-flex shrink-0 items-center gap-0.5 rounded border border-amber-400/40 bg-amber-400/15 px-1 text-[9px] font-bold text-amber-200">
+                              <Flame className="h-2.5 w-2.5" />
+                              +{formDelta}
+                            </span>
+                          )}
+                          {isCold && (
+                            <span className="inline-flex shrink-0 items-center gap-0.5 rounded border border-rose-400/35 bg-rose-500/15 px-1 text-[9px] font-semibold text-rose-200">
+                              <Snowflake className="h-2.5 w-2.5" />
+                              {formDelta}
+                            </span>
+                          )}
+                          {!inj && usageBoost && (
+                            <span className="shrink-0 rounded border border-emerald-400/35 bg-emerald-500/15 px-1 text-[9px] font-semibold text-emerald-300">
+                              {usageBoost}
+                            </span>
+                          )}
+                        </div>
+                      }
+                      subline={
+                        <>
+                          <span>{posLabel}</span>
+                          <span>• {c.starCost}★</span>
+                          <span
+                            className={
+                              ev.gamesInSlate === 0
+                                ? "font-semibold text-rose-400"
+                                : ev.gamesInSlate >= 3
+                                  ? "font-semibold text-emerald-300"
+                                  : ev.gamesInSlate === 2
+                                    ? "text-sky-300"
+                                    : "text-slate-400"
+                            }
+                            title="Scheduled NBA games in 4-day GW window"
+                          >
+                            • {ev.gamesInSlate}G
+                            {posDvp === "EASY"
+                              ? ` (vs ${posKey}: EASY)`
+                              : posDvp === "TOUGH"
+                                ? ` (vs ${posKey}: TOUGH)`
+                                : ""}
+                          </span>
+                          <span>• x{c.powerMultiplier.toFixed(2)}</span>
+                          {slot.isCaptainOrMvp && (
+                            <span className="text-amber-300">
+                              {capDeltaPts > 0
+                                ? `• +${capDeltaPts} MVP`
+                                : "• Cap-Free MVP"}
+                            </span>
+                          )}
+                          <span
+                            className={
+                              c.inSeasonEligible ? "text-sky-300" : "text-slate-400"
+                            }
+                          >
+                            • {c.inSeasonEligible ? "26-27" : c.seasonYear}
+                          </span>
+                        </>
+                      }
+                      heroRight={
+                        <span className="inline-flex items-center gap-0.5 text-emerald-300">
+                          <Activity className="h-3 w-3 text-slate-400" />
+                          {slot.slotScore.toFixed(1)}
+                        </span>
+                      }
+                      subRight={<span>L10: {c.l10?.toFixed(0) ?? "--"}</span>}
+                      actionRight={
+                        <button
+                          type="button"
+                          onClick={() => toggleCompareCard(c.slug)}
+                          className={`rounded-lg border p-1 transition ${
+                            compareSlugs.includes(c.slug)
+                              ? "border-sky-400/50 bg-sky-500/20 text-sky-200"
+                              : "border-white/10 bg-[#111726] text-slate-400 hover:text-slate-200"
+                          }`}
+                          title="Pin card to Head-to-Head Compare"
+                          aria-label={`Compare ${c.playerName}`}
+                        >
+                          <ArrowLeftRight className="h-3 w-3" />
+                        </button>
+                      }
+                      onToggleExpand={() =>
+                        setExpandedSlotSlug((prev) =>
+                          prev === `${lineup.rank}:${c.slug}`
+                            ? null
+                            : `${lineup.rank}:${c.slug}`,
+                        )
+                      }
+                      expandedContent={
+                        isSlotOpen ? (
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="space-y-0.5">
+                              <div>
+                                Proj:{" "}
+                                {ev.allSources.sorareProjected?.toFixed(1) ?? "--"}{" "}
+                                | L10: {ev.allSources.l10?.toFixed(1) ?? "--"} |
+                                L5: {ev.allSources.l5?.toFixed(1) ?? "--"} |
+                                Boost: +{boostPct}%
+                                {c.powerBreakdown
+                                  ? ` (S +${Math.round(c.powerBreakdown.season * 100)}%, C +${Math.round(c.powerBreakdown.collection * 100)}%, XP +${Math.round(c.powerBreakdown.xp * 100)}%)`
+                                  : ""}
+                              </div>
+                              {ev.injury && (
+                                <div className="text-amber-200">
+                                  ESPN {ev.injury.rawStatus}: {ev.injury.comment}
+                                </div>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setExcludedCardSlugs((prev) =>
+                                  prev.includes(c.slug)
+                                    ? prev
+                                    : [...prev, c.slug],
+                                )
+                              }
+                              className="rounded border border-rose-400/40 bg-rose-500/15 px-2 py-0.5 text-[10px] font-semibold text-rose-200 hover:bg-rose-500/25"
+                            >
+                              Skip Card
+                            </button>
+                          </div>
+                        ) : undefined
+                      }
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })
+      )}
+
+      {/* Dual Lineup Market Buy Advisor (Out-of-Season 1-Slot Classic vs. In-Season) */}
+      <details
+        open={Boolean(dualBuyAdvisor)}
+        className="cascade-section overflow-hidden rounded-2xl border border-sky-400/25 bg-[#111726]"
+      >
+        <summary className="flex w-full items-center justify-between px-3 py-2.5 text-left text-xs hover:bg-white/[0.03]">
+          <span className="inline-flex items-center gap-1.5 font-semibold text-sky-200">
+            <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-sky-400" />
+            <TrendingUp className="h-3.5 w-3.5 text-sky-400" />
+            Lineup Buy Advisor (1 Classic vs. In-Season)
+          </span>
+          <span className="text-[10px] text-amber-300">
+            {dualBuyAdvisor
+              ? `${dualBuyAdvisor.classicSlotBuys.length} Classic • ${dualBuyAdvisor.inSeasonSlotBuys.length} In-S`
+              : "Scan market"}
+          </span>
+        </summary>
+
+        <div className="space-y-2.5 border-t border-white/8 bg-[#0b101b] p-3 text-[11px]">
+          <div className="flex flex-wrap items-center justify-between gap-1.5 text-[10px]">
+            <div className="flex flex-wrap items-center gap-1">
+              {(
+                [
+                  { id: "best_value", label: "Best Value (+Pts/€)" },
+                  { id: "max_upgrade", label: "Max Upgrade (+Pts)" },
+                  { id: "quest_synergy", label: "2-in-1 Quest Synergy" },
+                ] as const
+              ).map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setBuyRankMode(m.id)}
+                  className={`rounded-lg border px-2 py-1 font-semibold transition ${
+                    buyRankMode === m.id
+                      ? "border-sky-400/50 bg-sky-500/20 text-sky-200"
+                      : "border-white/8 bg-[#111726] text-slate-300 hover:border-white/25"
+                  }`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={buyMaxPriceEuros}
+                onChange={(e) => setBuyMaxPriceEuros(e.target.value)}
+                placeholder="Max €"
+                aria-label="Maximum buy advisor price"
+                className="w-16 rounded-lg border border-white/10 bg-[#111726] px-2 py-1 text-right text-[10px] font-semibold text-amber-300 placeholder-slate-500 focus:outline-none"
+              />
+              {onScanMarketForBudget && (
+                <button
+                  type="button"
+                  disabled={isMarketLoading}
+                  onClick={onScanMarketForBudget}
+                  className="rounded-lg border border-sky-400/40 bg-sky-500/20 px-2.5 py-1 text-[10px] font-semibold text-sky-200 hover:bg-sky-500/30 disabled:opacity-50"
+                >
+                  {isMarketLoading ? "Scanning..." : "Scan Buys"}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {!dualBuyAdvisor || dualBuyAdvisor.topOverallBuys.length === 0 ? (
+            <div className="rounded-xl border border-white/6 bg-[#111726] p-3 text-center text-[11px] text-slate-400">
+              {effectiveMarketListings.length === 0
+                ? "Click Scan Buys to find the best Out-of-Season (1 Classic slot) and In-Season cards for your #1 lineup."
+                : "No market upgrades beat your #1 lineup under current cap, season rule, and price filter."}
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-3 gap-1 rounded-xl border border-white/8 bg-[#111726] p-0.5 text-[10px]">
+                <button
+                  type="button"
+                  onClick={() => setBuySlotFilter("split")}
+                  className={`rounded-lg py-1 font-semibold transition ${
+                    buySlotFilter === "split"
+                      ? "bg-amber-400/20 text-amber-200"
+                      : "text-slate-400"
+                  }`}
+                >
+                  Split View
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBuySlotFilter("classic")}
+                  className={`rounded-lg py-1 font-semibold transition ${
+                    buySlotFilter === "classic"
+                      ? "bg-violet-500/20 text-violet-200"
+                      : "text-slate-400"
+                  }`}
+                >
+                  1 Classic Slot ({dualBuyAdvisor.classicSlotBuys.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBuySlotFilter("in_season")}
+                  className={`rounded-lg py-1 font-semibold transition ${
+                    buySlotFilter === "in_season"
+                      ? "bg-sky-500/20 text-sky-200"
+                      : "text-slate-400"
+                  }`}
+                >
+                  In-Season ({dualBuyAdvisor.inSeasonSlotBuys.length})
+                </button>
+              </div>
+
+              {(
+                [
+                  ...(buySlotFilter === "split" || buySlotFilter === "classic"
+                    ? [
+                        {
+                          key: "classic",
+                          title:
+                            seasonRule === "5_in_season"
+                              ? "Out-of-Season Disabled (5/5 In-Season Rule)"
+                              : "Best Out-of-Season Steals (1 Allowed Classic Slot)",
+                          tone: "text-violet-300",
+                          rows: dualBuyAdvisor.classicSlotBuys,
+                        },
+                      ]
+                    : []),
+                  ...(buySlotFilter === "split" || buySlotFilter === "in_season"
+                    ? [
+                        {
+                          key: "in_season",
+                          title: "Best In-Season (26-27) Upgrades & Quest Synergy",
+                          tone: "text-sky-300",
+                          rows: dualBuyAdvisor.inSeasonSlotBuys,
+                        },
+                      ]
+                    : []),
+                ] as Array<{
+                  key: string;
+                  title: string;
+                  tone: string;
+                  rows: LineupBuyRecommendation[];
+                }>
+              ).map((group) => (
+                <div key={group.key} className="space-y-1">
+                  <div className={`text-[10px] font-semibold ${group.tone}`}>
+                    {group.title}
+                  </div>
+                  {group.rows.length === 0 ? (
+                    <div className="rounded-lg border border-white/6 bg-[#111726] px-2.5 py-1.5 text-[10px] text-slate-400">
+                      No qualifying market upgrades in this bucket.
+                    </div>
+                  ) : (
+                    group.rows.slice(0, 4).map((rec) => (
+                      <div
+                        key={rec.listing.cardSlug}
+                        className="flex items-center justify-between gap-2 rounded-xl border border-white/6 bg-[#111726] px-2.5 py-1.5"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span className="truncate font-semibold text-slate-100">
+                              {rec.listing.playerName}
+                            </span>
+                            <span className="rounded border border-white/10 bg-white/5 px-1 text-[8.5px] font-semibold text-slate-300">
+                              {rec.listing.inSeasonEligible ? "26-27" : rec.listing.seasonYear}
+                            </span>
+                            {rec.listing.isPrimaryOffer && (
+                              <span className="rounded border border-emerald-400/40 bg-emerald-500/15 px-1 text-[8.5px] font-bold text-emerald-300">
+                                1ST
+                              </span>
+                            )}
+                            {rec.advancesCollection && (
+                              <span className="inline-flex items-center gap-0.5 rounded border border-violet-400/40 bg-violet-500/15 px-1 text-[8.5px] font-bold text-violet-200">
+                                <Trophy className="h-2 w-2" />
+                                Need
+                              </span>
+                            )}
+                          </div>
+                          <div className="truncate text-[10px] tabular-nums text-slate-400">
+                            {rec.listing.starCost}★ • Replaces {rec.replacesPlayerName} ({rec.replacesSlotLabel}) •{" "}
+                            <strong className="text-emerald-300">
+                              +{rec.deltaLineupPts} pts
+                            </strong>{" "}
+                            <span className="text-sky-300">
+                              ({rec.ptsGainPerEuro} pts/€)
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void openInActiveTab(rec.listing.marketUrl)}
+                          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-amber-400/35 bg-amber-400/15 px-2 py-1 text-[10px] font-semibold tabular-nums text-amber-200 hover:bg-amber-400/25"
+                        >
+                          {formatMoney(rec.listing.priceCents, currency)}
+                          <ExternalLink className="h-2.5 w-2.5" />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              ))}
+
+              {comboSwaps.length > 0 && (
+                <div className="mt-2 space-y-1.5 border-t border-white/8 pt-2">
+                  <div className="text-[10px] font-semibold text-amber-300">
+                    2-Card Cap Re-Allocator Combos (Downgrade 1 + Buy Star)
+                  </div>
+                  {comboSwaps.map((combo, idx) => (
+                    <div
+                      key={idx}
+                      className="rounded-xl border border-amber-400/20 bg-[#111726] p-2 text-[10px]"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0 font-semibold text-slate-100">
+                          {combo.inCards[0].playerName} ({combo.inCards[0].starCost}★) +{" "}
+                          {combo.inCards[1].playerName} ({combo.inCards[1].starCost}★)
+                        </div>
+                        <span className="shrink-0 font-bold text-emerald-300">
+                          +{combo.deltaLineupPts} pts ({combo.ptsGainPerEuro} pts/€)
+                        </span>
+                      </div>
+                      <div className="mt-0.5 flex flex-wrap items-center justify-between gap-1 text-slate-400">
+                        <span>
+                          Replaces {combo.outPlayers[0]} ({combo.outSlotLabels[0]}) &amp;{" "}
+                          {combo.outPlayers[1]} ({combo.outSlotLabels[1]}) •{" "}
+                          {combo.newTotalStars}★ total
+                        </span>
+                        <div className="flex items-center gap-1">
+                          {combo.inCards
+                            .filter((ic) => !ic.isOwned)
+                            .map((ic) => (
+                              <button
+                                key={ic.playerName}
+                                type="button"
+                                onClick={() => void openInActiveTab(ic.marketUrl)}
+                                className="inline-flex items-center gap-0.5 rounded bg-amber-400/15 px-1.5 py-0.5 font-semibold text-amber-200 hover:bg-amber-400/25"
+                              >
+                                {ic.playerName.split(" ").pop()}{" "}
+                                {formatMoney(ic.priceCents, currency)}
+                                <ExternalLink className="h-2.5 w-2.5" />
+                              </button>
+                            ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </details>
+      {/* Multi-Competition Portfolio Optimizer (Joint 3-Lineup Slate) */}
+      {portfolio && portfolio.lineups.length > 0 && (
+        <details className="cascade-section overflow-hidden rounded-2xl border border-violet-400/25 bg-[#111726]">
+          <summary className="flex w-full items-center justify-between px-3 py-2.5 text-left text-xs hover:bg-white/[0.03]">
+            <span className="inline-flex items-center gap-1.5 font-semibold text-slate-100">
+              <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-violet-400" />
+              <Layers className="h-3.5 w-3.5 text-violet-400" />
+              Multi-Competition Portfolio ({portfolio.lineups.length} Disjoint)
+            </span>
+            <span className="text-[10px] font-semibold text-emerald-300">
+              ≥1 Essence: {portfolio.atLeastOneEssencePct}%
+            </span>
+          </summary>
+
+          <div className="space-y-2 border-t border-white/8 bg-[#0b101b] p-3 text-[11px]">
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-violet-400/20 bg-[#111726] px-2.5 py-1.5 text-[10px] text-slate-300">
+              <span>
+                Uses <strong className="text-slate-100">{portfolio.cardsUsedCount}</strong>{" "}
+                unique cards across {portfolio.lineups.length} competitions
+              </span>
+              <span>
+                Combined:{" "}
+                <strong className="text-amber-300">
+                  {portfolio.totalProjectedPts.toFixed(1)} pts
+                </strong>
+              </span>
+            </div>
+
+            {portfolio.lineups.map((pl) => {
+              const fmtTitle =
+                FORMAT_OPTIONS.find((f) => f.id === pl.format)?.label ?? pl.format;
+              const pNames = pl.slots.map((s) => s.evaluated.card.playerName);
+              return (
+                <div
+                  key={pl.format}
+                  className="rounded-xl border border-white/8 bg-[#111726] p-2.5"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <span className="font-semibold text-violet-200">
+                        {fmtTitle}
+                      </span>{" "}
+                      <span className="text-[10px] text-slate-400">
+                        • {pl.totalScore.toFixed(1)} pts •{" "}
+                        {pl.capLimit ? `${pl.capUsed}/${pl.capLimit}★` : `${pl.totalStars}★`}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-semibold text-emerald-300">
+                        {pl.odds.essencePct}% Ess
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void applyLineupHighlight(
+                            pNames,
+                            fmtTitle,
+                            pl.totalScore,
+                            pl.slots.map((s) => ({
+                              slotLabel: s.slotLabel,
+                              cardSlug: s.evaluated.card.slug,
+                              playerName: s.evaluated.card.playerName,
+                              rarity: s.evaluated.card.rarity,
+                              seasonYear: s.evaluated.card.seasonYear,
+                              isCaptain: s.isCaptainOrMvp,
+                            })),
+                          )
+                        }
+                        className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-200 hover:bg-emerald-500/30"
+                      >
+                        <Send className="h-2.5 w-2.5" />
+                        Apply
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-1 text-[10px] text-slate-300">
+                    {pl.slots
+                      .map((s) => `${s.slotLabel}: ${s.evaluated.card.playerName}`)
+                      .join(" • ")}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </details>
+      )}
+
+      {/* Hybrid Budget Lineup Builder (Owned Cards + Market Buys) */}
+      <details
+        open
+        className="cascade-section overflow-hidden rounded-2xl border border-emerald-400/25 bg-[#111726]"
+      >
+        <summary className="flex w-full items-center justify-between px-3 py-2.5 text-left text-xs hover:bg-white/[0.03]">
+          <span className="inline-flex items-center gap-1.5 font-semibold text-slate-100">
+            <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-emerald-400" />
+            <Wallet className="h-3.5 w-3.5 text-emerald-400" />
+            Hybrid Budget Lineup Builder ({formatMoney(budgetCents, currency)})
+          </span>
+          <span className="text-[10px] text-emerald-300">
+            {effectiveMarketListings.length > 0
+              ? `${effectiveMarketListings.length} deals ready`
+              : "Scan market"}
+          </span>
+        </summary>
+
+        <div className="space-y-2.5 border-t border-white/8 bg-[#0b101b] p-3">
+          <div className="flex flex-wrap items-center gap-1 text-[10px]">
+            {[300, 500, 1000, 2500, 5000].map((cents) => (
+              <button
+                key={cents}
+                type="button"
+                onClick={() => setBudgetCents(cents)}
+                className={`rounded-lg border px-2 py-1 font-semibold transition ${
+                  budgetCents === cents
+                    ? "border-emerald-400/50 bg-emerald-500/20 text-emerald-200"
+                    : "border-white/8 bg-[#111726] text-slate-300 hover:border-white/25"
+                }`}
+              >
+                {formatMoney(cents, currency)}
+              </button>
+            ))}
+            {walletBalance?.cashAmount !== null &&
+              walletBalance?.cashAmount !== undefined &&
+              walletBalance.cashAmount >= 0.5 && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setBudgetCents(Math.round(walletBalance.cashAmount! * 100))
+                  }
+                  className="rounded-lg border border-amber-400/40 bg-amber-400/15 px-2 py-1 font-semibold text-amber-200"
+                >
+                  Wallet ({formatMoney(Math.round(walletBalance.cashAmount * 100), currency)})
+                </button>
+              )}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+            <label className="inline-flex cursor-pointer items-center gap-1.5 text-slate-200">
+              <input
+                type="checkbox"
+                checked={includeOwnedInBudget}
+                onChange={(e) => setIncludeOwnedInBudget(e.target.checked)}
+                className="h-3.5 w-3.5 accent-emerald-400"
+              />
+              Include my owned cards (€0)
+            </label>
+
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={Math.round(budgetCents / 100)}
+                onChange={(e) =>
+                  setBudgetCents(Math.max(100, (Number(e.target.value) || 1) * 100))
+                }
+                aria-label="Custom cash budget"
+                className="w-14 rounded-lg border border-white/10 bg-[#111726] px-2 py-0.5 text-right text-xs font-semibold text-amber-300 focus:outline-none"
+              />
+              {onScanMarketForBudget && (
+                <button
+                  type="button"
+                  disabled={isMarketLoading}
+                  onClick={onScanMarketForBudget}
+                  className="rounded-lg border border-emerald-400/40 bg-emerald-500/20 px-2.5 py-1 text-[10px] font-semibold text-emerald-200 hover:bg-emerald-500/30 disabled:opacity-50"
+                >
+                  {isMarketLoading ? "Loading..." : "Load Market Deals"}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {budgetLineups.length === 0 ? (
+            <div className="rounded-xl border border-white/6 bg-[#111726] p-3 text-center text-[11px] text-slate-400">
+              Click <strong>Load Market Deals</strong> above (or scan in the
+              Deals tab) to generate optimal hybrid lineups within your{" "}
+              {formatMoney(budgetCents, currency)} budget.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {budgetLineups.map((pick) => (
+                <div
+                  key={pick.rank}
+                  className="rounded-xl border border-white/8 bg-[#111726] p-2.5"
+                >
+                  <div className="mb-2 flex items-center justify-between text-xs">
+                    <div>
+                      <span className="mr-1.5 rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300">
+                        Budget #{pick.rank}
+                      </span>
+                      <strong className="text-slate-100">
+                        {pick.totalScore.toFixed(1)} pts
+                      </strong>{" "}
+                      <span className="text-[10px] text-slate-400">
+                        ({pick.capUsed}/{pick.capLimit ?? "∞"}★ •{" "}
+                        {pick.marketBuysCount} buy{pick.marketBuysCount === 1 ? "" : "s"})
+                      </span>
+                    </div>
+                    <span className="font-semibold text-amber-300">
+                      {formatMoney(pick.totalCostCents, currency)} /{" "}
+                      {formatMoney(budgetCents, currency)}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1">
+                    {pick.slots.map((slot) => {
+                      const c = slot.evaluated.card;
+                      const meta = pick.slotCostBySlug[c.slug];
+                      return (
+                        <PlayerCardRow
+                          key={c.slug}
+                          playerName={c.playerName}
+                          teamSlug={c.teamSlug}
+                          teamName={c.teamName}
+                          rarity={c.rarity}
+                          pictureUrl={c.pictureUrl}
+                          leftBadge={
+                            <span
+                              className={`inline-flex w-9 items-center justify-center rounded-md border py-0.5 text-[9.5px] font-bold ${slotBadgeClass(slot.slotLabel)}`}
+                            >
+                              {slot.slotLabel}
+                            </span>
+                          }
+                          statusBadge={
+                            meta?.isOwned ? (
+                              <span className="rounded border border-sky-400/35 bg-sky-500/15 px-1 text-[8.5px] font-bold text-sky-200">
+                                OWNED
+                              </span>
+                            ) : meta?.isPrimaryOffer ? (
+                              <span className="rounded border border-emerald-400/40 bg-emerald-500/20 px-1 text-[8.5px] font-bold text-emerald-200">
+                                1ST BUY
+                              </span>
+                            ) : (
+                              <span className="rounded border border-amber-400/35 bg-amber-400/15 px-1 text-[8.5px] font-bold text-amber-200">
+                                MARKET
+                              </span>
+                            )
+                          }
+                          subline={
+                            <>
+                              <span>{c.starCost}★</span>
+                              <span>• L10 {c.l10?.toFixed(1) ?? "--"}</span>
+                              {c.l5 !== null && (
+                                <span className="text-emerald-300">
+                                  • L5 {c.l5.toFixed(1)}
+                                </span>
+                              )}
+                            </>
+                          }
+                          heroRight={
+                            <span
+                              className={
+                                meta?.isOwned
+                                  ? "text-sky-300"
+                                  : "text-amber-300"
+                              }
+                            >
+                              {meta?.isOwned
+                                ? "€0.00"
+                                : formatMoney(meta?.costCents, currency)}
+                            </span>
+                          }
+                          subRight={
+                            <span>{slot.slotScore.toFixed(1)} pts</span>
+                          }
+                          actionRight={
+                            !meta?.isOwned && meta?.marketUrl ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void openInActiveTab(meta.marketUrl)
+                                }
+                                className="inline-flex items-center gap-0.5 rounded-lg bg-amber-400/15 px-1.5 py-1 text-[9.5px] font-semibold text-amber-200 hover:bg-amber-400/25"
+                              >
+                                Buy
+                                <ExternalLink className="h-2.5 w-2.5" />
+                              </button>
+                            ) : undefined
+                          }
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </details>
+        </>
+      )}
+    </div>
+  );
+}

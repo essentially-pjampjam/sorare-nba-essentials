@@ -1,0 +1,17 @@
+node_modules/
+dist/
+releases/
+*.log
+.DS_Store
+
+# Local workspace / internal notes & authoring assets
+AGENTS.md
+CLAUDE.md
+PROJECT_STATE.md
+ROADMAP.md
+SPEC.md
+CHROMEWEBSTORE.md
+PRIVACY_POLICY.md
+/logo.af
+/logo.png
+scripts/generate-promos.mjs
