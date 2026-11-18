@@ -18,7 +18,7 @@ mkdirSync(releasesDir, { recursive: true });
 
 const outZip = resolve(
   releasesDir,
-  `pjampjams-sorare-essentials-v${version}.zip`,
+  `pjampjams-sorare-nba-essentials-v${version}.zip`,
 );
 if (existsSync(outZip)) {
   rmSync(outZip, { force: true });

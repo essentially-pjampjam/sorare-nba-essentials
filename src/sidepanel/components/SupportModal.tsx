@@ -81,7 +81,7 @@ export function SupportModal({ onClose }: SupportModalProps) {
             id="support-dialog-title"
             className="text-sm font-semibold text-slate-100"
           >
-            Support Sorare Essentials
+            Support Sorare NBA Essentials
           </h2>
         </div>
         <button
@@ -96,7 +96,7 @@ export function SupportModal({ onClose }: SupportModalProps) {
       </div>
 
       <p className="text-xs leading-relaxed text-slate-300">
-        Sorare Essentials is free, local-first, and open-source (MIT). Use at
+        Sorare NBA Essentials is free, local-first, and open-source (MIT). Use at
         your own risk - independent companion not affiliated with Sorare or the
         NBA. Report bugs or request features directly via GitHub Issues. If this
         helper saved you time or Essence, optional Sorare card trades or tips

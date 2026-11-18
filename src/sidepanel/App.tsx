@@ -76,7 +76,7 @@ function getExtensionVersion(): string {
   try {
     return chrome.runtime.getManifest().version;
   } catch {
-    return "2.6.1";
+    return "2.6.2";
   }
 }
 
@@ -798,13 +798,13 @@ export function App() {
             <div className="flex min-w-0 items-center gap-2">
               <img
                 src="/logo.png"
-                alt="pjampjam's Sorare Essentials"
+                alt="pjampjam's Sorare NBA Essentials"
                 className="h-8 w-8 shrink-0 rounded-xl object-contain"
               />
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <h1 className="truncate text-xs font-semibold tracking-tight text-slate-100">
-                    Sorare Essentials
+                    Sorare NBA Essentials
                   </h1>
                   <button
                     type="button"

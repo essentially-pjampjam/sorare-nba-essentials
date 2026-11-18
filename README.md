@@ -1,15 +1,15 @@
 <p align="center">
-  <img src="public/icons/icon128.png" alt="pjampjam's Sorare Essentials logo" width="72" />
+  <img src="public/icons/icon128.png" alt="pjampjam's Sorare NBA Essentials logo" width="72" />
 </p>
 
-<h1 align="center">pjampjam's Sorare Essentials</h1>
+<h1 align="center">pjampjam's Sorare NBA Essentials</h1>
 
 <p align="center">
-  <strong>v2.6.1</strong> - Unofficial Chrome Side Panel & Dashboard for Sorare NBA
+  <strong>v2.6.2</strong> - Unofficial Chrome Side Panel & Dashboard for Sorare NBA
 </p>
 
 <p align="center">
-  <a href="https://github.com/essentially-pjampjam/sorare-essentials/issues/new">Send Feedback / Report Bug</a>
+  <a href="https://github.com/essentially-pjampjam/sorare-nba-essentials/issues/new">Send Feedback / Report Bug</a>
   &nbsp;|&nbsp;
   <a href="DISCLAIMER.md">Disclaimer</a>
   &nbsp;|&nbsp;
@@ -26,7 +26,7 @@ Hey - welcome! I originally put this Chrome extension together for myself becaus
 
 - **Built for convenience, not an unfair advantage:** Everything here just pulls public Sorare NBA / ESPN data you can already check yourself and organizes it in one place to save clicks (collection math, Essence per currency, Craft pool odds, lineup cap combos, ending-soon `< 1h` auctions, and gallery filters). It never auto-buys, auto-bids, or auto-submits anything for you.
 - **Take what's useful:** Some features or numbers might make a lot of sense for how you play, while other parts might not fit your style at all - feel free to ignore whatever you don't need.
-- **Early release - feedback appreciated:** This is still an early version and Sorare tweaks rules and pricing regularly. If you spot a bug, weird math, or have an idea that would save you time, please [open an issue on GitHub](https://github.com/essentially-pjampjam/sorare-essentials/issues/new).
+- **Early release - feedback appreciated:** This is still an early version and Sorare tweaks rules and pricing regularly. If you spot a bug, weird math, or have an idea that would save you time, please [open an issue on GitHub](https://github.com/essentially-pjampjam/sorare-nba-essentials/issues/new).
 - **Rate limits in Public Mode:** Without a personal Sorare API key, Sorare caps unauthenticated GraphQL calls, so big actions like pricing every historical collection (`Load All`) can take 2-4 minutes. Smaller batches (`Top 3` in ~4s or `26-27` sets in ~45s) stay much quicker, and if you ever want 60x speed you can paste your own local-only API key in Settings.
 - **How it was built:** I used AI coding tools to help write and iterate on parts of this project, and 100% of the source code is right here in the repo so anyone can inspect, audit, or customize it.
 
@@ -60,8 +60,8 @@ Hey - welcome! I originally put this Chrome extension together for myself becaus
 
 1. Clone or download this repository:
    ```bash
-   git clone https://github.com/essentially-pjampjam/sorare-essentials.git
-   cd sorare-essentials
+   git clone https://github.com/essentially-pjampjam/sorare-nba-essentials.git
+   cd sorare-nba-essentials
    ```
 2. Install dependencies and build:
    ```bash
@@ -86,7 +86,7 @@ npm run zip         # Build dist/ and package zip
 ## Privacy & Support
 
 - **Local only:** Settings, watchlist alerts, optional personal Sorare API key, and short-lived cache stay exclusively in `chrome.storage.local` on your machine. There is no backend server or tracking. See [PRIVACY.md](PRIVACY.md) and [DISCLAIMER.md](DISCLAIMER.md).
-- **Say hello or support:** Ideas and bug reports go straight to [GitHub Issues](https://github.com/essentially-pjampjam/sorare-essentials/issues/new). Optional trades/tips (`@pjampjam`) are inside the in-app **Support** dialog.
+- **Say hello or support:** Ideas and bug reports go straight to [GitHub Issues](https://github.com/essentially-pjampjam/sorare-nba-essentials/issues/new). Optional trades/tips (`@pjampjam`) are inside the in-app **Support** dialog.
 
 Best of luck with your lineups and crafts!
 

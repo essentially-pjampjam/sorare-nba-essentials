@@ -20,9 +20,10 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
-    version: "2.6.1",
-    title: "Realistic <1h Auctions, Instant Buy Fix & Easier Clicks",
+    version: "2.6.2",
+    title: "Sorare NBA Essentials Rebrand, <1h Auctions & Instant Buy Fix",
     items: [
+      "Renamed extension & repository to pjampjam's Sorare NBA Essentials (sorare-nba-essentials) so Sorare and NBA sit front and center.",
       "Auction seeker now filters out auctions with >1h left so early 0-bid starting prices don't look artificially cheap.",
       "Switched 1ST Instant Buy & team collection pricing to grouped SingleSaleOffer / PrimaryOffer discovery so Instant Buy floors populate reliably.",
       "Added Load 26-27 alongside Top 3 / Load All with clear rate-limit timing notes, Stop button, and full-row clickable Quest & Collection headers.",

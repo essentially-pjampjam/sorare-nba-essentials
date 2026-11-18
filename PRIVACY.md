@@ -1,8 +1,8 @@
-# Privacy Policy - pjampjam's Sorare Essentials
+# Privacy Policy - pjampjam's Sorare NBA Essentials
 
 Last updated: 2026-11-18
 
-**pjampjam's Sorare Essentials** is an independent, client-side Chrome extension.
+**pjampjam's Sorare NBA Essentials** is an independent, client-side Chrome extension.
 
 ## Data Storage & Usage
 - **Local-only storage (`chrome.storage.local`):** Your entered Sorare username/slug, per-rarity Essence balances, UI preferences, watchlist rules, optional Sorare API Key, and a temporary 10-minute market/collection cache are stored **exclusively on your local device** in Chrome storage.

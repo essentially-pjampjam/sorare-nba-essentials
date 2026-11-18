@@ -181,7 +181,7 @@ export function SettingsModal({
             Settings & API Fast Mode
           </h2>
           <p className="text-[11px] text-slate-400">
-            pjampjam&apos;s Sorare Essentials •{" "}
+            pjampjam&apos;s Sorare NBA Essentials •{" "}
             <span className="font-mono text-amber-300">v{version}</span>
           </p>
         </div>

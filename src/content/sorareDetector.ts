@@ -696,7 +696,7 @@
     const pill = document.createElement("button");
     pill.type = "button";
     pill.className = "pill";
-    pill.title = "Open pjampjam's Sorare Essentials";
+    pill.title = "Open pjampjam's Sorare NBA Essentials";
     pillEl = pill;
 
     const logoBadge = document.createElement("span");
@@ -704,7 +704,7 @@
     if (logoSrc) {
       const img = document.createElement("img");
       img.src = logoSrc;
-      img.alt = "Essentials";
+      img.alt = "Sorare NBA Essentials";
       img.className = "logo-img";
       logoBadge.appendChild(img);
     } else {
@@ -719,7 +719,7 @@
 
     const title = document.createElement("span");
     title.className = "title";
-    title.textContent = "Sorare Essentials";
+    title.textContent = "Sorare NBA Essentials";
 
     const sub = document.createElement("span");
     sub.className = "sub";

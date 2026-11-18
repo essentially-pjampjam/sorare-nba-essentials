@@ -552,8 +552,8 @@ export const BOOSTING_GUIDE_RULES = [
 export const SUPPORT_DONATION_INFO = {
   sorareTradeUrl: "https://sorare.com/nba/club/pjampjam",
   sorareHandle: "@pjampjam",
-  githubUrl: "https://github.com/essentially-pjampjam/sorare-essentials",
-  feedbackUrl: "https://github.com/essentially-pjampjam/sorare-essentials/issues/new",
+  githubUrl: "https://github.com/essentially-pjampjam/sorare-nba-essentials",
+  feedbackUrl: "https://github.com/essentially-pjampjam/sorare-nba-essentials/issues/new",
   wallets: [
     {
       network: "EVM",
