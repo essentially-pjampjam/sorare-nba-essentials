@@ -155,6 +155,7 @@ export interface QuestShoppingCandidate {
   saleType: "instant_buy" | "auction";
   isPrimaryOffer?: boolean;
   isFirstOwnerEligible: boolean;
+  endDate?: string | null;
   cardSlug: string | null;
   marketUrl: string;
   overlappingQuestIds: string[];

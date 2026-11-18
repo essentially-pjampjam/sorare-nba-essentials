@@ -13,6 +13,7 @@ import {
   TrendingDown,
   Trophy,
   Wallet,
+  X,
   Zap,
 } from "lucide-react";
 import { Fragment, useMemo, useState } from "react";
@@ -64,8 +65,10 @@ interface CollectionsTabProps {
   pricedSlugs: string[];
   pricingSlug: string | null;
   isQuestDealsLoading?: boolean;
+  hasLoadedQuestDeals?: boolean;
   onPriceCollection: (slug: string) => void;
   onPriceTopCollections: (slugs: string[]) => void;
+  onCancelScan?: () => void;
   onLoadQuestDeals?: () => void;
   onSwitchTab?: (tab: "bargains" | "gallery") => void;
   onScanNow: () => void;
@@ -120,8 +123,10 @@ export function CollectionsTab({
   pricedSlugs,
   pricingSlug,
   isQuestDealsLoading = false,
+  hasLoadedQuestDeals = false,
   onPriceCollection,
   onPriceTopCollections,
+  onCancelScan,
   onLoadQuestDeals,
   onSwitchTab,
   onScanNow,
@@ -154,10 +159,14 @@ export function CollectionsTab({
     return [...analyses]
       .filter(
         (a) =>
+          !a.collection.complete &&
           !pricedSet.has(a.collection.slug) &&
           a.nextEssenceMilestone !== null,
       )
       .sort((a, b) => {
+        const ia = a.collection.inSeason ? 0 : 1;
+        const ib = b.collection.inSeason ? 0 : 1;
+        if (ia !== ib) return ia - ib;
         const na = a.nextEssenceMilestone?.cardsNeeded ?? 99;
         const nb = b.nextEssenceMilestone?.cardsNeeded ?? 99;
         if (na !== nb) return na - nb;
@@ -170,12 +179,31 @@ export function CollectionsTab({
       .map((a) => a.collection.slug);
   }, [analyses, pricedSet]);
 
+  const inSeasonUnpricedSlugs = useMemo(() => {
+    return analyses
+      .filter(
+        (a) =>
+          !a.collection.complete &&
+          a.collection.inSeason &&
+          !pricedSet.has(a.collection.slug),
+      )
+      .sort((a, b) => {
+        const na = a.nextEssenceMilestone?.cardsNeeded ?? 99;
+        const nb = b.nextEssenceMilestone?.cardsNeeded ?? 99;
+        return na - nb;
+      })
+      .map((a) => a.collection.slug);
+  }, [analyses, pricedSet]);
+
   const allUnpricedIncompleteSlugs = useMemo(() => {
     return analyses
       .filter(
         (a) => !a.collection.complete && !pricedSet.has(a.collection.slug),
       )
       .sort((a, b) => {
+        const ia = a.collection.inSeason ? 0 : 1;
+        const ib = b.collection.inSeason ? 0 : 1;
+        if (ia !== ib) return ia - ib;
         const na = a.nextEssenceMilestone?.cardsNeeded ?? 99;
         const nb = b.nextEssenceMilestone?.cardsNeeded ?? 99;
         return na - nb;
@@ -580,13 +608,14 @@ export function CollectionsTab({
               Easiest Essence Quick Finder
             </span>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex flex-wrap items-center gap-1.5">
             {closestUnpricedSlugs.length > 0 && (
               <button
                 type="button"
                 disabled={Boolean(pricingSlug)}
                 onClick={() => onPriceTopCollections(closestUnpricedSlugs)}
-                className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2 py-1 text-[10px] font-semibold text-emerald-200 hover:bg-emerald-500/30 disabled:opacity-50"
+                className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-gradient-to-b from-emerald-300 to-emerald-500 px-2.5 py-1 text-[10.5px] font-bold text-slate-950 shadow-xs transition hover:from-emerald-200 hover:to-emerald-400 disabled:opacity-50"
+                title="Price the 3 closest unpriced sets (prioritizes Active 26-27 first; works in All Seasons too)"
               >
                 {pricingSlug === "__batch__" && (
                   <Loader2 className="h-3 w-3 animate-spin" />
@@ -594,19 +623,53 @@ export function CollectionsTab({
                 Top {closestUnpricedSlugs.length}
               </button>
             )}
+            {!inSeasonOnly &&
+              inSeasonUnpricedSlugs.length > closestUnpricedSlugs.length && (
+                <button
+                  type="button"
+                  disabled={Boolean(pricingSlug)}
+                  onClick={() => onPriceTopCollections(inSeasonUnpricedSlugs)}
+                  className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-sky-400/50 bg-sky-500/20 px-2.5 py-1 text-[10.5px] font-bold text-sky-100 transition hover:bg-sky-500/30 disabled:opacity-50"
+                  title="Price all incomplete active 2026-27 team collections (~35-50s in Public Mode)"
+                >
+                  Load 26-27 ({inSeasonUnpricedSlugs.length})
+                </button>
+              )}
             {allUnpricedIncompleteSlugs.length > closestUnpricedSlugs.length && (
               <button
                 type="button"
                 disabled={Boolean(pricingSlug)}
                 onClick={() => onPriceTopCollections(allUnpricedIncompleteSlugs)}
-                className="inline-flex items-center gap-1 rounded-lg border border-amber-400/35 bg-amber-400/15 px-2 py-1 text-[10px] font-semibold text-amber-200 hover:bg-amber-400/25 disabled:opacity-50"
-                title="Stream Instant Buy & Auction floor pricing for every active NBA team collection"
+                className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-gradient-to-b from-amber-300 to-amber-500 px-2.5 py-1 text-[10.5px] font-bold text-slate-950 shadow-xs transition hover:from-amber-200 hover:to-amber-400 disabled:opacity-50"
+                title="Price every incomplete collection in this view - large lists can take 2-4 min in Public Mode due to Sorare rate limits"
               >
                 Load All ({allUnpricedIncompleteSlugs.length})
               </button>
             )}
+            {Boolean(pricingSlug) && onCancelScan && (
+              <button
+                type="button"
+                onClick={onCancelScan}
+                className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-rose-400/45 bg-rose-500/20 px-2 py-1 text-[10px] font-bold text-rose-100 hover:bg-rose-500/30"
+              >
+                <X className="h-3 w-3" />
+                Stop
+              </button>
+            )}
           </div>
         </div>
+
+        {(allUnpricedIncompleteSlugs.length > 0 || Boolean(pricingSlug)) && (
+          <div className="mt-1.5 rounded-lg border border-amber-400/20 bg-[#0b101b]/80 px-2.5 py-1 text-[9.5px] leading-relaxed text-slate-400">
+            <strong className="text-amber-200">Rate-limit note:</strong> Public Mode allows ~50-120 req/min.{" "}
+            <strong className="text-emerald-300">Top 3</strong> takes ~4s,{" "}
+            <strong className="text-sky-300">26-27 sets</strong> takes ~45s, and{" "}
+            <strong className="text-amber-300">
+              Load All ({allUnpricedIncompleteSlugs.length})
+            </strong>{" "}
+            across older seasons can take 2-4 min. Add a local API Key in Settings for 60x speed.
+          </div>
+        )}
 
         <div className="mt-1.5 rounded-lg border border-white/6 bg-[#0b101b] px-2.5 py-1.5 text-[10px] text-amber-200">
           <strong className="text-amber-300">Best Move:</strong>{" "}
@@ -751,7 +814,7 @@ export function CollectionsTab({
 
       {/* Cascadable Section 1 (Closed by default): Live NBA League Collect Quests & Sources */}
       <details className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
-        <summary className="flex w-full items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
+        <summary className="flex w-full cursor-pointer select-none items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
           <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
             <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-amber-400" />
             <Info className="h-3.5 w-3.5 text-amber-400" />
@@ -770,14 +833,14 @@ export function CollectionsTab({
                   [
                     { id: "all", label: "All 1ST" },
                     { id: "primary_instant", label: "1ST Instant Buy" },
-                    { id: "auction", label: "1ST Auctions" },
+                    { id: "auction", label: "1ST Auctions (<1h)" },
                   ] as const
                 ).map((opt) => (
                   <button
                     key={opt.id}
                     type="button"
                     onClick={() => setQuestBuyFilter(opt.id)}
-                    className={`rounded-md px-2 py-0.5 text-[9.5px] font-semibold transition ${
+                    className={`cursor-pointer rounded-md px-2 py-0.5 text-[9.5px] font-semibold transition ${
                       questBuyFilter === opt.id
                         ? "bg-emerald-500/20 text-emerald-200"
                         : "text-slate-400 hover:text-slate-200"
@@ -793,7 +856,7 @@ export function CollectionsTab({
                   type="button"
                   disabled={isQuestDealsLoading}
                   onClick={onLoadQuestDeals}
-                  className="inline-flex items-center gap-1 rounded-lg border border-amber-400/35 bg-amber-400/15 px-2 py-0.5 text-[9.5px] font-semibold text-amber-200 hover:bg-amber-400/25 disabled:opacity-50"
+                  className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-gradient-to-b from-amber-300 to-amber-500 px-2.5 py-1 text-[10px] font-bold text-slate-950 shadow-xs transition hover:from-amber-200 hover:to-amber-400 disabled:opacity-50"
                 >
                   {isQuestDealsLoading && (
                     <Loader2 className="h-2.5 w-2.5 animate-spin" />
@@ -832,66 +895,69 @@ export function CollectionsTab({
                         : "border-white/8 bg-[#111726]"
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-1">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setExpandedQuestId((prev) =>
-                            prev === q.id ? "__none__" : q.id,
-                          )
-                        }
-                        className="flex min-w-0 items-center gap-1 text-left"
-                      >
-                        {isOpen ? (
-                          <ChevronDown className="h-3 w-3 shrink-0 text-amber-300" />
-                        ) : (
-                          <ChevronRight className="h-3 w-3 shrink-0 text-slate-400" />
-                        )}
-                        <span className="truncate font-semibold text-slate-100">
-                          {q.name}
-                        </span>
-                        {q.isTopOptimal && (
-                          <span className="shrink-0 rounded bg-amber-400/20 px-1 text-[9px] font-bold text-amber-300">
-                            BEST
+                    <button
+                      type="button"
+                      aria-expanded={isOpen}
+                      onClick={() =>
+                        setExpandedQuestId((prev) =>
+                          prev === q.id ? "__none__" : q.id,
+                        )
+                      }
+                      className="block w-full cursor-pointer text-left focus-visible:outline-2 focus-visible:outline-amber-400"
+                    >
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="flex min-w-0 items-center gap-1">
+                          {isOpen ? (
+                            <ChevronDown className="h-3 w-3 shrink-0 text-amber-300" />
+                          ) : (
+                            <ChevronRight className="h-3 w-3 shrink-0 text-slate-400" />
+                          )}
+                          <span className="truncate font-semibold text-slate-100">
+                            {q.name}
                           </span>
-                        )}
-                      </button>
-                      <span
-                        className={`shrink-0 rounded border px-1 text-[9px] font-bold ${
-                          q.firstOwnerOnly
-                            ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-300"
-                            : "border-sky-400/40 bg-sky-500/15 text-sky-300"
-                        }`}
-                      >
-                        {q.firstOwnerOnly ? "1ST" : "ANY"}
-                      </span>
-                    </div>
+                          {q.isTopOptimal && (
+                            <span className="shrink-0 rounded bg-amber-400/20 px-1 text-[9px] font-bold text-amber-300">
+                              BEST
+                            </span>
+                          )}
+                        </span>
+                        <span
+                          className={`shrink-0 rounded border px-1 text-[9px] font-bold ${
+                            q.firstOwnerOnly
+                              ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-300"
+                              : "border-sky-400/40 bg-sky-500/15 text-sky-300"
+                          }`}
+                        >
+                          {q.firstOwnerOnly ? "1ST" : "ANY"}
+                        </span>
+                      </div>
 
-                    {/* Progress Count & Bar */}
-                    <div className="mt-1 flex items-center justify-between text-[10px]">
-                      <span className="text-slate-300">
-                        {q.id === "full-collection"
-                          ? q.closestTeamName
-                            ? `${q.closestTeamName.replace(/ Limited| Rare/g, "")}`
-                            : "Closest team"
-                          : `${q.current} / ${q.target}`}{" "}
-                        •{" "}
-                        <strong className="text-amber-300">
-                          +{q.essenceReward.toLocaleString()}E
-                        </strong>
-                      </span>
-                      <span className="text-emerald-300">
-                        +{q.essencePerRemainingCard}E/card
-                      </span>
-                    </div>
-                    <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-black/50">
-                      <div
-                        className={`h-full ${
-                          q.isTopOptimal ? "bg-amber-400" : "bg-emerald-400"
-                        }`}
-                        style={{ width: `${q.progressPct}%` }}
-                      />
-                    </div>
+                      {/* Progress Count & Bar */}
+                      <div className="mt-1 flex items-center justify-between text-[10px]">
+                        <span className="text-slate-300">
+                          {q.id === "full-collection"
+                            ? q.closestTeamName
+                              ? `${q.closestTeamName.replace(/ Limited| Rare/g, "")}`
+                              : "Closest team"
+                            : `${q.current} / ${q.target}`}{" "}
+                          •{" "}
+                          <strong className="text-amber-300">
+                            +{q.essenceReward.toLocaleString()}E
+                          </strong>
+                        </span>
+                        <span className="text-emerald-300">
+                          +{q.essencePerRemainingCard}E/card
+                        </span>
+                      </div>
+                      <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-black/50">
+                        <div
+                          className={`h-full ${
+                            q.isTopOptimal ? "bg-amber-400" : "bg-emerald-400"
+                          }`}
+                          style={{ width: `${q.progressPct}%` }}
+                        />
+                      </div>
+                    </button>
 
                     <div className="mt-1.5 flex items-center justify-between text-[9px] text-slate-400">
                       <span>
@@ -908,7 +974,7 @@ export function CollectionsTab({
                                 prev === q.id ? "__none__" : q.id,
                               )
                             }
-                            className="text-sky-300 hover:text-sky-200"
+                            className="cursor-pointer text-sky-300 hover:text-sky-200"
                           >
                             {isOpen ? "Hide picks" : `${visibleBuys.length} cheapest`}
                           </button>
@@ -916,7 +982,7 @@ export function CollectionsTab({
                         <button
                           type="button"
                           onClick={() => void openInActiveTab(q.marketFilterUrl)}
-                          className="inline-flex items-center gap-0.5 text-amber-300 hover:text-amber-200"
+                          className="inline-flex cursor-pointer items-center gap-0.5 text-amber-300 hover:text-amber-200"
                         >
                           {q.firstOwnerOnly ? "Primary Auctions" : "Market"}
                           <ExternalLink className="h-2.5 w-2.5" />
@@ -929,27 +995,34 @@ export function CollectionsTab({
                         {visibleBuys.length === 0 ? (
                           <div className="flex items-center justify-between gap-2 text-[9.5px] text-slate-400">
                             <span>
-                              {questBuyFilter === "primary_instant"
-                                ? "Click Load 1ST Instant & Auctions above to find direct Sorare Primary Offers."
-                                : questBuyFilter === "auction"
-                                  ? "Click Load 1ST Instant & Auctions above to scan live 2026 auctions."
-                                  : "Load 1ST Instant & Auctions above to rank cheapest eligible buys."}
+                              {hasLoadedQuestDeals || allScannedBargains.length > 0
+                                ? "No live matches on Sorare right now (auctions only show if < 1h left). Click Refresh or check Sorare directly."
+                                : questBuyFilter === "primary_instant"
+                                  ? "Click Load Prices to find direct Sorare Primary Offers."
+                                  : questBuyFilter === "auction"
+                                    ? "Click Load Prices to scan live <1h 2026 auctions."
+                                    : "Click Load Prices to rank cheapest eligible buys."}
                             </span>
                             {onLoadQuestDeals ? (
                               <button
                                 type="button"
                                 disabled={isQuestDealsLoading}
                                 onClick={onLoadQuestDeals}
-                                className="shrink-0 rounded border border-emerald-400/35 bg-emerald-500/15 px-1.5 py-0.5 font-semibold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50"
+                                className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg bg-gradient-to-b from-emerald-300 to-emerald-500 px-2.5 py-1 font-bold text-slate-950 shadow-xs transition hover:from-emerald-200 hover:to-emerald-400 disabled:opacity-50"
                               >
-                                Load Prices
+                                {isQuestDealsLoading && (
+                                  <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                                )}
+                                {hasLoadedQuestDeals || allScannedBargains.length > 0
+                                  ? "Refresh Prices"
+                                  : "Load Prices"}
                               </button>
                             ) : (
                               onSwitchTab && (
                                 <button
                                   type="button"
                                   onClick={() => onSwitchTab("bargains")}
-                                  className="shrink-0 rounded border border-emerald-400/35 bg-emerald-500/15 px-1.5 py-0.5 font-semibold text-emerald-200 hover:bg-emerald-500/25"
+                                  className="shrink-0 cursor-pointer rounded-lg bg-gradient-to-b from-emerald-300 to-emerald-500 px-2.5 py-1 font-bold text-slate-950 shadow-xs hover:from-emerald-200 hover:to-emerald-400"
                                 >
                                   Scan Deals
                                 </button>
@@ -984,6 +1057,11 @@ export function CollectionsTab({
                                   <span className="truncate font-medium text-slate-100">
                                     {cand.playerName}
                                   </span>
+                                  {cand.saleType === "auction" && cand.endDate && (
+                                    <span className="shrink-0 text-[8.5px] font-semibold text-sky-300">
+                                      {formatTimeLeft(cand.endDate)}
+                                    </span>
+                                  )}
                                 </div>
                                 {cand.overlappingQuestLabels.length > 1 && (
                                   <div className="truncate text-[8.5px] text-violet-300">
@@ -994,7 +1072,7 @@ export function CollectionsTab({
                               <button
                                 type="button"
                                 onClick={() => void openInActiveTab(cand.marketUrl)}
-                                className="inline-flex shrink-0 items-center gap-0.5 rounded bg-amber-400/15 px-1.5 py-0.5 font-semibold text-amber-200 hover:bg-amber-400/25"
+                                className="inline-flex shrink-0 cursor-pointer items-center gap-0.5 rounded bg-amber-400/15 px-1.5 py-0.5 font-semibold text-amber-200 hover:bg-amber-400/25"
                               >
                                 {formatMoney(cand.priceCents, currency)}
                                 <ExternalLink className="h-2.5 w-2.5" />
@@ -1054,7 +1132,7 @@ export function CollectionsTab({
         open
         className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]"
       >
-        <summary className="flex w-full items-center justify-between border-b border-white/6 px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
+        <summary className="flex w-full cursor-pointer select-none items-center justify-between border-b border-white/6 px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
           <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
             <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-amber-400" />
             <Layers className="h-3.5 w-3.5 text-amber-400" />
@@ -1162,7 +1240,11 @@ export function CollectionsTab({
                 return (
                   <Fragment key={collection.slug}>
                     <tr
-                      className={`transition hover:bg-white/[0.03] ${
+                      onClick={(e) => {
+                        if ((e.target as HTMLElement).closest("button")) return;
+                        handleToggleRow(collection.slug);
+                      }}
+                      className={`cursor-pointer transition hover:bg-white/[0.03] ${
                         isCraftBridge ? "bg-emerald-950/15" : ""
                       }`}
                     >
@@ -1171,7 +1253,7 @@ export function CollectionsTab({
                           type="button"
                           onClick={() => handleToggleRow(collection.slug)}
                           aria-expanded={isExpanded}
-                          className="block w-full px-3 py-2.5 text-left focus-visible:outline-2 focus-visible:outline-amber-400"
+                          className="block w-full cursor-pointer px-3 py-2.5 text-left focus-visible:outline-2 focus-visible:outline-amber-400"
                         >
                           <div className="flex items-center gap-1.5">
                             {isRowLoading ? (

@@ -20,6 +20,15 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.6.1",
+    title: "Realistic <1h Auctions, Instant Buy Fix & Easier Clicks",
+    items: [
+      "Auction seeker now filters out auctions with >1h left so early 0-bid starting prices don't look artificially cheap.",
+      "Switched 1ST Instant Buy & team collection pricing to grouped SingleSaleOffer / PrimaryOffer discovery so Instant Buy floors populate reliably.",
+      "Added Load 26-27 alongside Top 3 / Load All with clear rate-limit timing notes, Stop button, and full-row clickable Quest & Collection headers.",
+    ],
+  },
+  {
     version: "2.6.0",
     title: "Exact Scoring & Clean Community Feedback",
     items: [

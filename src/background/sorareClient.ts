@@ -83,9 +83,12 @@ interface CardDetailsRaw {
   assetId: string;
   seasonYear?: number | null;
   anyPlayer?: { slug: string; displayName: string } | null;
+  livePrimaryOffer?: { price?: MonetaryAmountsRaw | null } | null;
   liveSingleSaleOffer?: LiveOfferRaw | null;
   latestEnglishAuction?: AuctionRaw | null;
 }
+
+const MAX_REALISTIC_AUCTION_REMAINING_MS = 60 * 60 * 1000;
 
 export function extractSeasonFromFilters(
   transferMarketFilters: string,
@@ -132,9 +135,15 @@ export function convertAmountsToCurrencyCents(
 function parseAuctionPriceCents(
   auction: AuctionRaw | null | undefined,
   targetCurrency: Currency,
+  maxRemainingMs = MAX_REALISTIC_AUCTION_REMAINING_MS,
 ): number | null {
   if (!auction || auction.cancelled) return null;
   if (auction.bundledAnyCards && auction.bundledAnyCards.length > 1) return null;
+
+  const endMs = auction.endDate ? Date.parse(auction.endDate) : NaN;
+  const now = Date.now();
+  if (!Number.isFinite(endMs) || endMs <= now) return null;
+  if (maxRemainingMs > 0 && endMs - now > maxRemainingMs) return null;
 
   const fromBestBid = convertAmountsToCurrencyCents(
     auction.bestBid?.amounts,
@@ -142,8 +151,13 @@ function parseAuctionPriceCents(
   );
   if (fromBestBid !== null) return fromBestBid;
 
-  if (auction.currentPrice) {
-    const num = Number(auction.currentPrice);
+  const rawPrice =
+    (auction.bidsCount ?? 0) === 0 && auction.minNextBid
+      ? auction.minNextBid
+      : auction.currentPrice ?? auction.minNextBid;
+
+  if (rawPrice) {
+    const num = Number(rawPrice);
     if (Number.isFinite(num) && num > 0) {
       if (auction.currency === "USD" || auction.currency === "EUR") {
         const cents = Math.round(num * 100);
@@ -492,13 +506,20 @@ export class SorareClient {
       string,
       { teamName: string; rarity: Rarity; seasonYear: number | null }
     >();
+    const neededPlayerSlugs = new Set<string>();
 
     for (const slot of slots) {
-      if (slot.teamName) {
-        const gKey = `${slot.teamName}::${slot.rarity}::${slot.seasonYear ?? "any"}`;
+      neededPlayerSlugs.add(slot.playerSlug);
+      const queryName =
+        slot.teamName ??
+        slot.collectionName
+          .replace(/\s+(Limited|Rare|Super Rare|Unique).*$/i, "")
+          .trim();
+      if (queryName) {
+        const gKey = `${queryName}::${slot.rarity}::${slot.seasonYear ?? "any"}`;
         if (!uniqueGroups.has(gKey)) {
           uniqueGroups.set(gKey, {
-            teamName: slot.teamName,
+            teamName: queryName,
             rarity: slot.rarity,
             seasonYear: slot.seasonYear,
           });
@@ -507,7 +528,7 @@ export class SorareClient {
     }
 
     const useFast = this.hasApiKey();
-    const groupedPageSize = useFast ? 40 : 15;
+    const groupedPageSize = useFast ? 40 : 25;
     const groupedQuery = `
       query GroupedTeamFloor($filters: [SearchFilterInput!], $query: String, $pageSize: Int!) {
         searchGroupedCards(
@@ -523,8 +544,6 @@ export class SorareClient {
           groups {
             hits {
               slug
-              season
-              sale { type price }
               card {
                 assetId
                 anyPlayer { slug displayName }
@@ -540,8 +559,6 @@ export class SorareClient {
         groups: Array<{
           hits: Array<{
             slug: string;
-            season: string;
-            sale: { type: string; price: number } | null;
             card: {
               assetId: string;
               anyPlayer: { slug: string; displayName: string };
@@ -577,6 +594,11 @@ export class SorareClient {
           operator: "EQUAL",
           values: [{ stringValue: group.rarity }],
         },
+        {
+          field: "sale.type",
+          operator: "EQUAL",
+          values: [{ stringValue: "SingleSaleOffer" }],
+        },
       ];
       if (group.seasonYear !== null) {
         filters.push({
@@ -589,13 +611,19 @@ export class SorareClient {
       const data = await this.postGraphQL<GroupedResp>(
         groupedQuery,
         { filters, query: group.teamName, pageSize: groupedPageSize },
-        `grouped:${group.teamName}:${group.rarity}:${group.seasonYear ?? "any"}:${groupedPageSize}`,
+        `grouped_sso:${group.teamName}:${group.rarity}:${group.seasonYear ?? "any"}:${groupedPageSize}`,
         signal,
       );
 
       for (const grp of data.searchGroupedCards?.groups ?? []) {
         const hit = grp.hits?.[0];
         if (!hit?.card?.assetId) continue;
+        if (
+          neededPlayerSlugs.size > 0 &&
+          !neededPlayerSlugs.has(hit.card.anyPlayer.slug)
+        ) {
+          continue;
+        }
         discoveredAssetIds.push({
           assetId: hit.card.assetId,
           cardSlug: hit.slug,
@@ -619,6 +647,9 @@ export class SorareClient {
           assetId
           seasonYear
           anyPlayer { slug displayName }
+          livePrimaryOffer {
+            price { usdCents eurCents referenceCurrency }
+          }
           liveSingleSaleOffer {
             dealStatus
             endDate
@@ -648,7 +679,7 @@ export class SorareClient {
     );
     const metaByAssetId = new Map(discoveredAssetIds.map((d) => [d.assetId, d]));
 
-    const chunkSize = useFast ? 35 : 15;
+    const chunkSize = useFast ? 35 : 12;
     for (let i = 0; i < uniqueAssetIds.length; i += chunkSize) {
       if (signal?.aborted) break;
       const chunk = uniqueAssetIds.slice(i, i + chunkSize);
@@ -669,10 +700,18 @@ export class SorareClient {
           meta.seasonYear,
         );
 
-        const instantBuyCents = convertAmountsToCurrencyCents(
-          card.liveSingleSaleOffer?.receiverSide?.amounts,
-          currency,
-        );
+        const sso = card.liveSingleSaleOffer;
+        const ssoOpen =
+          sso &&
+          (!sso.dealStatus ||
+            sso.dealStatus === "opened" ||
+            sso.dealStatus === "UNKNOWN");
+        const instantBuyCents =
+          convertAmountsToCurrencyCents(
+            ssoOpen ? sso.receiverSide?.amounts : null,
+            currency,
+          ) ??
+          convertAmountsToCurrencyCents(card.livePrimaryOffer?.price, currency);
         const isBundle =
           (card.latestEnglishAuction?.bundledAnyCards?.length ?? 0) > 1;
         const auctionBidCents = parseAuctionPriceCents(
@@ -1318,8 +1357,9 @@ export class SorareClient {
   }
 
   /**
-   * Scans live Sorare NBA marketplace listings (Instant Buy floor values + 2026 In-Season deals,
-   * or active English Auctions) including L10 + L5 (Last Week) + Projected + Card Artwork.
+   * Scans live Sorare NBA marketplace listings (grouped unique-player Instant Buys + 1ST Primary Offers,
+   * or realistic <1h active English Auctions) including L10 + L5 + Projected + Card Artwork.
+   * Keeps unauthenticated queries strictly under Sorare's 500 complexity limit.
    */
   async fetchNbaBargains(
     rarity: Rarity,
@@ -1327,8 +1367,62 @@ export class SorareClient {
     currency: Currency,
     signal?: AbortSignal,
   ): Promise<BargainListing[]> {
-    const query = `
-      query NbaBargainHunter($filters: [SearchFilterInput!], $sorts: [SearchSortInput!], $page: Int!, $pageSize: Int!) {
+    const groupedDiscoverQuery = `
+      query GroupedBargainIds($filters: [SearchFilterInput!], $sorts: [SearchSortInput!], $pageSize: Int!) {
+        searchGroupedCards(
+          filters: $filters
+          onSaleOnly: true
+          cheapestWithinGroup: true
+          groupBy: [PLAYER_AND_RARITY]
+          groupLimit: 1
+          sorts: $sorts
+          pageSize: $pageSize
+        ) {
+          groups {
+            hits {
+              card {
+                assetId
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    const hydrateBuyQuery = `
+      query HydrateBargainCards($assetIds: [String!]) {
+        anyCards(assetIds: $assetIds) {
+          slug
+          assetId
+          rarityTyped
+          seasonYear
+          inSeasonEligible
+          pictureUrl(derivative: "tinified")
+          ... on NBACard { cardEditionName }
+          ownershipHistory { transferType }
+          anyTeam { name slug }
+          anyPlayer {
+            slug
+            displayName
+            anyPositions
+            l10: averageScore(type: LAST_TEN_PLAYED_SO5_AVERAGE_SCORE)
+            l5: averageScore(type: LAST_FIVE_AVERAGE_ALL_AROUND_SCORE)
+            projected: nextClassicFixtureProjectedScore
+          }
+          liveSingleSaleOffer {
+            dealStatus
+            endDate
+            receiverSide { amounts { usdCents eurCents referenceCurrency } }
+          }
+          livePrimaryOffer {
+            price { usdCents eurCents referenceCurrency }
+          }
+        }
+      }
+    `;
+
+    const leanAuctionSearchQuery = `
+      query LeanAuctionHunter($filters: [SearchFilterInput!], $sorts: [SearchSortInput!], $page: Int!, $pageSize: Int!) {
         searchCards(
           filters: $filters
           onSaleOnly: true
@@ -1356,20 +1450,13 @@ export class SorareClient {
                 l5: averageScore(type: LAST_FIVE_AVERAGE_ALL_AROUND_SCORE)
                 projected: nextClassicFixtureProjectedScore
               }
-              liveSingleSaleOffer {
-                dealStatus
-                endDate
-                receiverSide { amounts { usdCents eurCents referenceCurrency } }
-              }
-              livePrimaryOffer {
-                price { usdCents eurCents referenceCurrency }
-              }
               latestEnglishAuction {
                 dealStatus
                 cancelled
                 endDate
                 currency
                 currentPrice
+                minNextBid
                 bidsCount
                 bundledAnyCards { slug }
                 bestBid { amounts { usdCents eurCents referenceCurrency } }
@@ -1385,273 +1472,357 @@ export class SorareClient {
       { field: "rarity", operator: "EQUAL", values: [{ stringValue: rarity }] },
     ];
 
-    interface SearchResp {
-      searchCards: {
-        hits: Array<{
-          slug: string;
-          card: {
-            slug: string;
-            assetId: string;
-            rarityTyped: Rarity;
-            seasonYear: number;
-            inSeasonEligible: boolean;
-            pictureUrl?: string | null;
-            cardEditionName?: string | null;
-            ownershipHistory?: Array<{ transferType: string }>;
-            anyTeam: { name: string; slug: string } | null;
-            anyPlayer: {
-              slug: string;
-              displayName: string;
-              anyPositions: string[];
-              l10: number | null;
-              l5: number | null;
-              projected: number | null;
-            };
-            liveSingleSaleOffer: LiveOfferRaw | null;
-            livePrimaryOffer?: { price?: MonetaryAmountsRaw | null } | null;
-            latestEnglishAuction: AuctionRaw | null;
-          } | null;
+    interface RawBargainCard {
+      slug: string;
+      assetId: string;
+      rarityTyped: Rarity;
+      seasonYear: number;
+      inSeasonEligible: boolean;
+      pictureUrl?: string | null;
+      cardEditionName?: string | null;
+      ownershipHistory?: Array<{ transferType: string }>;
+      anyTeam: { name: string; slug: string } | null;
+      anyPlayer: {
+        slug: string;
+        displayName: string;
+        anyPositions: string[];
+        l10: number | null;
+        l5: number | null;
+        projected: number | null;
+      };
+      liveSingleSaleOffer?: LiveOfferRaw | null;
+      livePrimaryOffer?: { price?: MonetaryAmountsRaw | null } | null;
+      latestEnglishAuction?: AuctionRaw | null;
+    }
+
+    interface GroupedIdsResp {
+      searchGroupedCards: {
+        groups: Array<{
+          hits: Array<{ card: { assetId: string } | null }>;
         }>;
       };
     }
 
-    type PassKind = "auction" | "primary_instant" | "secondary_instant";
-    interface BargainPass {
-      page: number;
-      passKind: PassKind;
-      extraFilters: Array<Record<string, unknown>>;
-      tag: string;
+    interface HydrateCardsResp {
+      anyCards: RawBargainCard[];
     }
 
+    interface AuctionSearchResp {
+      searchCards: {
+        hits: Array<{
+          slug: string;
+          card: RawBargainCard | null;
+        }>;
+      };
+    }
+
+    const useFast = this.hasApiKey();
+    const hydrateChunkSize = useFast ? 35 : 12;
     const activeSeasonStr = String(getActiveNbaSeasonYear());
     const activeSeasonNum = Number(activeSeasonStr);
-
-    const passes: BargainPass[] =
-      mode === "ending_auctions"
-        ? [
-            ...(this.hasApiKey() ? [1, 3] : [1]).map((p) => ({
-              page: p,
-              passKind: "auction" as const,
-              extraFilters: [
-                {
-                  field: "sale.type",
-                  operator: "EQUAL",
-                  values: [{ stringValue: "EnglishAuction" }],
-                },
-              ],
-              tag: `auc_${p}`,
-            })),
-            // Explicit Active Season Primary Auctions pass for 1st-owner Quests
-            {
-              page: 1,
-              passKind: "auction" as const,
-              extraFilters: [
-                {
-                  field: "sale.type",
-                  operator: "EQUAL",
-                  values: [{ stringValue: "EnglishAuction" }],
-                },
-                {
-                  field: "season",
-                  operator: "EQUAL",
-                  values: [{ stringValue: activeSeasonStr }],
-                },
-              ],
-              tag: `auc${activeSeasonStr}_1`,
-            },
-          ]
-        : mode === "primary_instant"
-          ? (this.hasApiKey() ? [1, 2, 3] : [1, 2]).map((p) => ({
-              page: p,
-              passKind: "primary_instant" as const,
-              extraFilters: [
-                {
-                  field: "sale.type",
-                  operator: "EQUAL",
-                  values: [{ stringValue: "PrimaryOffer" }],
-                },
-                {
-                  field: "season",
-                  operator: "EQUAL",
-                  values: [{ stringValue: activeSeasonStr }],
-                },
-              ],
-              tag: `prim${activeSeasonStr}_${p}`,
-            }))
-          : [
-              // Pass 1 & 2: Overall cheapest starters
-              ...(this.hasApiKey() ? [1, 5] : [1]).map((p) => ({
-                page: p,
-                passKind: "secondary_instant" as const,
-                extraFilters: [
-                  {
-                    field: "sale.type",
-                    operator: "EQUAL",
-                    values: [{ stringValue: "SingleSaleOffer" }],
-                  },
-                ],
-                tag: `all_${p}`,
-              })),
-              // Explicit Active In-Season Instant Buy deals
-              ...(this.hasApiKey() ? [1, 3] : [1]).map((p) => ({
-                page: p,
-                passKind: "secondary_instant" as const,
-                extraFilters: [
-                  {
-                    field: "sale.type",
-                    operator: "EQUAL",
-                    values: [{ stringValue: "SingleSaleOffer" }],
-                  },
-                  {
-                    field: "season",
-                    operator: "EQUAL",
-                    values: [{ stringValue: activeSeasonStr }],
-                  },
-                ],
-                tag: `ins${activeSeasonStr}_${p}`,
-              })),
-              // Also sample Active Season PrimaryOffer (Sorare 1st-owner Instant Buys)
-              {
-                page: 1,
-                passKind: "primary_instant" as const,
-                extraFilters: [
-                  {
-                    field: "sale.type",
-                    operator: "EQUAL",
-                    values: [{ stringValue: "PrimaryOffer" }],
-                  },
-                  {
-                    field: "season",
-                    operator: "EQUAL",
-                    values: [{ stringValue: activeSeasonStr }],
-                  },
-                ],
-                tag: `prim${activeSeasonStr}_1`,
-              },
-            ];
-    const pageSize = this.hasApiKey() ? 18 : 12;
-
     const now = Date.now();
     const bySlug = new Map<string, BargainListing>();
 
-    for (const pass of passes) {
-      if (signal?.aborted) break;
-      const data = await this.postGraphQL<SearchResp>(
-        query,
+    const recordCard = (
+      c: RawBargainCard,
+      passKind: "auction" | "primary_instant" | "secondary_instant",
+    ): void => {
+      if (bySlug.has(c.slug)) return;
+
+      let saleType: "instant_buy" | "auction" = "instant_buy";
+      let isPrimaryOffer = false;
+      let priceCents: number | null = null;
+      let endDate: string | null = null;
+      let bidsCount: number | null = null;
+
+      if (passKind === "auction") {
+        const auc = c.latestEnglishAuction;
+        if (!auc || auc.cancelled) return;
+        const aucEnd = auc.endDate ? Date.parse(auc.endDate) : 0;
+        if (
+          !Number.isFinite(aucEnd) ||
+          aucEnd <= now ||
+          aucEnd - now > MAX_REALISTIC_AUCTION_REMAINING_MS
+        ) {
+          return;
+        }
+        priceCents = parseAuctionPriceCents(auc, currency);
+        if (priceCents === null) return;
+        saleType = "auction";
+        endDate = auc.endDate ?? null;
+        bidsCount = auc.bidsCount ?? 0;
+      } else if (passKind === "primary_instant") {
+        const primaryPrice = c.livePrimaryOffer?.price;
+        if (!primaryPrice) return;
+        priceCents = convertAmountsToCurrencyCents(primaryPrice, currency);
+        if (priceCents === null) return;
+        saleType = "instant_buy";
+        isPrimaryOffer = true;
+      } else {
+        const offer = c.liveSingleSaleOffer;
+        if (!offer) return;
+        if (
+          offer.dealStatus &&
+          offer.dealStatus !== "opened" &&
+          offer.dealStatus !== "UNKNOWN"
+        ) {
+          return;
+        }
+        priceCents = convertAmountsToCurrencyCents(
+          offer.receiverSide?.amounts,
+          currency,
+        );
+        if (priceCents === null) return;
+        saleType = "instant_buy";
+        endDate = offer.endDate ?? null;
+      }
+
+      const l10 = c.anyPlayer.l10 ?? 0;
+      const l5 =
+        typeof c.anyPlayer.l5 === "number"
+          ? Math.round(c.anyPlayer.l5 * 10) / 10
+          : null;
+      const projected =
+        typeof c.anyPlayer.projected === "number"
+          ? Math.round(c.anyPlayer.projected * 10) / 10
+          : null;
+
+      const { centsPerL10, valueScore } = scoreBargainListing(
+        l10,
+        priceCents,
+        c.inSeasonEligible,
+        l5,
+      );
+      const positions = (c.anyPlayer.anyPositions ?? []).filter(
+        (pos): pos is NbaPosition =>
+          pos === "basketball_guard" ||
+          pos === "basketball_forward" ||
+          pos === "basketball_center",
+      );
+
+      const isFirstOwnerEligible =
+        (isPrimaryOffer || saleType === "auction") &&
+        (c.inSeasonEligible || c.seasonYear >= activeSeasonNum) &&
+        (c.ownershipHistory?.length ?? 0) === 0;
+
+      bySlug.set(c.slug, {
+        cardSlug: c.slug,
+        assetId: c.assetId,
+        playerSlug: c.anyPlayer.slug,
+        playerName: c.anyPlayer.displayName,
+        teamName: c.anyTeam?.name ?? null,
+        teamSlug: c.anyTeam?.slug ?? null,
+        pictureUrl: c.pictureUrl ?? null,
+        cardEditionName: c.cardEditionName ?? null,
+        isPrimaryOffer,
+        isFirstOwnerEligible,
+        positions,
+        rarity: c.rarityTyped,
+        seasonYear: c.seasonYear,
+        inSeasonEligible: c.inSeasonEligible,
+        l10,
+        l5,
+        projected,
+        starCost: computeStarCost(l10),
+        saleType,
+        priceCents,
+        currency,
+        endDate,
+        bidsCount,
+        centsPerL10,
+        valueScore,
+        marketUrl: `${SORARE_NBA_CARD_URL}/${c.slug}`,
+      });
+    };
+
+    const runGroupedBuys = async (
+      passKind: "primary_instant" | "secondary_instant",
+      extraFilters: Array<Record<string, unknown>>,
+      groupPageSize: number,
+      maxHydrate: number,
+      tag: string,
+    ): Promise<void> => {
+      if (signal?.aborted) return;
+      const groupResp = await this.postGraphQL<GroupedIdsResp>(
+        groupedDiscoverQuery,
         {
-          filters: [...baseFilters, ...pass.extraFilters],
+          filters: [...baseFilters, ...extraFilters],
           sorts: [{ field: "price", direction: "ASC" }],
-          page: pass.page,
-          pageSize,
+          pageSize: groupPageSize,
         },
-        `bargains_v5:${rarity}:${mode}:${pass.tag}:${pageSize}`,
+        `bargains_grp_v6:${rarity}:${tag}:${groupPageSize}`,
         signal,
       );
 
-      for (const hit of data.searchCards?.hits ?? []) {
-        const c = hit.card;
-        if (!c || bySlug.has(c.slug)) continue;
+      const ids = Array.from(
+        new Set(
+          (groupResp.searchGroupedCards?.groups ?? [])
+            .map((g) => g.hits?.[0]?.card?.assetId)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ).slice(0, maxHydrate);
 
-        let saleType: "instant_buy" | "auction" = "instant_buy";
-        let isPrimaryOffer = false;
-        let priceCents: number | null = null;
-        let endDate: string | null = null;
-        let bidsCount: number | null = null;
-
-        if (pass.passKind === "auction") {
-          const auc = c.latestEnglishAuction;
-          if (!auc || auc.cancelled) continue;
-          const aucEnd = auc.endDate ? Date.parse(auc.endDate) : 0;
-          if (!Number.isFinite(aucEnd) || aucEnd <= now) continue;
-          priceCents = parseAuctionPriceCents(auc, currency);
-          if (priceCents === null) continue;
-          saleType = "auction";
-          endDate = auc.endDate ?? null;
-          bidsCount = auc.bidsCount ?? 0;
-        } else if (pass.passKind === "primary_instant") {
-          const primaryPrice = c.livePrimaryOffer?.price;
-          if (!primaryPrice) continue;
-          priceCents = convertAmountsToCurrencyCents(primaryPrice, currency);
-          if (priceCents === null) continue;
-          saleType = "instant_buy";
-          isPrimaryOffer = true;
-        } else {
-          const offer = c.liveSingleSaleOffer;
-          if (!offer) continue;
-          if (
-            offer.dealStatus &&
-            offer.dealStatus !== "opened" &&
-            offer.dealStatus !== "UNKNOWN"
-          ) {
-            continue;
-          }
-          priceCents = convertAmountsToCurrencyCents(
-            offer.receiverSide?.amounts,
-            currency,
-          );
-          if (priceCents === null) continue;
-          saleType = "instant_buy";
-          endDate = offer.endDate ?? null;
+      for (let i = 0; i < ids.length; i += hydrateChunkSize) {
+        if (signal?.aborted) break;
+        const chunk = ids.slice(i, i + hydrateChunkSize);
+        const hydResp = await this.postGraphQL<HydrateCardsResp>(
+          hydrateBuyQuery,
+          { assetIds: chunk },
+          `bargains_hyd_v6:${rarity}:${tag}:${i}:${chunk.length}`,
+          signal,
+        );
+        for (const c of hydResp.anyCards ?? []) {
+          recordCard(c, passKind);
         }
-
-        const l10 = c.anyPlayer.l10 ?? 0;
-        const l5 =
-          typeof c.anyPlayer.l5 === "number"
-            ? Math.round(c.anyPlayer.l5 * 10) / 10
-            : null;
-        const projected =
-          typeof c.anyPlayer.projected === "number"
-            ? Math.round(c.anyPlayer.projected * 10) / 10
-            : null;
-
-        const { centsPerL10, valueScore } = scoreBargainListing(
-          l10,
-          priceCents,
-          c.inSeasonEligible,
-          l5,
-        );
-        const positions = (c.anyPlayer.anyPositions ?? []).filter(
-          (pos): pos is NbaPosition =>
-            pos === "basketball_guard" ||
-            pos === "basketball_forward" ||
-            pos === "basketball_center",
-        );
-
-        const isFirstOwnerEligible =
-          (isPrimaryOffer || saleType === "auction") &&
-          (c.inSeasonEligible || c.seasonYear >= activeSeasonNum) &&
-          (c.ownershipHistory?.length ?? 0) === 0;
-
-        bySlug.set(c.slug, {
-          cardSlug: c.slug,
-          assetId: c.assetId,
-          playerSlug: c.anyPlayer.slug,
-          playerName: c.anyPlayer.displayName,
-          teamName: c.anyTeam?.name ?? null,
-          teamSlug: c.anyTeam?.slug ?? null,
-          pictureUrl: c.pictureUrl ?? null,
-          cardEditionName: c.cardEditionName ?? null,
-          isPrimaryOffer,
-          isFirstOwnerEligible,
-          positions,
-          rarity: c.rarityTyped,
-          seasonYear: c.seasonYear,
-          inSeasonEligible: c.inSeasonEligible,
-          l10,
-          l5,
-          projected,
-          starCost: computeStarCost(l10),
-          saleType,
-          priceCents,
-          currency,
-          endDate,
-          bidsCount,
-          centsPerL10,
-          valueScore,
-          marketUrl: `${SORARE_NBA_CARD_URL}/${c.slug}`,
-        });
       }
+    };
+
+    if (mode === "primary_instant") {
+      await runGroupedBuys(
+        "primary_instant",
+        [
+          {
+            field: "sale.type",
+            operator: "EQUAL",
+            values: [{ stringValue: "PrimaryOffer" }],
+          },
+          {
+            field: "season",
+            operator: "EQUAL",
+            values: [{ stringValue: activeSeasonStr }],
+          },
+        ],
+        useFast ? 40 : 35,
+        useFast ? 40 : 24,
+        `prim_${activeSeasonStr}`,
+      );
+      return Array.from(bySlug.values());
     }
+
+    if (mode === "ending_auctions") {
+      const auctionPageSize = useFast ? 24 : 10;
+      const auctionScopes: Array<{
+        tag: string;
+        extraFilters: Array<Record<string, unknown>>;
+      }> = [
+        {
+          tag: "auc_all",
+          extraFilters: [
+            {
+              field: "sale.type",
+              operator: "EQUAL",
+              values: [{ stringValue: "EnglishAuction" }],
+            },
+          ],
+        },
+        {
+          tag: `auc_${activeSeasonStr}`,
+          extraFilters: [
+            {
+              field: "sale.type",
+              operator: "EQUAL",
+              values: [{ stringValue: "EnglishAuction" }],
+            },
+            {
+              field: "season",
+              operator: "EQUAL",
+              values: [{ stringValue: activeSeasonStr }],
+            },
+          ],
+        },
+      ];
+
+      for (const scope of auctionScopes) {
+        for (const page of [1, 2]) {
+          if (signal?.aborted) break;
+          const data = await this.postGraphQL<AuctionSearchResp>(
+            leanAuctionSearchQuery,
+            {
+              filters: [...baseFilters, ...scope.extraFilters],
+              sorts: [{ field: "end_date", direction: "ASC" }],
+              page,
+              pageSize: auctionPageSize,
+            },
+            `bargains_auc_v6:${rarity}:${scope.tag}:${page}:${auctionPageSize}`,
+            signal,
+          );
+
+          let sawWithinHourOrUnparsed = false;
+          const hits = data.searchCards?.hits ?? [];
+          for (const hit of hits) {
+            if (!hit.card) continue;
+            const endMs = hit.card.latestEnglishAuction?.endDate
+              ? Date.parse(hit.card.latestEnglishAuction.endDate)
+              : NaN;
+            if (
+              !Number.isFinite(endMs) ||
+              endMs - now <= MAX_REALISTIC_AUCTION_REMAINING_MS
+            ) {
+              sawWithinHourOrUnparsed = true;
+            }
+            recordCard(hit.card, "auction");
+          }
+          // Sorted by end_date ASC, so once a full page is all > 1h out we can stop early
+          if (hits.length < auctionPageSize || !sawWithinHourOrUnparsed) {
+            break;
+          }
+        }
+      }
+      return Array.from(bySlug.values());
+    }
+
+    // mode === "instant_value": unique cheap players across all seasons, 2026 In-Season, and 1ST Primary Offers
+    await runGroupedBuys(
+      "secondary_instant",
+      [
+        {
+          field: "sale.type",
+          operator: "EQUAL",
+          values: [{ stringValue: "SingleSaleOffer" }],
+        },
+      ],
+      useFast ? 40 : 25,
+      useFast ? 36 : 12,
+      "sso_all",
+    );
+
+    await runGroupedBuys(
+      "secondary_instant",
+      [
+        {
+          field: "sale.type",
+          operator: "EQUAL",
+          values: [{ stringValue: "SingleSaleOffer" }],
+        },
+        {
+          field: "season",
+          operator: "EQUAL",
+          values: [{ stringValue: activeSeasonStr }],
+        },
+      ],
+      useFast ? 40 : 25,
+      useFast ? 36 : 12,
+      `sso_${activeSeasonStr}`,
+    );
+
+    await runGroupedBuys(
+      "primary_instant",
+      [
+        {
+          field: "sale.type",
+          operator: "EQUAL",
+          values: [{ stringValue: "PrimaryOffer" }],
+        },
+        {
+          field: "season",
+          operator: "EQUAL",
+          values: [{ stringValue: activeSeasonStr }],
+        },
+      ],
+      25,
+      useFast ? 24 : 12,
+      `prim_${activeSeasonStr}`,
+    );
 
     return Array.from(bySlug.values());
   }

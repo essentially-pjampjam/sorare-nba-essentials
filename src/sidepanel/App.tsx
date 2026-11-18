@@ -76,7 +76,7 @@ function getExtensionVersion(): string {
   try {
     return chrome.runtime.getManifest().version;
   } catch {
-    return "2.6.0";
+    return "2.6.1";
   }
 }
 
@@ -103,6 +103,8 @@ export function App() {
   const [isPricingGallery, setIsPricingGallery] = useState<boolean>(false);
   const [isBargainsLoading, setIsBargainsLoading] = useState<boolean>(false);
   const [isQuestDealsLoading, setIsQuestDealsLoading] =
+    useState<boolean>(false);
+  const [hasLoadedQuestDeals, setHasLoadedQuestDeals] =
     useState<boolean>(false);
   const [isCraftPricing, setIsCraftPricing] = useState<boolean>(false);
   const [pricingSlug, setPricingSlug] = useState<string | null>(null);
@@ -288,12 +290,12 @@ export function App() {
     setIsQuestDealsLoading(true);
     setError(null);
     try {
-      // Sequential execution so RateLimitQueue / cancelActiveScan keeps both modes intact
+      // Force fresh fetch in sequential calls so RateLimitQueue handles both cleanly under caps
       const primaryRes = await fetchBargains(
         activeRarity,
         "primary_instant",
         settings.currency,
-        false,
+        true,
         false,
       );
       if (primaryRes) {
@@ -307,7 +309,7 @@ export function App() {
         activeRarity,
         "ending_auctions",
         settings.currency,
-        false,
+        true,
         false,
       );
       if (auctionRes) {
@@ -317,6 +319,31 @@ export function App() {
             auctionRes,
         }));
       }
+
+      if (scanResult && scanResult.rarity === activeRarity) {
+        const pricedSet = new Set(scanResult.pricedCollectionSlugs);
+        const closestInSeasonTeam = [...scanResult.collections]
+          .filter((c) => !c.complete && c.inSeason && Boolean(c.teamSlug))
+          .sort((a, b) => {
+            const ra = a.slotsCount - a.fulfilledSlotsCount;
+            const rb = b.slotsCount - b.fulfilledSlotsCount;
+            if (ra !== rb) return ra - rb;
+            return b.fulfilledSlotsCount - a.fulfilledSlotsCount;
+          })[0];
+        if (closestInSeasonTeam && !pricedSet.has(closestInSeasonTeam.slug)) {
+          const pricedScan = await priceCollection(
+            scanResult.username,
+            closestInSeasonTeam.slug,
+            scanResult.rarity,
+            settings.currency,
+            scanResult.inSeasonOnly,
+          );
+          if (pricedScan) {
+            setScanResult(pricedScan);
+          }
+        }
+      }
+      setHasLoadedQuestDeals(true);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (!msg.toLowerCase().includes("cancelled")) {
@@ -325,7 +352,7 @@ export function App() {
     } finally {
       setIsQuestDealsLoading(false);
     }
-  }, [activeRarity, settings.currency]);
+  }, [activeRarity, scanResult, settings.currency]);
 
   const allScannedBargains = useMemo(() => {
     const out: BargainListing[] = [];
@@ -490,6 +517,7 @@ export function App() {
   };
 
   const handleSelectRarity = async (rarity: Rarity) => {
+    setHasLoadedQuestDeals(false);
     await updateSettings({ selectedRarity: rarity });
     const targetUser = (settings.username || usernameDraft).trim();
     if (activeTab === "collections" && targetUser) {
@@ -506,6 +534,7 @@ export function App() {
   };
 
   const handleToggleCurrency = async () => {
+    setHasLoadedQuestDeals(false);
     const nextCurrency: Currency = settings.currency === "USD" ? "EUR" : "USD";
     await updateSettings({ currency: nextCurrency });
     const targetUser = (settings.username || usernameDraft).trim();
@@ -611,6 +640,8 @@ export function App() {
     setIsCraftLoading(false);
     setIsGalleryLoading(false);
     setIsBargainsLoading(false);
+    setIsQuestDealsLoading(false);
+    setPricingSlug(null);
   };
 
   const handleRefreshActiveTab = () => {
@@ -1279,10 +1310,12 @@ export function App() {
               pricedSlugs={scanResult?.pricedCollectionSlugs ?? []}
               pricingSlug={pricingSlug}
               isQuestDealsLoading={isQuestDealsLoading}
+              hasLoadedQuestDeals={hasLoadedQuestDeals}
               onPriceCollection={(slug) => void handlePriceCollection(slug)}
               onPriceTopCollections={(slugs) =>
                 void handlePriceTopCollections(slugs)
               }
+              onCancelScan={() => void handleCancelScan()}
               onLoadQuestDeals={() => void handleLoadQuestDeals()}
               onSwitchTab={(tab) => {
                 setActiveTab(tab);

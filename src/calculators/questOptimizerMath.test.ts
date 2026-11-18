@@ -134,11 +134,38 @@ describe("questOptimizerMath", () => {
         saleType: "auction",
         priceCents: 180,
         currency: "EUR",
-        endDate: null,
+        endDate: new Date(Date.now() + 25 * 60 * 1000).toISOString(),
         bidsCount: 1,
         centsPerL10: 8.2,
         valueScore: 80,
         marketUrl: "https://sorare.com/nba/cards/rookie-auc-1",
+      },
+      {
+        cardSlug: "rookie-auc-far",
+        assetId: "a1b",
+        playerSlug: "darryn-peterson-20070117",
+        playerName: "Darryn Peterson",
+        teamName: "Utah Jazz",
+        teamSlug: "utah-jazz",
+        cardEditionName: "rookie",
+        isPrimaryOffer: false,
+        isFirstOwnerEligible: true,
+        positions: ["basketball_guard"],
+        rarity: "limited",
+        seasonYear: 2026,
+        inSeasonEligible: true,
+        l10: 36,
+        l5: 40,
+        projected: 35,
+        starCost: 4,
+        saleType: "auction",
+        priceCents: 197,
+        currency: "EUR",
+        endDate: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
+        bidsCount: 0,
+        centsPerL10: 5.5,
+        valueScore: 95,
+        marketUrl: "https://sorare.com/nba/cards/rookie-auc-far",
       },
       {
         cardSlug: "primary-buy-1",
@@ -187,6 +214,7 @@ describe("questOptimizerMath", () => {
     expect(draft?.current).toBe(2);
     expect(full?.closestTeamName).toBe("Orlando Magic Limited 2026-27");
     expect(draft?.cheapestBuys.some((b) => b.saleType === "auction" && b.playerName === "Aday Mara")).toBe(true);
+    expect(draft?.cheapestBuys.some((b) => b.saleType === "auction" && b.playerName === "Darryn Peterson")).toBe(false);
     expect(draft?.cheapestBuys.some((b) => b.isPrimaryOffer && b.playerName === "Dailyn Swain")).toBe(true);
     expect(res.quests.some((q) => q.isTopOptimal)).toBe(true);
   });

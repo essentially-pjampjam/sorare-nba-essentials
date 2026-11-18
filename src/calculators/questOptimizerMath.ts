@@ -179,7 +179,10 @@ export function evaluateLeagueQuests(
     }
   }
 
-  // Aggregate cheapest eligible 2026 market/collection opportunities (keeping primary instant vs auction separate)
+  // Aggregate cheapest eligible current-season market/collection opportunities
+  // (keeping primary instant vs <1h auction vs secondary instant separate)
+  const nowMs = Date.now();
+  const maxAuctionMs = 60 * 60 * 1000;
   const candidateByKey = new Map<string, QuestShoppingCandidate>();
   for (const listing of bargainListings) {
     if (
@@ -188,8 +191,14 @@ export function evaluateLeagueQuests(
     ) {
       continue;
     }
-    if (uniqueFirstOwners.has(listing.playerSlug)) continue;
     const isAuction = listing.saleType === "auction";
+    if (isAuction) {
+      const endMs = listing.endDate ? Date.parse(listing.endDate) : NaN;
+      if (!Number.isFinite(endMs) || endMs <= nowMs || endMs - nowMs > maxAuctionMs) {
+        continue;
+      }
+    }
+    if (uniqueFirstOwners.has(listing.playerSlug)) continue;
     const isPrimaryOffer = Boolean(listing.isPrimaryOffer);
     const isFirstEligible = Boolean(listing.isFirstOwnerEligible);
     const { ids, labels } = classifyPlayerQuests(
@@ -218,6 +227,7 @@ export function evaluateLeagueQuests(
         saleType: isAuction ? "auction" : "instant_buy",
         isPrimaryOffer,
         isFirstOwnerEligible: isFirstEligible,
+        endDate: listing.endDate ?? null,
         cardSlug: listing.cardSlug,
         marketUrl: listing.marketUrl,
         overlappingQuestIds: ids,
@@ -233,10 +243,6 @@ export function evaluateLeagueQuests(
     if (a.collection.complete) continue;
     for (const op of a.nextEssenceMilestone?.rankedShoppingList ?? []) {
       if (op.slot.seasonYear !== null && op.slot.seasonYear < activeSeason) continue;
-      const auctionCents = op.auctionBidCents;
-      const buyCents = op.instantBuyCents;
-      const priceCents = auctionCents ?? buyCents;
-      if (priceCents === null) continue;
       if (uniqueFirstOwners.has(op.slot.playerSlug)) continue;
 
       const { ids, labels } = classifyPlayerQuests(
@@ -247,27 +253,53 @@ export function evaluateLeagueQuests(
       );
       if (ids.length === 0) continue;
 
-      const fallbackKey = `${op.slot.playerSlug}::${auctionCents !== null ? "auction" : "secondary_instant"}`;
-      if (!candidateByKey.has(fallbackKey)) {
-        candidateByKey.set(fallbackKey, {
-          playerSlug: op.slot.playerSlug,
-          playerName: op.slot.playerName,
-          teamName: op.slot.teamName,
-          teamSlug: op.slot.teamSlug,
-          priceCents,
-          saleType: auctionCents !== null ? "auction" : "instant_buy",
-          isPrimaryOffer: false,
-          isFirstOwnerEligible: false,
-          cardSlug:
-            op.market?.auctionCardSlug ?? op.market?.instantBuyCardSlug ?? null,
-          marketUrl:
-            op.market?.auctionUrl ??
-            op.market?.instantBuyUrl ??
-            `${SORARE_NBA_MARKET_URL}?player=${encodeURIComponent(op.slot.playerName)}&rarity=${encodeURIComponent(rarity)}`,
-          overlappingQuestIds: ids,
-          overlappingQuestLabels: labels,
-          advancesTeamCollection: true,
-        });
+      const defaultMarketUrl = `${SORARE_NBA_MARKET_URL}?player=${encodeURIComponent(op.slot.playerName)}&rarity=${encodeURIComponent(rarity)}`;
+
+      if (op.instantBuyCents !== null) {
+        const instantKey = `${op.slot.playerSlug}::secondary_instant`;
+        if (!candidateByKey.has(instantKey)) {
+          candidateByKey.set(instantKey, {
+            playerSlug: op.slot.playerSlug,
+            playerName: op.slot.playerName,
+            teamName: op.slot.teamName,
+            teamSlug: op.slot.teamSlug,
+            priceCents: op.instantBuyCents,
+            saleType: "instant_buy",
+            isPrimaryOffer: false,
+            isFirstOwnerEligible: false,
+            endDate: null,
+            cardSlug: op.market?.instantBuyCardSlug ?? null,
+            marketUrl: op.market?.instantBuyUrl ?? defaultMarketUrl,
+            overlappingQuestIds: ids,
+            overlappingQuestLabels: labels,
+            advancesTeamCollection: true,
+          });
+        }
+      }
+
+      if (op.auctionBidCents !== null && op.market?.auctionEndDate) {
+        const endMs = Date.parse(op.market.auctionEndDate);
+        if (Number.isFinite(endMs) && endMs > nowMs && endMs - nowMs <= maxAuctionMs) {
+          const aucKey = `${op.slot.playerSlug}::auction`;
+          if (!candidateByKey.has(aucKey)) {
+            candidateByKey.set(aucKey, {
+              playerSlug: op.slot.playerSlug,
+              playerName: op.slot.playerName,
+              teamName: op.slot.teamName,
+              teamSlug: op.slot.teamSlug,
+              priceCents: op.auctionBidCents,
+              saleType: "auction",
+              isPrimaryOffer: false,
+              isFirstOwnerEligible: false,
+              endDate: op.market.auctionEndDate,
+              cardSlug: op.market?.auctionCardSlug ?? null,
+              marketUrl: op.market?.auctionUrl ?? defaultMarketUrl,
+              overlappingQuestIds: ids,
+              overlappingQuestLabels: labels,
+              advancesTeamCollection: true,
+            });
+          }
+        }
       }
     }
   }

@@ -652,7 +652,7 @@ async function priceCollectionsBatch(
   const nextPricedSlugs = new Set(current.pricedCollectionSlugs);
   const newPrices = { ...current.marketPrices };
 
-  const chunkSize = 3;
+  const chunkSize = sorareClient.hasApiKey() ? 8 : 5;
   for (let start = 0; start < targets.length; start += chunkSize) {
     if (signal.aborted) break;
     const slice = targets.slice(start, start + chunkSize);

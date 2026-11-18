@@ -399,10 +399,10 @@ export function BargainsTab({
                   ? "border-amber-400/50 bg-amber-400/15 text-amber-200"
                   : "border-white/8 bg-[#0b101b] text-slate-400 hover:text-slate-200"
               }`}
-              title="Live NBA auctions including 2026 1st-Owner Primary Auctions"
+              title="Live NBA auctions ending within 1 hour (filters out unrealistic early 0-bid starting prices)"
             >
               <Gavel className="h-3 w-3 shrink-0" />
-              <span className="truncate">1ST Auctions</span>
+              <span className="truncate">1ST Auctions (&lt;1h)</span>
             </button>
             <button
               type="button"
