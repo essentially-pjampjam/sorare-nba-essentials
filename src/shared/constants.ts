@@ -318,32 +318,31 @@ export const RARITY_META: Record<
 };
 
 /**
- * Default collection milestone Essence rules per rarity.
- * Because Sorare's public unauthenticated `user(slug)` endpoint exposes collection
- * score thresholds (`bonusThresholds`) and slot counts rather than private task-track
- * payouts, users can customize these Essence milestone tiers directly in the UI.
+ * Optional custom Team Collection Essence milestone rules per rarity.
+ * Empty by default because Sorare NBA 2026-27 Team Collections award Lineup Scoring
+ * Bonus % (+1% to +5%) and +2,000E only upon Full Collection (tracked in League Quests).
+ * Pre-2.6.4 untouched preset IDs are listed in LEGACY_TEAM_PRESET_RULE_IDS for migration.
  */
+export const LEGACY_TEAM_PRESET_RULE_IDS: ReadonlySet<string> = new Set([
+  "lim-5",
+  "lim-10",
+  "lim-15",
+  "rar-5",
+  "rar-10",
+  "rar-15",
+  "sr-3",
+  "sr-6",
+  "sr-10",
+  "unq-2",
+  "unq-5",
+  "unq-8",
+]);
+
 export const DEFAULT_MILESTONE_RULES: Record<Rarity, EssenceMilestoneRule[]> = {
-  limited: [
-    { id: "lim-5", label: "5 Cards Tier", kind: "slots", threshold: 5, essenceReward: 150 },
-    { id: "lim-10", label: "10 Cards Tier", kind: "slots", threshold: 10, essenceReward: 350 },
-    { id: "lim-15", label: "15 Cards Tier", kind: "slots", threshold: 15, essenceReward: 500 },
-  ],
-  rare: [
-    { id: "rar-5", label: "5 Cards Tier", kind: "slots", threshold: 5, essenceReward: 200 },
-    { id: "rar-10", label: "10 Cards Tier", kind: "slots", threshold: 10, essenceReward: 400 },
-    { id: "rar-15", label: "15 Cards Tier", kind: "slots", threshold: 15, essenceReward: 600 },
-  ],
-  super_rare: [
-    { id: "sr-3", label: "3 Cards Tier", kind: "slots", threshold: 3, essenceReward: 250 },
-    { id: "sr-6", label: "6 Cards Tier", kind: "slots", threshold: 6, essenceReward: 450 },
-    { id: "sr-10", label: "10 Cards Tier", kind: "slots", threshold: 10, essenceReward: 750 },
-  ],
-  unique: [
-    { id: "unq-2", label: "2 Cards Tier", kind: "slots", threshold: 2, essenceReward: 350 },
-    { id: "unq-5", label: "5 Cards Tier", kind: "slots", threshold: 5, essenceReward: 700 },
-    { id: "unq-8", label: "8 Cards Tier", kind: "slots", threshold: 8, essenceReward: 1000 },
-  ],
+  limited: [],
+  rare: [],
+  super_rare: [],
+  unique: [],
 };
 
 export const APP_THEMES: Array<{

@@ -70,10 +70,12 @@ export function TierEditorModal({
             id="tier-editor-title"
             className="text-sm font-semibold text-slate-100"
           >
-            {meta.label} Collection Essence Tiers
+            Custom {meta.label} Team Essence Tiers (Optional)
           </h2>
           <p className="text-[11px] text-slate-400">
-            Configure slot or collection-score Essence payouts for public scans.
+            Sorare NBA 2026-27 Team Collections award Lineup Bonus % by default
+            (Quests handle real Essence). Only add custom tiers for promos or
+            personal targets.
           </p>
         </div>
         <button

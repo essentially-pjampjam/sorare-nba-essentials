@@ -128,9 +128,46 @@ function compareOpportunities(
   return a.slot.playerName.localeCompare(b.slot.playerName);
 }
 
+function computeCardSetCosts(
+  opportunities: MissingPlayerOpportunity[],
+  cardsNeeded: number,
+): {
+  totalCostCents: number | null;
+  auctionAssistedCostCents: number | null;
+} {
+  const instantBuyEligible = opportunities.filter(
+    (op) => op.instantBuyCents !== null,
+  );
+  const totalCostCents =
+    instantBuyEligible.length >= cardsNeeded
+      ? instantBuyEligible
+          .slice(0, cardsNeeded)
+          .reduce((sum, op) => sum + (op.instantBuyCents ?? 0), 0)
+      : null;
+
+  const auctionAssistedPrices = opportunities
+    .map((op) => {
+      if (op.instantBuyCents !== null && op.auctionBidCents !== null) {
+        return Math.min(op.instantBuyCents, op.auctionBidCents);
+      }
+      return op.instantBuyCents ?? op.auctionBidCents;
+    })
+    .filter((p): p is number => p !== null)
+    .sort((a, b) => a - b);
+
+  const auctionAssistedCostCents =
+    auctionAssistedPrices.length >= cardsNeeded
+      ? auctionAssistedPrices
+          .slice(0, cardsNeeded)
+          .reduce((sum, p) => sum + p, 0)
+      : null;
+
+  return { totalCostCents, auctionAssistedCostCents };
+}
+
 /**
  * Pure calculator producing per-collection Essence milestone evaluations,
- * cost/Essence efficiency, Craft Ready highlights, and multi-collection Overlap badges.
+ * team Bonus % floor costs, cost/Essence efficiency, and multi-collection Overlap badges.
  */
 export function analyzeCollections(input: AnalyzeCollectionsInput): {
   analyses: CollectionAnalysis[];
@@ -179,6 +216,11 @@ export function analyzeCollections(input: AnalyzeCollectionsInput): {
         })
         .sort(compareOpportunities);
 
+      const instantBuyEligible = opportunities.filter(
+        (op) => op.instantBuyCents !== null,
+      );
+      const cheapestCardCents = instantBuyEligible[0]?.instantBuyCents ?? null;
+
       // Next live collection bonus threshold
       const sortedBonuses = [...collection.bonusThresholds].sort(
         (a, b) => a.threshold - b.threshold,
@@ -190,12 +232,20 @@ export function analyzeCollections(input: AnalyzeCollectionsInput): {
               0,
               Math.ceil(nextBonus.threshold - collection.score),
             );
+            const instantBuyCardsNeeded = Math.max(1, Math.ceil(scoreNeeded / 10));
+            const firstOwnerCardsNeeded = Math.max(1, Math.ceil(scoreNeeded / 20));
+            const bonusCosts = computeCardSetCosts(
+              opportunities,
+              instantBuyCardsNeeded,
+            );
             return {
               threshold: nextBonus.threshold,
               bonus: nextBonus.bonus,
               scoreNeeded,
-              instantBuyCardsNeeded: Math.max(1, Math.ceil(scoreNeeded / 10)),
-              firstOwnerCardsNeeded: Math.max(1, Math.ceil(scoreNeeded / 20)),
+              instantBuyCardsNeeded,
+              firstOwnerCardsNeeded,
+              totalCostCents: bonusCosts.totalCostCents,
+              auctionAssistedCostCents: bonusCosts.auctionAssistedCostCents,
             };
           })()
         : null;
@@ -226,37 +276,14 @@ export function analyzeCollections(input: AnalyzeCollectionsInput): {
 
         const cardsNeeded = Math.max(1, rawNeeded);
 
-        const instantBuyEligible = opportunities.filter(
-          (op) => op.instantBuyCents !== null,
+        const { totalCostCents, auctionAssistedCostCents } = computeCardSetCosts(
+          opportunities,
+          cardsNeeded,
         );
-        const totalCostCents =
-          instantBuyEligible.length >= cardsNeeded
-            ? instantBuyEligible
-                .slice(0, cardsNeeded)
-                .reduce((sum, op) => sum + (op.instantBuyCents ?? 0), 0)
-            : null;
 
         const costPerEssenceCents =
           totalCostCents !== null && nextRule.essenceReward > 0
             ? totalCostCents / nextRule.essenceReward
-            : null;
-
-        // Separate preview if user wins lowest active auctions where cheaper than instant buy
-        const auctionAssistedPrices = opportunities
-          .map((op) => {
-            if (op.instantBuyCents !== null && op.auctionBidCents !== null) {
-              return Math.min(op.instantBuyCents, op.auctionBidCents);
-            }
-            return op.instantBuyCents ?? op.auctionBidCents;
-          })
-          .filter((p): p is number => p !== null)
-          .sort((a, b) => a - b);
-
-        const auctionAssistedCostCents =
-          auctionAssistedPrices.length >= cardsNeeded
-            ? auctionAssistedPrices
-                .slice(0, cardsNeeded)
-                .reduce((sum, p) => sum + p, 0)
             : null;
 
         const isCraftReadyBridge =
@@ -286,6 +313,9 @@ export function analyzeCollections(input: AnalyzeCollectionsInput): {
         nextEssenceMilestone,
         totalEssenceRemaining,
         missingSlotsCount: opportunities.length,
+        opportunities,
+        cheapestCardCents,
+        pricedInstantBuyCount: instantBuyEligible.length,
       };
     });
 

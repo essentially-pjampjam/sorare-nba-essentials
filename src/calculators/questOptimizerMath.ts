@@ -104,6 +104,8 @@ export function evaluateLeagueQuests(
 ): {
   quests: QuestProgressItem[];
   bestOverallSummary: string;
+  totalLiveQuestEssence: number;
+  topQuestInstantCostCents: number | null;
 } {
   const activeSeason = Math.max(
     getActiveNbaSeasonYear(),
@@ -166,15 +168,16 @@ export function evaluateLeagueQuests(
     (a) => a.collection.complete,
   );
 
+  const getCollectionOps = (a: CollectionAnalysis | null | undefined) =>
+    a?.opportunities ?? a?.nextEssenceMilestone?.rankedShoppingList ?? [];
+
   const closestFullTeamSlotSlugs = new Set<string>(
-    (closestFullTeam?.nextEssenceMilestone?.rankedShoppingList ?? []).map(
-      (op) => op.slot.playerSlug,
-    ),
+    getCollectionOps(closestFullTeam).map((op) => op.slot.playerSlug),
   );
   const incompleteCollectionPlayerSlugs = new Set<string>();
   for (const a of collectionAnalyses) {
     if (a.collection.complete) continue;
-    for (const op of a.nextEssenceMilestone?.rankedShoppingList ?? []) {
+    for (const op of getCollectionOps(a)) {
       incompleteCollectionPlayerSlugs.add(op.slot.playerSlug);
     }
   }
@@ -241,7 +244,7 @@ export function evaluateLeagueQuests(
 
   for (const a of collectionAnalyses) {
     if (a.collection.complete) continue;
-    for (const op of a.nextEssenceMilestone?.rankedShoppingList ?? []) {
+    for (const op of getCollectionOps(a)) {
       if (op.slot.seasonYear !== null && op.slot.seasonYear < activeSeason) continue;
       if (uniqueFirstOwners.has(op.slot.playerSlug)) continue;
 
@@ -364,8 +367,15 @@ export function evaluateLeagueQuests(
           : 15;
         remaining = hasAnyTeamComplete ? 0 : teamMissing;
         closestTeamName = closestFullTeam?.collection.name;
+        const fullTeamInstants = getCollectionOps(closestFullTeam)
+          .map((op) => op.instantBuyCents)
+          .filter((p): p is number => p !== null);
         closestTeamCostCents =
-          closestFullTeam?.nextEssenceMilestone?.totalCostCents ?? null;
+          !hasAnyTeamComplete && fullTeamInstants.length >= teamMissing
+            ? fullTeamInstants
+                .slice(0, teamMissing)
+                .reduce((sum, p) => sum + p, 0)
+            : (closestFullTeam?.nextEssenceMilestone?.totalCostCents ?? null);
         break;
       }
     }
@@ -444,13 +454,43 @@ export function evaluateLeagueQuests(
   }
 
   const top = ranked[0];
+  const totalLiveQuestEssence = ranked
+    .filter((q) => q.remaining > 0)
+    .reduce((sum, q) => sum + q.essenceReward, 0);
+
+  let topQuestInstantCostCents: number | null = null;
+  if (top && top.remaining > 0) {
+    if (top.id === "full-collection") {
+      topQuestInstantCostCents = top.closestTeamCostCents ?? null;
+    } else {
+      const eligibleInstantPrices = top.cheapestBuys
+        .filter((c) =>
+          top.firstOwnerOnly
+            ? Boolean(c.isPrimaryOffer)
+            : c.saleType === "instant_buy",
+        )
+        .map((c) => c.priceCents)
+        .sort((a, b) => a - b);
+      if (eligibleInstantPrices.length >= top.remaining) {
+        topQuestInstantCostCents = eligibleInstantPrices
+          .slice(0, top.remaining)
+          .reduce((sum, p) => sum + p, 0);
+      }
+    }
+  }
+
   const bestOverallSummary = top
     ? top.id === "full-collection"
       ? `Closest Full Team (${top.closestTeamName ?? "NBA Team"}): ${top.remaining} cards to +2,000E (Instant Buys OK)`
       : `Best Quest ROI: ${top.name} (${top.current}/${top.target} • ${top.remaining} 1st-owner cards away for +${top.essenceReward}E = +${top.essencePerRemainingCard}E/card)`
     : "Scan your collections to compute League Quest optimality.";
 
-  return { quests: ranked, bestOverallSummary };
+  return {
+    quests: ranked,
+    bestOverallSummary,
+    totalLiveQuestEssence,
+    topQuestInstantCostCents,
+  };
 }
 
 /**

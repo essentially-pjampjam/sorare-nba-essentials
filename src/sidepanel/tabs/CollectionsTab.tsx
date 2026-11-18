@@ -5,7 +5,6 @@ import {
   ChevronRight,
   ExternalLink,
   Gavel,
-  Info,
   Layers,
   Loader2,
   ShieldAlert,
@@ -44,11 +43,88 @@ import {
 } from "../utils/format";
 
 export type SortField =
+  | "minCard"
   | "costPerEssence"
   | "totalCost"
   | "cardsNeeded"
   | "essenceRewarded"
   | "name";
+
+interface TeamTargetSummary {
+  kind: "custom_essence" | "bonus" | "floor";
+  cardsNeeded: number;
+  subLabel: string;
+  primaryText: string;
+  costCents: number | null;
+  auctionCostCents: number | null;
+  costPerEssenceCents: number | null;
+  minCardCents: number | null;
+  highlightCount: number;
+}
+
+function getCollectionOps(item: CollectionAnalysis) {
+  return item.opportunities ?? item.nextEssenceMilestone?.rankedShoppingList ?? [];
+}
+
+function getTeamTargetSummary(item: CollectionAnalysis): TeamTargetSummary {
+  const ops = getCollectionOps(item);
+  const minCardCents =
+    item.cheapestCardCents ??
+    ops.find((op) => op.instantBuyCents !== null)?.instantBuyCents ??
+    null;
+  const minAucCents =
+    ops
+      .map((op) => op.auctionBidCents)
+      .filter((p): p is number => p !== null)
+      .sort((a, b) => a - b)[0] ?? null;
+
+  if (item.nextEssenceMilestone) {
+    const m = item.nextEssenceMilestone;
+    return {
+      kind: "custom_essence",
+      cardsNeeded: m.cardsNeeded,
+      subLabel: m.label,
+      primaryText: `+${m.essenceRewarded}E (Custom)`,
+      costCents: m.totalCostCents,
+      auctionCostCents: m.auctionAssistedCostCents,
+      costPerEssenceCents: m.costPerEssenceCents,
+      minCardCents,
+      highlightCount: m.cardsNeeded,
+    };
+  }
+
+  if (item.nextBonusThreshold) {
+    const nb = item.nextBonusThreshold;
+    const pct = Math.round(nb.bonus * 100);
+    return {
+      kind: "bonus",
+      cardsNeeded: nb.instantBuyCardsNeeded,
+      subLabel: `Score ${nb.threshold}`,
+      primaryText: `+${pct}% Bonus`,
+      costCents: nb.totalCostCents ?? minCardCents,
+      auctionCostCents: nb.auctionAssistedCostCents ?? minAucCents,
+      costPerEssenceCents: null,
+      minCardCents,
+      highlightCount: nb.instantBuyCardsNeeded,
+    };
+  }
+
+  const remainingSlots = Math.max(
+    1,
+    item.collection.slotsCount - item.collection.fulfilledSlotsCount,
+  );
+  return {
+    kind: "floor",
+    cardsNeeded: remainingSlots,
+    subLabel: `${remainingSlots} to Full`,
+    primaryText: "Lineup Bonus %",
+    costCents: minCardCents,
+    auctionCostCents: minAucCents,
+    costPerEssenceCents: null,
+    minCardCents,
+    highlightCount: Math.min(3, ops.length),
+  };
+}
 
 interface CollectionsTabProps {
   analyses: CollectionAnalysis[];
@@ -142,8 +218,9 @@ export function CollectionsTab({
   hasUsername,
   isLoading,
 }: CollectionsTabProps) {
-  const [sortField, setSortField] = useState<SortField>("costPerEssence");
+  const [sortField, setSortField] = useState<SortField>("minCard");
   const [sortAsc, setSortAsc] = useState<boolean>(true);
+  const [pricedOnly, setPricedOnly] = useState<boolean>(false);
   const [expandedSlug, setExpandedSlug] = useState<string | null>(null);
   const [expandedQuestId, setExpandedQuestId] = useState<string | null>(null);
   const [questBuyFilter, setQuestBuyFilter] = useState<
@@ -153,27 +230,22 @@ export function CollectionsTab({
   const rarityMeta = RARITY_META[rarity];
   const pricedSet = useMemo(() => new Set(pricedSlugs), [pricedSlugs]);
   const ownedCount = getOwnedCountForRarity(cardCounts, rarity);
+  const hasCustomTeamTiers = useMemo(
+    () => analyses.some((a) => a.nextEssenceMilestone !== null),
+    [analyses],
+  );
 
-  // Quick-find: closest unpriced collections (fewest cards needed) and best priced Instant-Buy paths
+  // Quick-find: closest unpriced team collections (for Bonus % / Full Team / Any-Year Floor Hunter)
   const closestUnpricedSlugs = useMemo(() => {
     return [...analyses]
-      .filter(
-        (a) =>
-          !a.collection.complete &&
-          !pricedSet.has(a.collection.slug) &&
-          a.nextEssenceMilestone !== null,
-      )
+      .filter((a) => !a.collection.complete && !pricedSet.has(a.collection.slug))
       .sort((a, b) => {
         const ia = a.collection.inSeason ? 0 : 1;
         const ib = b.collection.inSeason ? 0 : 1;
         if (ia !== ib) return ia - ib;
-        const na = a.nextEssenceMilestone?.cardsNeeded ?? 99;
-        const nb = b.nextEssenceMilestone?.cardsNeeded ?? 99;
-        if (na !== nb) return na - nb;
-        return (
-          (b.nextEssenceMilestone?.essenceRewarded ?? 0) -
-          (a.nextEssenceMilestone?.essenceRewarded ?? 0)
-        );
+        const ta = getTeamTargetSummary(a).cardsNeeded;
+        const tb = getTeamTargetSummary(b).cardsNeeded;
+        return ta - tb;
       })
       .slice(0, 3)
       .map((a) => a.collection.slug);
@@ -187,26 +259,25 @@ export function CollectionsTab({
           a.collection.inSeason &&
           !pricedSet.has(a.collection.slug),
       )
-      .sort((a, b) => {
-        const na = a.nextEssenceMilestone?.cardsNeeded ?? 99;
-        const nb = b.nextEssenceMilestone?.cardsNeeded ?? 99;
-        return na - nb;
-      })
+      .sort(
+        (a, b) =>
+          getTeamTargetSummary(a).cardsNeeded -
+          getTeamTargetSummary(b).cardsNeeded,
+      )
       .map((a) => a.collection.slug);
   }, [analyses, pricedSet]);
 
   const allUnpricedIncompleteSlugs = useMemo(() => {
     return analyses
-      .filter(
-        (a) => !a.collection.complete && !pricedSet.has(a.collection.slug),
-      )
+      .filter((a) => !a.collection.complete && !pricedSet.has(a.collection.slug))
       .sort((a, b) => {
         const ia = a.collection.inSeason ? 0 : 1;
         const ib = b.collection.inSeason ? 0 : 1;
         if (ia !== ib) return ia - ib;
-        const na = a.nextEssenceMilestone?.cardsNeeded ?? 99;
-        const nb = b.nextEssenceMilestone?.cardsNeeded ?? 99;
-        return na - nb;
+        return (
+          getTeamTargetSummary(a).cardsNeeded -
+          getTeamTargetSummary(b).cardsNeeded
+        );
       })
       .map((a) => a.collection.slug);
   }, [analyses, pricedSet]);
@@ -218,6 +289,32 @@ export function CollectionsTab({
         : (bargains?.listings ?? []);
     return evaluateLeagueQuests(questCards, analyses, rarity, listings);
   }, [allScannedBargains, analyses, bargains, questCards, rarity]);
+
+  const topQuest = questEval.quests[0] ?? null;
+
+  const cheapestTeamFloorPick = useMemo(() => {
+    let best: {
+      cents: number;
+      playerName: string;
+      teamName: string;
+      slug: string;
+    } | null = null;
+    for (const item of analyses) {
+      if (!pricedSet.has(item.collection.slug)) continue;
+      const ops = getCollectionOps(item);
+      const firstInstant = ops.find((op) => op.instantBuyCents !== null);
+      if (!firstInstant || firstInstant.instantBuyCents === null) continue;
+      if (!best || firstInstant.instantBuyCents < best.cents) {
+        best = {
+          cents: firstInstant.instantBuyCents,
+          playerName: firstInstant.slot.playerName,
+          teamName: item.collection.name,
+          slug: item.collection.slug,
+        };
+      }
+    }
+    return best;
+  }, [analyses, pricedSet]);
 
   const nearingGoals = useMemo(() => {
     const items: Array<{
@@ -240,15 +337,16 @@ export function CollectionsTab({
       });
     }
 
-    const bestQuest = [...questEval.quests]
+    const topTwoQuests = [...questEval.quests]
       .filter((q) => q.id !== "full-collection" && q.target > 0)
-      .sort((a, b) => b.progressPct - a.progressPct)[0];
-    if (bestQuest) {
+      .sort((a, b) => b.progressPct - a.progressPct)
+      .slice(0, 2);
+    for (const q of topTwoQuests) {
       items.push({
-        id: `quest-${bestQuest.id}`,
-        label: `${bestQuest.name} (${bestQuest.current}/${bestQuest.target})`,
-        detail: `${bestQuest.remaining} 1ST left • +${bestQuest.essenceReward}E`,
-        pct: bestQuest.progressPct,
+        id: `quest-${q.id}`,
+        label: `${q.name} (${q.current}/${q.target})`,
+        detail: `${q.remaining} 1ST left • +${q.essenceReward}E`,
+        pct: q.progressPct,
         accent: "bg-emerald-400",
       });
     }
@@ -275,58 +373,34 @@ export function CollectionsTab({
       });
     }
 
-    const closestEssence = [...analyses]
-      .filter((a) => a.collection.inSeason && a.nextEssenceMilestone !== null)
-      .sort(
-        (a, b) =>
-          (a.nextEssenceMilestone?.cardsNeeded ?? 99) -
-          (b.nextEssenceMilestone?.cardsNeeded ?? 99),
-      )[0];
-    if (closestEssence?.nextEssenceMilestone) {
-      const m = closestEssence.nextEssenceMilestone;
-      const pct = Math.min(
-        100,
-        Math.round((m.currentValue / Math.max(1, m.targetValue)) * 100),
-      );
-      items.push({
-        id: `ess-${closestEssence.collection.slug}`,
-        label: `${closestEssence.collection.name.replace(/ Limited| Rare/g, "")} ${m.label}`,
-        detail: `${m.cardsNeeded} cards → +${m.essenceRewarded}E`,
-        pct,
-        accent: "bg-violet-400",
-      });
-    }
-
     return items.slice(0, 4);
   }, [activeEssence, analyses, craftThreshold, questEval.quests]);
 
-  const easiestInstantPaths = useMemo(() => {
+  const teamQuickPicks = useMemo(() => {
     return [...analyses]
-      .filter(
-        (a) =>
-          pricedSet.has(a.collection.slug) &&
-          a.nextEssenceMilestone?.totalCostCents !== null &&
-          a.nextEssenceMilestone?.totalCostCents !== undefined,
-      )
+      .filter((a) => {
+        if (!pricedSet.has(a.collection.slug)) return false;
+        const target = getTeamTargetSummary(a);
+        return target.costCents !== null || target.minCardCents !== null;
+      })
       .sort((a, b) => {
-        const ca =
-          a.nextEssenceMilestone?.costPerEssenceCents ??
-          Number.MAX_SAFE_INTEGER;
-        const cb =
-          b.nextEssenceMilestone?.costPerEssenceCents ??
-          Number.MAX_SAFE_INTEGER;
-        if (ca !== cb) return ca - cb;
-        return (
-          (a.nextEssenceMilestone?.totalCostCents ?? Number.MAX_SAFE_INTEGER) -
-          (b.nextEssenceMilestone?.totalCostCents ?? Number.MAX_SAFE_INTEGER)
-        );
+        const ta = getTeamTargetSummary(a);
+        const tb = getTeamTargetSummary(b);
+        if (hasCustomTeamTiers) {
+          const ca = ta.costPerEssenceCents ?? Number.MAX_SAFE_INTEGER;
+          const cb = tb.costPerEssenceCents ?? Number.MAX_SAFE_INTEGER;
+          if (ca !== cb) return ca - cb;
+        }
+        const pa = ta.costCents ?? ta.minCardCents ?? Number.MAX_SAFE_INTEGER;
+        const pb = tb.costCents ?? tb.minCardCents ?? Number.MAX_SAFE_INTEGER;
+        if (pa !== pb) return pa - pb;
+        return ta.cardsNeeded - tb.cardsNeeded;
       })
       .slice(0, 3);
-  }, [analyses, pricedSet]);
+  }, [analyses, hasCustomTeamTiers, pricedSet]);
 
   const liquidityAdvice = useMemo(() => {
-    const topTargetCostCents =
-      easiestInstantPaths[0]?.nextEssenceMilestone?.totalCostCents ?? null;
+    const topTargetCostCents = questEval.topQuestInstantCostCents ?? null;
     const cashCents =
       walletBalance?.cashAmount !== null &&
       walletBalance?.cashAmount !== undefined
@@ -353,7 +427,7 @@ export function CollectionsTab({
       shortfallCents,
       sellCandidate,
     };
-  }, [easiestInstantPaths, galleryCards, rarity, walletBalance]);
+  }, [galleryCards, questEval.topQuestInstantCostCents, rarity, walletBalance]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -374,15 +448,21 @@ export function CollectionsTab({
   const filteredAndSorted = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const list = analyses.filter((item) => {
-      if (craftReadyOnly && !item.nextEssenceMilestone?.isCraftReadyBridge) {
+      if (pricedOnly && !pricedSet.has(item.collection.slug)) {
+        return false;
+      }
+      if (
+        hasCustomTeamTiers &&
+        craftReadyOnly &&
+        !item.nextEssenceMilestone?.isCraftReadyBridge
+      ) {
         return false;
       }
       if (q) {
         const matchesName = item.collection.name.toLowerCase().includes(q);
-        const matchesPlayer =
-          item.nextEssenceMilestone?.rankedShoppingList.some((op) =>
-            op.slot.playerName.toLowerCase().includes(q),
-          ) ?? false;
+        const matchesPlayer = getCollectionOps(item).some((op) =>
+          op.slot.playerName.toLowerCase().includes(q),
+        );
         if (!matchesName && !matchesPlayer) return false;
       }
       return true;
@@ -390,39 +470,51 @@ export function CollectionsTab({
 
     const dir = sortAsc ? 1 : -1;
     return [...list].sort((a, b) => {
-      const ma = a.nextEssenceMilestone;
-      const mb = b.nextEssenceMilestone;
+      const ta = getTeamTargetSummary(a);
+      const tb = getTeamTargetSummary(b);
       switch (sortField) {
         case "name":
           return a.collection.name.localeCompare(b.collection.name) * dir;
-        case "cardsNeeded": {
-          const va = ma?.cardsNeeded ?? Number.MAX_SAFE_INTEGER;
-          const vb = mb?.cardsNeeded ?? Number.MAX_SAFE_INTEGER;
-          return (va - vb) * dir;
-        }
+        case "cardsNeeded":
+          return (ta.cardsNeeded - tb.cardsNeeded) * dir;
         case "essenceRewarded": {
-          const va = ma?.essenceRewarded ?? -1;
-          const vb = mb?.essenceRewarded ?? -1;
+          const va = a.nextEssenceMilestone?.essenceRewarded ?? -1;
+          const vb = b.nextEssenceMilestone?.essenceRewarded ?? -1;
           return (va - vb) * dir;
         }
         case "totalCost": {
-          const va = ma?.totalCostCents ?? Number.MAX_SAFE_INTEGER;
-          const vb = mb?.totalCostCents ?? Number.MAX_SAFE_INTEGER;
+          const va = ta.costCents ?? Number.MAX_SAFE_INTEGER;
+          const vb = tb.costCents ?? Number.MAX_SAFE_INTEGER;
           return (va - vb) * dir;
         }
-        case "costPerEssence":
-        default: {
-          const va = ma?.costPerEssenceCents ?? Number.MAX_SAFE_INTEGER;
-          const vb = mb?.costPerEssenceCents ?? Number.MAX_SAFE_INTEGER;
+        case "costPerEssence": {
+          const va = ta.costPerEssenceCents ?? Number.MAX_SAFE_INTEGER;
+          const vb = tb.costPerEssenceCents ?? Number.MAX_SAFE_INTEGER;
           if (va !== vb) return (va - vb) * dir;
-          return (
-            (ma?.cardsNeeded ?? Number.MAX_SAFE_INTEGER) -
-            (mb?.cardsNeeded ?? Number.MAX_SAFE_INTEGER)
-          );
+          return (ta.cardsNeeded - tb.cardsNeeded) * dir;
+        }
+        case "minCard":
+        default: {
+          const va = ta.minCardCents ?? Number.MAX_SAFE_INTEGER;
+          const vb = tb.minCardCents ?? Number.MAX_SAFE_INTEGER;
+          if (va !== vb) return (va - vb) * dir;
+          const ia = a.collection.inSeason ? 0 : 1;
+          const ib = b.collection.inSeason ? 0 : 1;
+          if (ia !== ib) return (ia - ib) * dir;
+          return ta.cardsNeeded - tb.cardsNeeded;
         }
       }
     });
-  }, [analyses, craftReadyOnly, searchQuery, sortAsc, sortField]);
+  }, [
+    analyses,
+    craftReadyOnly,
+    hasCustomTeamTiers,
+    pricedOnly,
+    pricedSet,
+    searchQuery,
+    sortAsc,
+    sortField,
+  ]);
 
   const handleToggleRow = (slug: string) => {
     if (expandedSlug === slug) {
@@ -464,7 +556,7 @@ export function CollectionsTab({
 
   return (
     <div className="space-y-3">
-      {/* Minimalist 4-Card KPI Grid */}
+      {/* Minimalist 4-Card KPI Grid (Real Verified Data Only) */}
       <div className="grid grid-cols-2 gap-2">
         <div className="rounded-xl border border-white/8 bg-[#111726] p-3">
           <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-slate-400">
@@ -484,11 +576,11 @@ export function CollectionsTab({
         <div className="rounded-xl border border-white/8 bg-[#111726] p-3">
           <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-slate-400">
             <Sparkles className="h-3 w-3 text-amber-400" />
-            Earnable Essence
+            Live Quest Essence
           </div>
           <div className="mt-1 flex items-baseline gap-1.5">
             <span className="text-lg font-semibold text-amber-300">
-              {summary.totalEssenceEarnable.toLocaleString()}
+              {questEval.totalLiveQuestEssence.toLocaleString()}
             </span>
             <span className="text-[11px] text-slate-400">Essence</span>
           </div>
@@ -497,280 +589,49 @@ export function CollectionsTab({
         <div className="rounded-xl border border-white/8 bg-[#111726] p-3">
           <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-slate-400">
             <Zap className="h-3 w-3 text-emerald-400" />
-            Cheapest Tier
+            Best Real Quest
           </div>
-          {summary.cheapestNextMilestone?.nextEssenceMilestone ? (
+          {topQuest ? (
             <>
               <div className="mt-1 text-base font-semibold text-emerald-300">
-                {formatMoney(
-                  summary.cheapestNextMilestone.nextEssenceMilestone
-                    .totalCostCents,
-                  currency,
-                )}{" "}
-                <span className="text-[11px] font-normal text-slate-400">
-                  (+
-                  {
-                    summary.cheapestNextMilestone.nextEssenceMilestone
-                      .essenceRewarded
-                  }
-                  E)
-                </span>
+                +{topQuest.essencePerRemainingCard}E/card
               </div>
               <div
                 className="truncate text-[11px] text-slate-400"
-                title={summary.cheapestNextMilestone.collection.name}
+                title={topQuest.name}
               >
-                {summary.cheapestNextMilestone.collection.name}
+                {topQuest.name} ({topQuest.remaining} left)
               </div>
             </>
           ) : (
-            <div className="mt-1 text-xs text-slate-400">
-              Click any row to price
-            </div>
+            <div className="mt-1 text-xs text-slate-400">Scan to score</div>
           )}
         </div>
 
         <div className="rounded-xl border border-white/8 bg-[#111726] p-3">
           <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-slate-400">
             <TrendingDown className="h-3 w-3 text-sky-400" />
-            Best $/Essence
+            Cheapest Any-Year
           </div>
-          {summary.bestEfficiencyPick?.nextEssenceMilestone ? (
+          {cheapestTeamFloorPick ? (
             <>
               <div className="mt-1 text-base font-semibold text-sky-300">
-                {formatCostPerEssence(
-                  summary.bestEfficiencyPick.nextEssenceMilestone
-                    .costPerEssenceCents,
-                  currency,
-                )}
+                {formatMoney(cheapestTeamFloorPick.cents, currency)}
               </div>
               <div
                 className="truncate text-[11px] text-slate-400"
-                title={summary.bestEfficiencyPick.collection.name}
+                title={`${cheapestTeamFloorPick.playerName} • ${cheapestTeamFloorPick.teamName}`}
               >
-                {summary.bestEfficiencyPick.collection.name}
+                {cheapestTeamFloorPick.playerName} •{" "}
+                {cheapestTeamFloorPick.teamName.replace(/ Limited| Rare/g, "")}
               </div>
             </>
           ) : (
             <div className="mt-1 text-xs text-slate-400">
-              {pricedSlugs.length} priced
+              Use Team Hunter below
             </div>
           )}
         </div>
-      </div>
-
-      {/* Filters & Search */}
-      <div className="flex flex-wrap items-center gap-1.5">
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => onSearchQueryChange(e.target.value)}
-          placeholder="Filter team or player..."
-          aria-label="Filter collections by team or player"
-          className="min-w-[120px] flex-1 rounded-xl border border-white/8 bg-[#111726] px-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:border-amber-400/60 focus:outline-none"
-        />
-        <button
-          type="button"
-          onClick={onToggleCraftReadyOnly}
-          className={`inline-flex items-center gap-1 rounded-xl border px-2.5 py-1.5 text-[11px] font-medium transition ${
-            craftReadyOnly
-              ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-200"
-              : "border-white/8 bg-[#111726] text-slate-300 hover:text-slate-100"
-          }`}
-        >
-          <Sparkles className="h-3 w-3" />
-          Craft Ready
-          {summary.craftReadyMatches.length > 0 && (
-            <span className="rounded bg-emerald-500/25 px-1 text-[10px] text-emerald-100">
-              {summary.craftReadyMatches.length}
-            </span>
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={onToggleInSeasonOnly}
-          className={`rounded-xl border px-2.5 py-1.5 text-[11px] font-medium transition ${
-            inSeasonOnly
-              ? "border-amber-400/50 bg-amber-500/15 text-amber-200"
-              : "border-white/8 bg-[#111726] text-slate-300 hover:text-slate-100"
-          }`}
-        >
-          {inSeasonOnly ? "Active 26-27" : "All Seasons"}
-        </button>
-      </div>
-
-      {/* Quick Find Easiest Instant-Buy Essence Paths + Load All Teams */}
-      <div className="rounded-2xl border border-emerald-400/25 bg-[#111726] p-3">
-        <div className="flex flex-wrap items-center justify-between gap-1.5">
-          <div className="flex items-center gap-1.5">
-            <Zap className="h-3.5 w-3.5 text-emerald-400" />
-            <span className="text-xs font-semibold text-slate-100">
-              Easiest Essence Quick Finder
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {closestUnpricedSlugs.length > 0 && (
-              <button
-                type="button"
-                disabled={Boolean(pricingSlug)}
-                onClick={() => onPriceTopCollections(closestUnpricedSlugs)}
-                className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-gradient-to-b from-emerald-300 to-emerald-500 px-2.5 py-1 text-[10.5px] font-bold text-slate-950 shadow-xs transition hover:from-emerald-200 hover:to-emerald-400 disabled:opacity-50"
-                title="Price the 3 closest unpriced sets (prioritizes Active 26-27 first; works in All Seasons too)"
-              >
-                {pricingSlug === "__batch__" && (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                )}
-                Top {closestUnpricedSlugs.length}
-              </button>
-            )}
-            {!inSeasonOnly &&
-              inSeasonUnpricedSlugs.length > closestUnpricedSlugs.length && (
-                <button
-                  type="button"
-                  disabled={Boolean(pricingSlug)}
-                  onClick={() => onPriceTopCollections(inSeasonUnpricedSlugs)}
-                  className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-sky-400/50 bg-sky-500/20 px-2.5 py-1 text-[10.5px] font-bold text-sky-100 transition hover:bg-sky-500/30 disabled:opacity-50"
-                  title="Price all incomplete active 2026-27 team collections (~35-50s in Public Mode)"
-                >
-                  Load 26-27 ({inSeasonUnpricedSlugs.length})
-                </button>
-              )}
-            {allUnpricedIncompleteSlugs.length > closestUnpricedSlugs.length && (
-              <button
-                type="button"
-                disabled={Boolean(pricingSlug)}
-                onClick={() => onPriceTopCollections(allUnpricedIncompleteSlugs)}
-                className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-gradient-to-b from-amber-300 to-amber-500 px-2.5 py-1 text-[10.5px] font-bold text-slate-950 shadow-xs transition hover:from-amber-200 hover:to-amber-400 disabled:opacity-50"
-                title="Price every incomplete collection in this view - large lists can take 2-4 min in Public Mode due to Sorare rate limits"
-              >
-                Load All ({allUnpricedIncompleteSlugs.length})
-              </button>
-            )}
-            {Boolean(pricingSlug) && onCancelScan && (
-              <button
-                type="button"
-                onClick={onCancelScan}
-                className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-rose-400/45 bg-rose-500/20 px-2 py-1 text-[10px] font-bold text-rose-100 hover:bg-rose-500/30"
-              >
-                <X className="h-3 w-3" />
-                Stop
-              </button>
-            )}
-          </div>
-        </div>
-
-        {(allUnpricedIncompleteSlugs.length > 0 || Boolean(pricingSlug)) && (
-          <div className="mt-1.5 rounded-lg border border-amber-400/20 bg-[#0b101b]/80 px-2.5 py-1 text-[9.5px] leading-relaxed text-slate-400">
-            <strong className="text-amber-200">Rate-limit note:</strong> Public Mode allows ~50-120 req/min.{" "}
-            <strong className="text-emerald-300">Top 3</strong> takes ~4s,{" "}
-            <strong className="text-sky-300">26-27 sets</strong> takes ~45s, and{" "}
-            <strong className="text-amber-300">
-              Load All ({allUnpricedIncompleteSlugs.length})
-            </strong>{" "}
-            across older seasons can take 2-4 min. Add a local API Key in Settings for 60x speed.
-          </div>
-        )}
-
-        <div className="mt-1.5 rounded-lg border border-white/6 bg-[#0b101b] px-2.5 py-1.5 text-[10px] text-amber-200">
-          <strong className="text-amber-300">Best Move:</strong>{" "}
-          {questEval.bestOverallSummary}
-        </div>
-
-        {(walletBalance?.cashAmount !== null ||
-          walletBalance?.ethAmount !== null) && (
-          <div className="mt-1.5 flex flex-wrap items-center justify-between gap-1.5 rounded-lg border border-white/6 bg-[#0b101b] px-2.5 py-1.5 text-[10px]">
-            <div className="flex items-center gap-1.5 text-slate-200">
-              <Wallet className="h-3 w-3 text-emerald-400" />
-              <span>
-                Wallet:{" "}
-                <strong className="text-emerald-300">
-                  {walletBalance?.cashAmount !== null &&
-                  walletBalance?.cashAmount !== undefined
-                    ? `${walletBalance.cashSymbol ?? "€"}${walletBalance.cashAmount.toFixed(2)}`
-                    : "--"}
-                </strong>
-                {walletBalance?.ethAmount !== null &&
-                  walletBalance?.ethAmount !== undefined && (
-                    <span className="text-slate-400">
-                      {" "}
-                      + {walletBalance.ethAmount} ETH
-                    </span>
-                  )}
-              </span>
-            </div>
-            {liquidityAdvice.shortfallCents !== null && (
-              <div className="flex items-center gap-1.5">
-                {liquidityAdvice.shortfallCents === 0 ? (
-                  <span className="font-semibold text-emerald-300">
-                    Enough Cash for #1 path!
-                  </span>
-                ) : (
-                  <>
-                    <span className="text-amber-300">
-                      Need +{formatMoney(liquidityAdvice.shortfallCents, currency)}{" "}
-                      {liquidityAdvice.sellCandidate
-                        ? `(Sell ${liquidityAdvice.sellCandidate.playerName} or add Cash/ETH)`
-                        : "(Add Cash / Crypto)"}
-                    </span>
-                    {onSwitchTab && (
-                      <button
-                        type="button"
-                        onClick={() => onSwitchTab("gallery")}
-                        className="rounded border border-emerald-400/35 bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-200 hover:bg-emerald-500/25"
-                      >
-                        Sell Cards
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {easiestInstantPaths.length === 0 ? (
-          <p className="mt-1.5 text-[11px] text-slate-400">
-            Click <strong>Top {Math.max(1, closestUnpricedSlugs.length)}</strong>{" "}
-            or <strong>Load All</strong> above to auto-rank the cheapest
-            Instant-Buy milestones across all teams.
-          </p>
-        ) : (
-          <div className="mt-2 space-y-1">
-            {easiestInstantPaths.map((item) => {
-              const m = item.nextEssenceMilestone!;
-              const seasonTag = extractCollectionSeasonTag(item.collection.slug);
-              return (
-                <button
-                  key={item.collection.slug}
-                  type="button"
-                  onClick={() => handleToggleRow(item.collection.slug)}
-                  className="flex w-full items-center justify-between gap-2 rounded-xl border border-white/6 bg-[#0b101b] px-2.5 py-1.5 text-left text-[11px] hover:border-emerald-400/40"
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="truncate font-semibold text-slate-100">
-                        {item.collection.name}
-                      </span>
-                      {seasonTag && (
-                        <span className="rounded bg-white/8 px-1 text-[9px] text-slate-300">
-                          {seasonTag}
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-[10px] text-slate-400">
-                      {m.cardsNeeded} Instant Buy{m.cardsNeeded > 1 ? "s" : ""}{" "}
-                      → <strong className="text-amber-300">+{m.essenceRewarded}E</strong>{" "}
-                      ({formatCostPerEssence(m.costPerEssenceCents, currency)})
-                    </div>
-                  </div>
-                  <span className="shrink-0 font-semibold text-emerald-300">
-                    {formatMoney(m.totalCostCents, currency)}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
       </div>
 
       {/* Nearing Goal Progress Radar */}
@@ -781,7 +642,7 @@ export function CollectionsTab({
               <Sparkles className="h-3.5 w-3.5 text-amber-400" />
               Nearing Goal Radar
             </span>
-            <span>Closest Milestones</span>
+            <span>Real Quests &amp; Bonus %</span>
           </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {nearingGoals.map((g) => (
@@ -812,20 +673,90 @@ export function CollectionsTab({
         </div>
       )}
 
-      {/* Cascadable Section 1 (Closed by default): Live NBA League Collect Quests & Sources */}
-      <details className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
-        <summary className="flex w-full cursor-pointer select-none items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
-          <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
-            <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-amber-400" />
-            <Info className="h-3.5 w-3.5 text-amber-400" />
-            NBA League Quests (Live Progress) &amp; Sources
+      {/* Hero Section 1 (Open by default): Real NBA League Quests Quick Finder */}
+      <details
+        open
+        className="cascade-section overflow-hidden rounded-2xl border border-emerald-400/25 bg-[#111726]"
+      >
+        <summary className="flex w-full cursor-pointer select-none items-center justify-between px-3 py-2.5 text-left text-[11px] hover:bg-white/[0.03]">
+          <span className="inline-flex items-center gap-1.5 font-semibold text-slate-100">
+            <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-emerald-400" />
+            <Zap className="h-3.5 w-3.5 text-emerald-400" />
+            Real Essence Quests (Quick Finder)
           </span>
           <span className="text-[10px] text-emerald-300">
-            {questCards.length > 0 ? `${questCards.length} cards tracked` : `${LEAGUE_ESSENCE_MISSIONS.length} quests`}
+            {questCards.length > 0
+              ? `${questCards.length} cards tracked`
+              : `${LEAGUE_ESSENCE_MISSIONS.length} quests`}
           </span>
         </summary>
 
         <div className="space-y-2.5 border-t border-white/8 bg-[#0b101b] p-3 text-[11px]">
+          <div className="rounded-lg border border-white/6 bg-[#111726] px-2.5 py-1.5 text-[10px] text-amber-200">
+            <strong className="text-amber-300">Best Move:</strong>{" "}
+            {questEval.bestOverallSummary}
+          </div>
+
+          {(walletBalance?.cashAmount !== null ||
+            walletBalance?.ethAmount !== null) && (
+            <div className="flex flex-wrap items-center justify-between gap-1.5 rounded-lg border border-white/6 bg-[#111726] px-2.5 py-1.5 text-[10px]">
+              <div className="flex items-center gap-1.5 text-slate-200">
+                <Wallet className="h-3 w-3 text-emerald-400" />
+                <span>
+                  Wallet:{" "}
+                  <strong className="text-emerald-300">
+                    {walletBalance?.cashAmount !== null &&
+                    walletBalance?.cashAmount !== undefined
+                      ? `${walletBalance.cashSymbol ?? "€"}${walletBalance.cashAmount.toFixed(2)}`
+                      : "--"}
+                  </strong>
+                  {walletBalance?.ethAmount !== null &&
+                    walletBalance?.ethAmount !== undefined && (
+                      <span className="text-slate-400">
+                        {" "}
+                        + {walletBalance.ethAmount} ETH
+                      </span>
+                    )}
+                </span>
+              </div>
+              {liquidityAdvice.shortfallCents !== null ? (
+                <div className="flex items-center gap-1.5">
+                  {liquidityAdvice.shortfallCents === 0 ? (
+                    <span className="font-semibold text-emerald-300">
+                      Enough Cash for #1 Quest!
+                    </span>
+                  ) : (
+                    <>
+                      <span className="text-amber-300">
+                        Need +
+                        {formatMoney(liquidityAdvice.shortfallCents, currency)}{" "}
+                        for #1 Quest{" "}
+                        {liquidityAdvice.sellCandidate
+                          ? `(Sell ${liquidityAdvice.sellCandidate.playerName})`
+                          : ""}
+                      </span>
+                      {onSwitchTab && (
+                        <button
+                          type="button"
+                          onClick={() => onSwitchTab("gallery")}
+                          className="rounded border border-emerald-400/35 bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-200 hover:bg-emerald-500/25"
+                        >
+                          Sell Cards
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              ) : (
+                !hasLoadedQuestDeals && (
+                  <span className="text-slate-400">
+                    Click Load 1ST Instant &amp; Auctions to check cost vs Wallet
+                  </span>
+                )
+              )}
+            </div>
+          )}
+
           <div>
             <div className="mb-2 flex flex-wrap items-center justify-between gap-1.5 text-[10px]">
               <div className="inline-flex items-center gap-0.5 rounded-lg border border-white/10 bg-[#111726] p-0.5">
@@ -1130,26 +1061,227 @@ export function CollectionsTab({
         </div>
       </details>
 
-      {/* Cascadable Section 2 (Open by default): Primary Sortable Collections Table */}
+      {/* Hero Section 2 (Open by default): Team Collections - Bonus % & Cheapest Any-Year Hunter */}
       <details
         open
         className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]"
       >
-        <summary className="flex w-full cursor-pointer select-none items-center justify-between border-b border-white/6 px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
-          <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
-            <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-amber-400" />
-            <Layers className="h-3.5 w-3.5 text-amber-400" />
-            Team Collections &amp; Floor Pricing
+        <summary className="flex w-full cursor-pointer select-none items-center justify-between border-b border-white/6 px-3 py-2.5 text-left text-[11px] hover:bg-white/[0.03]">
+          <span className="inline-flex items-center gap-1.5 font-semibold text-slate-100">
+            <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-sky-400" />
+            <Layers className="h-3.5 w-3.5 text-sky-400" />
+            Team Collections - Bonus % &amp; Any-Year Hunter
           </span>
           <span className="text-[10px] text-slate-400">
             {filteredAndSorted.length} shown
           </span>
         </summary>
 
+        <div className="space-y-2.5 border-b border-white/6 bg-[#0e1422]/70 p-3">
+          <div className="text-[10px] leading-relaxed text-slate-400">
+            Team Collections earn <strong className="text-sky-300">+1% to +5% Lineup Bonus</strong> across any season
+            {" "}(finishing 100% of a team unlocks the <strong className="text-amber-300">+2,000E Full Collection</strong> Quest above).
+          </div>
+
+          {/* Search, Season Switcher (Active 26-27 <-> All Years), and Quick Filters */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => onSearchQueryChange(e.target.value)}
+              placeholder="Filter team or player..."
+              aria-label="Filter collections by team or player"
+              className="min-w-[120px] flex-1 rounded-xl border border-white/8 bg-[#0b101b] px-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:border-amber-400/60 focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={onToggleInSeasonOnly}
+              className={`cursor-pointer rounded-xl border px-2.5 py-1.5 text-[11px] font-medium transition ${
+                !inSeasonOnly
+                  ? "border-sky-400/50 bg-sky-500/15 text-sky-200"
+                  : "border-amber-400/50 bg-amber-500/15 text-amber-200"
+              }`}
+              title="Toggle between Active 2026-27 sets only and All Seasons (to hunt cheapest any-year options)"
+            >
+              {inSeasonOnly ? "Active 26-27" : "All Years"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPricedOnly((prev) => !prev)}
+              className={`cursor-pointer rounded-xl border px-2.5 py-1.5 text-[11px] font-medium transition ${
+                pricedOnly
+                  ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-200"
+                  : "border-white/8 bg-[#0b101b] text-slate-300 hover:text-slate-100"
+              }`}
+            >
+              Priced ({pricedSlugs.length})
+            </button>
+            {hasCustomTeamTiers && (
+              <button
+                type="button"
+                onClick={onToggleCraftReadyOnly}
+                className={`inline-flex cursor-pointer items-center gap-1 rounded-xl border px-2.5 py-1.5 text-[11px] font-medium transition ${
+                  craftReadyOnly
+                    ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-200"
+                    : "border-white/8 bg-[#0b101b] text-slate-300 hover:text-slate-100"
+                }`}
+              >
+                <Sparkles className="h-3 w-3" />
+                Craft Ready
+                {summary.craftReadyMatches.length > 0 && (
+                  <span className="rounded bg-emerald-500/25 px-1 text-[10px] text-emerald-100">
+                    {summary.craftReadyMatches.length}
+                  </span>
+                )}
+              </button>
+            )}
+          </div>
+
+          {/* Cheapest Any-Year Team Hunter Controls */}
+          <div className="rounded-xl border border-sky-400/20 bg-[#0b101b] p-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-1.5">
+              <span className="text-[11px] font-semibold text-slate-100">
+                Cheapest Any-Year &amp; Quickest Team Hunter
+              </span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {closestUnpricedSlugs.length > 0 && (
+                  <button
+                    type="button"
+                    disabled={Boolean(pricingSlug)}
+                    onClick={() => onPriceTopCollections(closestUnpricedSlugs)}
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-gradient-to-b from-emerald-300 to-emerald-500 px-2.5 py-1 text-[10.5px] font-bold text-slate-950 shadow-xs transition hover:from-emerald-200 hover:to-emerald-400 disabled:opacity-50"
+                    title="Price the 3 closest unpriced teams (~4s)"
+                  >
+                    {pricingSlug === "__batch__" && (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    )}
+                    Top {closestUnpricedSlugs.length}
+                  </button>
+                )}
+                {!inSeasonOnly &&
+                  inSeasonUnpricedSlugs.length > closestUnpricedSlugs.length && (
+                    <button
+                      type="button"
+                      disabled={Boolean(pricingSlug)}
+                      onClick={() => onPriceTopCollections(inSeasonUnpricedSlugs)}
+                      className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-sky-400/50 bg-sky-500/20 px-2.5 py-1 text-[10.5px] font-bold text-sky-100 transition hover:bg-sky-500/30 disabled:opacity-50"
+                      title="Price all incomplete active 2026-27 team collections (~45s in Public Mode)"
+                    >
+                      Load 26-27 ({inSeasonUnpricedSlugs.length})
+                    </button>
+                  )}
+                {allUnpricedIncompleteSlugs.length > closestUnpricedSlugs.length && (
+                  <button
+                    type="button"
+                    disabled={Boolean(pricingSlug)}
+                    onClick={() => onPriceTopCollections(allUnpricedIncompleteSlugs)}
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-gradient-to-b from-amber-300 to-amber-500 px-2.5 py-1 text-[10.5px] font-bold text-slate-950 shadow-xs transition hover:from-amber-200 hover:to-amber-400 disabled:opacity-50"
+                    title="Price every incomplete team in this view (2-4 min in Public Mode)"
+                  >
+                    Load All ({allUnpricedIncompleteSlugs.length})
+                  </button>
+                )}
+                {Boolean(pricingSlug) && onCancelScan && (
+                  <button
+                    type="button"
+                    onClick={onCancelScan}
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-rose-400/45 bg-rose-500/20 px-2 py-1 text-[10px] font-bold text-rose-100 hover:bg-rose-500/30"
+                  >
+                    <X className="h-3 w-3" />
+                    Stop
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {(allUnpricedIncompleteSlugs.length > 0 || Boolean(pricingSlug)) && (
+              <div className="mt-1.5 text-[9.5px] leading-relaxed text-slate-400">
+                <strong className="text-amber-200">Rate-limit note:</strong> Public Mode (~50-120 req/min):{" "}
+                <strong className="text-emerald-300">Top 3</strong> ~4s,{" "}
+                <strong className="text-sky-300">26-27</strong> ~45s,{" "}
+                <strong className="text-amber-300">
+                  Load All ({allUnpricedIncompleteSlugs.length})
+                </strong>{" "}
+                2-4 min. Add a local API Key in Settings for 60x speed.
+              </div>
+            )}
+
+            {teamQuickPicks.length === 0 ? (
+              <p className="mt-1.5 text-[10.5px] text-slate-400">
+                Switch between <strong>Active 26-27</strong> and <strong>All Years</strong> above, then click{" "}
+                <strong>Top {Math.max(1, closestUnpricedSlugs.length)}</strong> or <strong>Load All</strong> to hunt the cheapest team cards &amp; Bonus % jumps.
+              </p>
+            ) : (
+              <div className="mt-2 space-y-1">
+                {teamQuickPicks.map((item) => {
+                  const target = getTeamTargetSummary(item);
+                  const ops = getCollectionOps(item);
+                  const cheapestPlayer = ops.find((op) => op.instantBuyCents !== null);
+                  const seasonTag = extractCollectionSeasonTag(item.collection.slug);
+                  return (
+                    <button
+                      key={item.collection.slug}
+                      type="button"
+                      onClick={() => handleToggleRow(item.collection.slug)}
+                      className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-white/6 bg-[#111726] px-2.5 py-1.5 text-left text-[11px] hover:border-sky-400/40"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate font-semibold text-slate-100">
+                            {item.collection.name}
+                          </span>
+                          {seasonTag && (
+                            <span className="rounded bg-white/8 px-1 text-[9px] text-slate-300">
+                              {seasonTag}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          {target.kind === "custom_essence" ? (
+                            <>
+                              {target.cardsNeeded} buys →{" "}
+                              <strong className="text-amber-300">
+                                {target.primaryText}
+                              </strong>{" "}
+                              ({formatCostPerEssence(target.costPerEssenceCents, currency)})
+                            </>
+                          ) : target.kind === "bonus" ? (
+                            <>
+                              {target.cardsNeeded} card
+                              {target.cardsNeeded > 1 ? "s" : ""} →{" "}
+                              <strong className="text-sky-300">
+                                {target.primaryText}
+                              </strong>{" "}
+                              • {target.subLabel}
+                            </>
+                          ) : (
+                            <>
+                              Floor:{" "}
+                              <strong className="text-slate-200">
+                                {cheapestPlayer?.slot.playerName ?? "Player"}
+                              </strong>{" "}
+                              • {target.subLabel}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <span className="shrink-0 font-semibold text-emerald-300">
+                        {target.kind === "floor"
+                          ? `from ${formatMoney(target.minCardCents, currency)}`
+                          : formatMoney(target.costCents, currency)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
         <div role="region" aria-labelledby="collections-table-caption">
           <table className="w-full border-collapse text-left">
           <caption id="collections-table-caption" className="sr-only">
-            NBA collections ranked by Essence efficiency
+            NBA team collections ranked by cheapest floor and bonus targets
           </caption>
           <thead>
             <tr className="border-b border-white/8 bg-[#0e1422] text-[10px] font-medium uppercase tracking-wider text-slate-400">
@@ -1173,7 +1305,7 @@ export function CollectionsTab({
                   onClick={() => handleSort("cardsNeeded")}
                   className="flex w-full items-center justify-end gap-0.5 px-2 py-2.5 hover:text-slate-200 focus-visible:outline-2 focus-visible:outline-amber-400"
                 >
-                  Need
+                  Goal
                   <SortArrow
                     active={sortField === "cardsNeeded"}
                     asc={sortAsc}
@@ -1196,17 +1328,22 @@ export function CollectionsTab({
               </th>
               <th
                 scope="col"
-                aria-sort={ariaSortFor("costPerEssence")}
+                aria-sort={ariaSortFor(hasCustomTeamTiers ? "costPerEssence" : "minCard")}
                 className="p-0 text-right"
               >
                 <button
                   type="button"
-                  onClick={() => handleSort("costPerEssence")}
+                  onClick={() =>
+                    handleSort(hasCustomTeamTiers ? "costPerEssence" : "minCard")
+                  }
                   className="flex w-full items-center justify-end gap-0.5 px-3 py-2.5 hover:text-slate-200 focus-visible:outline-2 focus-visible:outline-amber-400"
                 >
-                  $/E
+                  {hasCustomTeamTiers ? "$/E" : "Min Card"}
                   <SortArrow
-                    active={sortField === "costPerEssence"}
+                    active={
+                      sortField ===
+                      (hasCustomTeamTiers ? "costPerEssence" : "minCard")
+                    }
                     asc={sortAsc}
                   />
                 </button>
@@ -1233,6 +1370,8 @@ export function CollectionsTab({
                   nextEssenceMilestone,
                   nextBonusThreshold,
                 } = item;
+                const ops = getCollectionOps(item);
+                const target = getTeamTargetSummary(item);
                 const isExpanded = expandedSlug === collection.slug;
                 const isPriced = pricedSet.has(collection.slug);
                 const isRowLoading = pricingSlug === collection.slug;
@@ -1286,15 +1425,18 @@ export function CollectionsTab({
                               {collection.fulfilledSlotsCount}/
                               {collection.slotsCount}
                             </span>
+                            {collection.bonus > 0 && (
+                              <span className="text-sky-300">
+                                • +{Math.round(collection.bonus * 100)}% now
+                              </span>
+                            )}
                             {nextBonusThreshold && (
                               <span
                                 className="text-slate-400"
                                 title="Instant Buys add +10 Collection Score; 1st-Owner cards add +20"
                               >
-                                • +{Math.round(nextBonusThreshold.bonus * 100)}% @{" "}
-                                {nextBonusThreshold.threshold} (
-                                {nextBonusThreshold.instantBuyCardsNeeded}×2nd /{" "}
-                                {nextBonusThreshold.firstOwnerCardsNeeded}×1st)
+                                → +{Math.round(nextBonusThreshold.bonus * 100)}% @{" "}
+                                {nextBonusThreshold.threshold}
                               </span>
                             )}
                             {isCraftBridge && (
@@ -1307,42 +1449,37 @@ export function CollectionsTab({
                       </td>
 
                       <td className="px-2 py-2.5 text-right align-middle">
-                        {nextEssenceMilestone ? (
-                          <>
-                            <div className="text-xs font-medium text-slate-200">
-                              {nextEssenceMilestone.cardsNeeded}
-                            </div>
-                            <div className="text-[10px] text-amber-300">
-                              +{nextEssenceMilestone.essenceRewarded}E
-                            </div>
-                          </>
-                        ) : (
-                          <span className="text-[11px] text-slate-500">--</span>
-                        )}
+                        <div className="text-xs font-medium text-slate-200">
+                          {target.cardsNeeded}
+                        </div>
+                        <div
+                          className={`text-[10px] ${
+                            target.kind === "custom_essence"
+                              ? "text-amber-300"
+                              : target.kind === "bonus"
+                                ? "text-sky-300"
+                                : "text-slate-400"
+                          }`}
+                        >
+                          {target.kind === "floor"
+                            ? "to Full"
+                            : target.primaryText}
+                        </div>
                       </td>
 
                       <td className="px-2 py-2.5 text-right align-middle">
                         {isPriced ? (
                           <>
                             <div className="text-xs font-semibold text-slate-100">
-                              {formatMoney(
-                                nextEssenceMilestone?.totalCostCents,
-                                currency,
-                              )}
+                              {target.kind === "floor" && target.costCents !== null
+                                ? `from ${formatMoney(target.costCents, currency)}`
+                                : formatMoney(target.costCents, currency)}
                             </div>
-                            {nextEssenceMilestone?.auctionAssistedCostCents !==
-                              null &&
-                              nextEssenceMilestone?.auctionAssistedCostCents !==
-                                undefined &&
-                              nextEssenceMilestone.auctionAssistedCostCents <
-                                (nextEssenceMilestone.totalCostCents ??
-                                  Number.MAX_SAFE_INTEGER) && (
+                            {target.auctionCostCents !== null &&
+                              target.auctionCostCents <
+                                (target.costCents ?? Number.MAX_SAFE_INTEGER) && (
                                 <div className="text-[10px] text-sky-400">
-                                  Auc:{" "}
-                                  {formatMoney(
-                                    nextEssenceMilestone.auctionAssistedCostCents,
-                                    currency,
-                                  )}
+                                  Auc: {formatMoney(target.auctionCostCents, currency)}
                                 </div>
                               )}
                           </>
@@ -1354,18 +1491,33 @@ export function CollectionsTab({
                       </td>
 
                       <td className="px-3 py-2.5 text-right align-middle">
-                        <div className="text-xs font-semibold text-amber-300">
-                          {isPriced
-                            ? formatCostPerEssence(
-                                nextEssenceMilestone?.costPerEssenceCents,
-                                currency,
-                              )
-                            : "--"}
-                        </div>
-                        {nextEssenceMilestone && (
-                          <div className="text-[10px] text-slate-500">
-                            {nextEssenceMilestone.label}
-                          </div>
+                        {hasCustomTeamTiers ? (
+                          <>
+                            <div className="text-xs font-semibold text-amber-300">
+                              {isPriced
+                                ? formatCostPerEssence(
+                                    target.costPerEssenceCents,
+                                    currency,
+                                  )
+                                : "--"}
+                            </div>
+                            <div className="text-[10px] text-slate-500">
+                              {target.subLabel}
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="text-xs font-semibold text-emerald-300">
+                              {isPriced
+                                ? formatMoney(target.minCardCents, currency)
+                                : "--"}
+                            </div>
+                            <div className="text-[10px] text-slate-500">
+                              {target.kind === "bonus"
+                                ? target.subLabel
+                                : "1st card"}
+                            </div>
+                          </>
                         )}
                       </td>
                     </tr>
@@ -1381,29 +1533,33 @@ export function CollectionsTab({
                               <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-400" />
                               Fetching missing players & live floors...
                             </div>
-                          ) : !isPriced || !nextEssenceMilestone ? (
+                          ) : !isPriced ? (
                             <div className="py-2 text-xs text-slate-400">
                               Click row to load live prices.
+                            </div>
+                          ) : ops.length === 0 ? (
+                            <div className="py-2 text-xs text-slate-400">
+                              No unowned player slots returned for this collection.
                             </div>
                           ) : (
                             <>
                               <div className="mb-2 flex items-center justify-between text-[11px] text-slate-400">
                                 <span>
-                                  Cheapest {nextEssenceMilestone.cardsNeeded}{" "}
-                                  highlighted
+                                  {target.highlightCount > 0
+                                    ? `Cheapest ${target.highlightCount} highlighted (${target.primaryText})`
+                                    : "Missing players ranked by floor"}
                                 </span>
                                 <span>
-                                  {nextEssenceMilestone.pricedInstantBuyCount}/
-                                  {nextEssenceMilestone.missingCount} Instant
-                                  Buy
+                                  {item.pricedInstantBuyCount ??
+                                    ops.filter((op) => op.instantBuyCents !== null)
+                                      .length}
+                                  /{ops.length} Instant Buy
                                 </span>
                               </div>
 
                               <div className="max-h-60 space-y-1.5 overflow-y-auto pr-1">
-                                {nextEssenceMilestone.rankedShoppingList.map(
-                                  (op, idx) => {
-                                    const isTargetPick =
-                                      idx < nextEssenceMilestone.cardsNeeded;
+                                {ops.map((op, idx) => {
+                                  const isTargetPick = idx < target.highlightCount;
                                     const hasOverlap = op.overlapCount >= 2;
                                     const otherCollections =
                                       op.overlappingCollections

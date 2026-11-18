@@ -114,10 +114,15 @@ export interface CollectionAnalysis {
     scoreNeeded: number;
     instantBuyCardsNeeded: number;
     firstOwnerCardsNeeded: number;
+    totalCostCents?: number | null;
+    auctionAssistedCostCents?: number | null;
   } | null;
   nextEssenceMilestone: NextEssenceMilestone | null;
   totalEssenceRemaining: number;
   missingSlotsCount: number;
+  opportunities?: MissingPlayerOpportunity[];
+  cheapestCardCents?: number | null;
+  pricedInstantBuyCount?: number;
 }
 
 export interface CardCounts {

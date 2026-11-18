@@ -20,6 +20,15 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.6.4",
+    title: "Real Essence Quests Only + Any-Year Team Hunter",
+    items: [
+      "Removed phantom +150E/+350E/+500E preset payouts from Team Collections so the Collections tab tracks only verified Sorare Essence sources (Live League Quests & Full Team +2,000E).",
+      "Promoted Real Essence Quests (Quick Finder) to the top of Collections with Wallet Cash checks against the #1 real Quest cost.",
+      "Moved Team Collections into its own Bonus % & Any-Year Hunter section with Top 3, Load 26-27, Load All, Active 26-27 <-> All Years toggle, and Min Card floor sorting.",
+    ],
+  },
+  {
     version: "2.6.3",
     title: "Draft 26' 1ST Buy & True Ending-Soon Auctions Fix",
     items: [

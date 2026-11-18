@@ -395,7 +395,7 @@ export function SettingsModal({
         >
           <span className="inline-flex items-center gap-2 font-medium">
             <SlidersHorizontal className="h-3.5 w-3.5 text-amber-400" />
-            Edit Collection Essence Milestone Tiers
+            Custom Team Essence Tiers (Optional)
           </span>
           <span className="text-[11px] text-slate-400">Configure</span>
         </button>

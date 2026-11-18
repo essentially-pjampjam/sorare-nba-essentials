@@ -208,4 +208,38 @@ describe("collectionEssenceMath", () => {
     expect(m.auctionAssistedCostCents).toBe(380); // 300 + 80 preview only
     expect(m.pricedInstantBuyCount).toBe(1);
   });
+
+  it("populates opportunities, cheapestCardCents, and real Team Bonus % floor costs with empty default milestoneRules", () => {
+    const col = makeCollection({
+      fulfilledSlotsCount: 3,
+      score: 180,
+      bonusThresholds: [{ threshold: 200, bonus: 0.03 }],
+    });
+    const missingSlotsByCollection = {
+      [col.slug]: [
+        makeSlot(col.slug, col.name, "p1", "Cheapest Vet"),
+        makeSlot(col.slug, col.name, "p2", "Second Vet"),
+      ],
+    };
+    const marketPrices = Object.fromEntries([
+      makePrice("p1", 65),
+      makePrice("p2", 79),
+    ]);
+
+    const { analyses, summary } = analyzeCollections({
+      collections: [col],
+      missingSlotsByCollection,
+      marketPrices,
+      milestoneRules: [],
+      currentEssenceBalance: 500,
+      craftThreshold: 1000,
+    });
+
+    expect(summary.totalEssenceEarnable).toBe(0);
+    expect(analyses[0].nextEssenceMilestone).toBeNull();
+    expect(analyses[0].cheapestCardCents).toBe(65);
+    expect(analyses[0].opportunities).toHaveLength(2);
+    expect(analyses[0].nextBonusThreshold?.instantBuyCardsNeeded).toBe(2);
+    expect(analyses[0].nextBonusThreshold?.totalCostCents).toBe(144);
+  });
 });

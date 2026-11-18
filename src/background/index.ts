@@ -6,6 +6,7 @@ import {
   DEFAULT_SETTINGS,
   FAST_MODE_REQUESTS_PER_MINUTE,
   FAST_MODE_SPACING_MS,
+  LEGACY_TEAM_PRESET_RULE_IDS,
   MAX_REQUESTS_PER_MINUTE,
   MIN_REQUEST_SPACING_MS,
   NBA_26_DRAFT_TOP_30_SLUGS,
@@ -196,6 +197,25 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 });
 
+function sanitizeMilestoneRulesMap(
+  raw: UserSettings["milestoneRulesByRarity"] | undefined,
+): UserSettings["milestoneRulesByRarity"] {
+  const merged = {
+    ...DEFAULT_SETTINGS.milestoneRulesByRarity,
+    ...(raw ?? {}),
+  };
+  for (const r of ["limited", "rare", "super_rare", "unique"] as const) {
+    const list = merged[r] ?? [];
+    if (
+      list.length > 0 &&
+      list.every((rule) => LEGACY_TEAM_PRESET_RULE_IDS.has(rule.id))
+    ) {
+      merged[r] = [];
+    }
+  }
+  return merged;
+}
+
 async function loadSettings(): Promise<UserSettings> {
   const raw = await chrome.storage.local.get([
     SETTINGS_KEY,
@@ -266,10 +286,9 @@ async function loadSettings(): Promise<UserSettings> {
           ...DEFAULT_SETTINGS.essenceByRarity,
           ...(stored.essenceByRarity ?? {}),
         },
-        milestoneRulesByRarity: {
-          ...DEFAULT_SETTINGS.milestoneRulesByRarity,
-          ...(stored.milestoneRulesByRarity ?? {}),
-        },
+        milestoneRulesByRarity: sanitizeMilestoneRulesMap(
+          stored.milestoneRulesByRarity,
+        ),
       };
 
   applyNetworkMode(merged);
