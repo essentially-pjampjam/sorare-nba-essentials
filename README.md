@@ -36,9 +36,11 @@ Hey - welcome! I originally put this Chrome extension together for myself becaus
 
 ![Collections & Cheapest Essence Finder](docs/promo/promo-2-collections.png)
 
-![Multi-Entry Portfolio & Hybrid Budget Scouting](docs/promo/promo-3-portfolio.png)
+![Live League Quests & 1st-Owner Picks](docs/promo/promo-5-quests.png)
 
-![Set & Common Daily Picker Odds & Squad Builder](docs/promo/promo-4-common.png)
+![Multi-Entry Portfolio & Disjoint Lineups](docs/promo/promo-3-portfolio.png)
+
+![Set & Common Daily Picker Odds](docs/promo/promo-4-common.png)
 
 ## What It Includes
 
