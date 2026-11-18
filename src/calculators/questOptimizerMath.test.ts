@@ -254,4 +254,72 @@ describe("questOptimizerMath", () => {
     const map = buildTeamOutStarMap(cards, injuries);
     expect(map["oklahoma-city-thunder"]).toContain("OUT");
   });
+
+  it("keeps cheapest <1h auctions alongside 1ST Primary Offers even when 10+ cheaper Primary buys exist", () => {
+    const slugs = Array.from({ length: 12 }, (_, idx) => `p-buy-${idx}`);
+    const manyPrimaryBuys: BargainListing[] = slugs.map((slug, idx) => ({
+      cardSlug: `card-${slug}`,
+      assetId: `asset-${slug}`,
+      playerSlug: slug,
+      playerName: `Primary Guy ${idx}`,
+      teamName: "Chicago Bulls",
+      teamSlug: "chicago-bulls",
+      isPrimaryOffer: true,
+      isFirstOwnerEligible: true,
+      positions: ["basketball_guard"],
+      rarity: "limited",
+      seasonYear: 2026,
+      inSeasonEligible: true,
+      l10: 20,
+      l5: 20,
+      projected: 20,
+      starCost: 2,
+      saleType: "instant_buy",
+      priceCents: 279,
+      currency: "EUR",
+      endDate: null,
+      bidsCount: null,
+      centsPerL10: 14,
+      valueScore: 50,
+      marketUrl: `https://sorare.com/nba/cards/card-${slug}`,
+    }));
+    const oneShortAuction: BargainListing = {
+      cardSlug: "auc-soon",
+      assetId: "asset-auc-soon",
+      playerSlug: "late-auction-guy",
+      playerName: "Late Auction Guy",
+      teamName: "Chicago Bulls",
+      teamSlug: "chicago-bulls",
+      isPrimaryOffer: false,
+      isFirstOwnerEligible: true,
+      positions: ["basketball_forward"],
+      rarity: "limited",
+      seasonYear: 2026,
+      inSeasonEligible: true,
+      l10: 24,
+      l5: 24,
+      projected: 24,
+      starCost: 2,
+      saleType: "auction",
+      priceCents: 750,
+      currency: "EUR",
+      endDate: new Date(Date.now() + 20 * 60 * 1000).toISOString(),
+      bidsCount: 2,
+      centsPerL10: 31,
+      valueScore: 40,
+      marketUrl: "https://sorare.com/nba/cards/auc-soon",
+    };
+
+    const res = evaluateLeagueQuests([], [], "limited", [
+      ...manyPrimaryBuys,
+      oneShortAuction,
+    ]);
+    const nonPlay = res.quests.find((q) => q.id === "non-playoffs-26");
+    expect(nonPlay?.cheapestBuys.some((b) => b.isPrimaryOffer)).toBe(true);
+    expect(
+      nonPlay?.cheapestBuys.some(
+        (b) => b.saleType === "auction" && b.playerName === "Late Auction Guy",
+      ),
+    ).toBe(true);
+  });
 });

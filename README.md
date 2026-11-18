@@ -5,7 +5,7 @@
 <h1 align="center">pjampjam's Sorare NBA Essentials</h1>
 
 <p align="center">
-  <strong>v2.6.2</strong> - Unofficial Chrome Side Panel & Dashboard for Sorare NBA
+  <strong>v2.6.3</strong> - Unofficial Chrome Side Panel & Dashboard for Sorare NBA
 </p>
 
 <p align="center">

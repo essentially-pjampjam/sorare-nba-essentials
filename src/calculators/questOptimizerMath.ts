@@ -389,7 +389,7 @@ export function evaluateLeagueQuests(
           )
         : Math.min(100, Math.round((current / Math.max(1, target)) * 100));
 
-    const cheapestBuys = allCandidates
+    const matching = allCandidates
       .filter((c) => c.overlappingQuestIds.includes(m.id))
       .sort((a, b) => {
         if (m.firstOwnerOnly && a.isFirstOwnerEligible !== b.isFirstOwnerEligible) {
@@ -397,8 +397,20 @@ export function evaluateLeagueQuests(
         }
         if (a.priceCents !== b.priceCents) return a.priceCents - b.priceCents;
         return b.overlappingQuestIds.length - a.overlappingQuestIds.length;
-      })
-      .slice(0, 12);
+      });
+    const cheapestBuys = [
+      ...matching.filter((c) => Boolean(c.isPrimaryOffer)).slice(0, 8),
+      ...matching.filter((c) => c.saleType === "auction").slice(0, 8),
+      ...matching
+        .filter((c) => !c.isPrimaryOffer && c.saleType === "instant_buy")
+        .slice(0, 8),
+    ].sort((a, b) => {
+      if (m.firstOwnerOnly && a.isFirstOwnerEligible !== b.isFirstOwnerEligible) {
+        return a.isFirstOwnerEligible ? -1 : 1;
+      }
+      if (a.priceCents !== b.priceCents) return a.priceCents - b.priceCents;
+      return b.overlappingQuestIds.length - a.overlappingQuestIds.length;
+    });
 
     return {
       id: m.id,

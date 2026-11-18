@@ -20,6 +20,15 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.6.3",
+    title: "Draft 26' 1ST Buy & True Ending-Soon Auctions Fix",
+    items: [
+      "Added targeted Draft 26' Top-30 rookie PrimaryOffer and <1h auction discovery so 1ST Instant Buys (EUR 3.49+) no longer get hidden behind cheaper vets.",
+      "Switched live auction sorting to Sorare's real sale.end_date ASC field so auctions ending within <1h populate reliably in both Deals and League Quests.",
+      "Kept top Instant Buy and <1h Auction picks independently per Quest so 1ST BUY rows never crowd out live auctions.",
+    ],
+  },
+  {
     version: "2.6.2",
     title: "Sorare NBA Essentials Rebrand, <1h Auctions & Instant Buy Fix",
     items: [

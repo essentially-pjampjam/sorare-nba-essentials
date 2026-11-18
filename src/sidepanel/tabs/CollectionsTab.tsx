@@ -878,7 +878,10 @@ export function CollectionsTab({
                         : cand.saleType === "instant_buy";
                     }
                     if (questBuyFilter === "auction") {
-                      return cand.saleType === "auction";
+                      return q.firstOwnerOnly
+                        ? Boolean(cand.isFirstOwnerEligible) &&
+                            cand.saleType === "auction"
+                        : cand.saleType === "auction";
                     }
                     return q.firstOwnerOnly
                       ? cand.isFirstOwnerEligible || Boolean(cand.isPrimaryOffer)
