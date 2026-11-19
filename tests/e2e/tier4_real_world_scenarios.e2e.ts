@@ -787,7 +787,9 @@ describe("Tier 4 — Real-World End-to-End Scenarios (1–9)", () => {
       excludeOut: true,
       disjointAcrossTeams: true,
     });
-    expect(squad.squadTeams.length).toBeGreaterThanOrEqual(1);
+    // Live rule 2026-11-19: Set teams have a 16-star cap; these 3.5-4 star Commons can't
+    // form a legal 5-card team (cheapest = 19 stars), so no Squad team is expected.
+    expect(squad.squadTeams.length).toBe(0);
 
     const lineupsMod = await requireContractModule<Record<string, unknown>>(
       "src/sidepanel/tabs/LineupsTab.tsx",

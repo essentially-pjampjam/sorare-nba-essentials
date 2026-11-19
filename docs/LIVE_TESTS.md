@@ -8,6 +8,21 @@ Then reload any open sorare.com tabs so the new content script runs.
 
 ---
 
+## 2.6.9-exp.M3 — Live Sorare data
+
+Reload the extension (it now also asks for the **notifications** permission), then **Refresh Gallery**.
+
+| # | Do this | Expect |
+|---|---|---|
+| 1 | Open the side panel | Badge red, one line: `v2.6.9·M3`; What's New shows "Experimental M3" |
+| 2 | Lineups → Current Open Lineups, the Classic Limited Contender with Brooks / DeRozan / Gordon / Lopez / Carter Jr. | Star total matches Sorare's editor (Brooks 2★, DeRozan 1.5★); **no** "Cap fix: Brooks → Anderson" swap |
+| 3 | Any built lineup | Star totals equal the sum of Sorare's star badges for those players |
+| 4 | Gallery → Vault / Seal advice | VP per card matches the points Sorare shows in its seal dialog |
+| 5 | Lineups → Live Competition Rooms → Set rooms | Arcade "16★ Cap • 4 Teams • 4 Lives", Squad "16★ Cap • 1 Team" |
+| 6 | A lineup with a team on a back-to-back or a big-spread game | Projection slightly lower than before; 2-game players still ranked up |
+
+**Not visible yet (UI in M4):** alert switches, alert feed, test-notification button, countdown timers.
+
 ## 2.6.8-exp.M2 — Smarter lineup math
 
 | # | Do this | Expect |

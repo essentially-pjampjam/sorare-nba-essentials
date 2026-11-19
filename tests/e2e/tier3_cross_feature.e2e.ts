@@ -493,7 +493,9 @@ describe("Tier 3 — Pairwise Cross-Feature Integration (F1–F16)", () => {
       disjointAcrossTeams: true,
     });
     expect(squadRes.mode).toBe("squad");
-    expect(squadRes.squadTeams.length).toBeGreaterThanOrEqual(1);
+    // Live rule 2026-11-19: Set teams have a 16-star cap; these 3.5-4 star Commons can't
+    // form a legal 5-card team (cheapest = 19 stars), so no Squad team is expected.
+    expect(squadRes.squadTeams.length).toBe(0);
     expect(buildSetPlayUrl("squad")).toBe("https://sorare.com/nba/series/squad");
   });
 

@@ -1363,8 +1363,23 @@ describe("Feature 4: Set Arcade / Solo vs. Squad / Hot Streak Rules & Go Actions
     });
     expect(squad.mode).toBe("squad");
     expect(squad.soloPicks).toEqual([]);
-    expect(squad.squadTeams).toHaveLength(1);
-    expect(squad.squadTeams[0].slots).toHaveLength(5);
+    // Live rule (2026-11-19): 16-star cap. These Commons are 3.5-4 stars each (cheapest 5 = 19),
+    // so no legal team exists; the builder must return none rather than break the cap.
+    expect(squad.squadTeams).toHaveLength(0);
+    const cheapPool = PJAMPJAM_COMMON_CARDS.map((c, idx) => ({ ...c, starCost: 2.5 + (idx % 2) * 0.5 }));
+    const cheapSquad = setMath.buildSetTeams(cheapPool, {
+      mode: "squad",
+      teamCount: 1,
+      projectionSource: "blended_smart",
+      customProjectionsRaw: "",
+      injuriesByName: PJAMPJAM_INJURIES_BY_NAME,
+      gamesPerTeam: PJAMPJAM_GAMES_PER_TEAM,
+      excludeOut: true,
+      disjointAcrossTeams: true,
+    });
+    expect(cheapSquad.squadTeams).toHaveLength(1);
+    expect(cheapSquad.squadTeams[0].slots).toHaveLength(5);
+    expect(cheapSquad.squadTeams[0].capUsed).toBeLessThanOrEqual(16);
   });
 
   it("F4-T1-4: LineupsTab Set/Common UI explicitly documents 4 Lives, +5% bonus, card tiers, Essence scrap, Hot Streak, and Solo vs Squad", async () => {
@@ -1532,13 +1547,16 @@ describe("Feature 4: Set Arcade / Solo vs. Squad / Hot Streak Rules & Go Actions
     expect(clampedHigh.soloPicks).toHaveLength(8);
   });
 
-  it("F4-T2-3: Squad mode enforces 120 Cap across 4 non-MVP cards while allowing free MVP >= 43 L10", () => {
+  // Live rule 2026-11-19 (docs/SORARE_FACTS.md): Set teams have a 16-star cap; the old
+  // "120 Cap + free MVP" Squad rule is retired.
+  it("F4-T2-3: Squad mode enforces the live 16-star cap", () => {
     const squadCards: GalleryCard[] = [
-      { ...PJAMPJAM_COMMON_CARDS[3], l10: 45, sorareClassicProjected: 48 }, // MVP free (LaMelo 45)
-      { ...PJAMPJAM_COMMON_CARDS[0], l10: 30, sorareClassicProjected: 34 },
-      { ...PJAMPJAM_COMMON_CARDS[1], l10: 30, sorareClassicProjected: 33 },
-      { ...PJAMPJAM_COMMON_CARDS[2], l10: 30, sorareClassicProjected: 32 },
-      { ...PJAMPJAM_COMMON_CARDS[4], l10: 30, sorareClassicProjected: 31 },
+      { ...PJAMPJAM_COMMON_CARDS[3], l10: 45, sorareClassicProjected: 48, starCost: 4 },
+      { ...PJAMPJAM_COMMON_CARDS[0], l10: 30, sorareClassicProjected: 34, starCost: 3 },
+      { ...PJAMPJAM_COMMON_CARDS[1], l10: 30, sorareClassicProjected: 33, starCost: 3 },
+      { ...PJAMPJAM_COMMON_CARDS[2], l10: 30, sorareClassicProjected: 32, starCost: 3 },
+      { ...PJAMPJAM_COMMON_CARDS[4], l10: 30, sorareClassicProjected: 31, starCost: 3 },
+      { ...PJAMPJAM_COMMON_CARDS[5], playerSlug: "extra-p", slug: "extra-common", l10: 50, sorareClassicProjected: 55, starCost: 5 },
     ];
     const res = setMath.buildSetTeams(squadCards, {
       mode: "squad",
@@ -1553,7 +1571,7 @@ describe("Feature 4: Set Arcade / Solo vs. Squad / Hot Streak Rules & Go Actions
     expect(res.squadTeams).toHaveLength(1);
     const team = res.squadTeams[0];
     expect(team.slots).toHaveLength(5);
-    expect(team.capUsed).toBeLessThanOrEqual(120);
+    expect(team.capUsed).toBeLessThanOrEqual(16);
   });
 
   it("F4-T2-4: NBA_COMPETITION_DIRECTORY Set entries align with /nba/series routes and verified rules", () => {
@@ -1563,11 +1581,11 @@ describe("Feature 4: Set Arcade / Solo vs. Squad / Hot Streak Rules & Go Actions
     expect(byId.get("set-arcade")?.url).toBe("https://sorare.com/nba/series/play");
     expect(byId.get("set-arcade")?.rulesSummary).toContain("4 Lives");
     expect(byId.get("set-squad")?.url).toBe("https://sorare.com/nba/series/squad");
-    expect(byId.get("set-squad")?.rulesSummary).toContain("120 Cap + Free MVP");
+    expect(byId.get("set-squad")?.rulesSummary).toContain("16★ Cap");
     expect(byId.get("set-hot-streak")?.url).toBe(
       "https://sorare.com/nba/series/play",
     );
-    expect(byId.get("set-hot-streak")?.rulesSummary).toContain("3 Entries");
+    expect(byId.get("set-hot-streak")?.rulesSummary).toContain("4 Teams");
   });
 
   it("F4-T2-5: Set Go buttons target /nba/series/* routes and never prohibited /nba/set", async () => {
@@ -1935,7 +1953,8 @@ describe("Feature 5: Multi-Lineup Builder Limits & Slot Expansion (0 SET / 5)", 
       excludeOut: true,
       disjointAcrossTeams: true,
     });
-    expect(sparse.squadTeams).toHaveLength(1);
+    // Live 16-star cap: the 3.5-4 star Commons can't form a legal team (see F4-T1-3).
+    expect(sparse.squadTeams).toHaveLength(0);
 
     const largeCommonPool: GalleryCard[] = Array.from(
       { length: 42 },
@@ -1946,6 +1965,7 @@ describe("Feature 5: Multi-Lineup Builder Limits & Slot Expansion (0 SET / 5)", 
         playerName: `Squad Player ${idx}`,
         l10: 15 + (idx % 15),
         sorareClassicProjected: 18 + (idx % 15),
+        starCost: 1.5 + (idx % 6) * 0.5,
       }),
     );
     const full = setMath.buildSetTeams(largeCommonPool, {

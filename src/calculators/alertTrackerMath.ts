@@ -1,5 +1,5 @@
 import { NBA_26_DRAFT_TOP_30_SLUGS } from "../shared/constants";
-import { buildArenaLineupsUrl, buildCardUrl } from "../shared/routes";
+import { buildArenaLineupsUrl, buildCardUrl, buildSetPlayUrl } from "../shared/routes";
 import type {
   AlertEvaluationInputs,
   AlertEventKind,
@@ -159,6 +159,7 @@ export function evaluateAlertEvents(
         lineupIds,
         previousStatus: prevStatus,
         currentStatus: cur.status,
+        targetUrl: buildArenaLineupsUrl(null),
       });
     }
   }
@@ -197,6 +198,7 @@ export function evaluateAlertEvents(
     push("daily_reset", snap.dailyResetIso, {
       title: `Daily reset in ${Math.round(snap.dailyRemainingMs / 60_000)} min`,
       message: "Finish today's daily picks and missions before the reset.",
+      targetUrl: buildSetPlayUrl("arcade"),
     });
   }
 

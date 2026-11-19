@@ -81,6 +81,7 @@ export function evaluateSealCandidates(
       "Sealing locks the card: it can't be sold, traded or played while sealed.",
       `Max 1 unseal per scarcity every ${UNSEAL_COOLDOWN_DAYS} days (${UNSEAL_COOLDOWN_DAYS}-day cooldown); unsealing removes its Sealing Points.`,
       "Any live market listing of this card is delisted when you seal it.",
+      "Sealing a card that sits in an upcoming or live lineup cancels that lineup.",
     ];
     if (inLineup) {
       warnings.push(
@@ -95,7 +96,7 @@ export function evaluateSealCandidates(
     if (l10 > 0 && l10 < 20) reasons.push(`low current form (L10 ${l10.toFixed(1)})`);
     if (l10 >= 30) reasons.push(`strong starter (L10 ${l10.toFixed(1)})`);
     if (isLockedOrListed) reasons.push(inLineup ? "in an open lineup" : "listed for sale");
-    const reason = `${est.sealingPoints} SP est. (${c.rarity.replace("_", " ")} Vault)${reasons.length ? `: ${reasons.join(", ")}` : ""}.`;
+    const reason = `${est.sealingPoints} SP ${est.tier.includes("live") || est.tier === "Live" ? "" : "est. "}(${c.rarity.replace("_", " ")} Vault)${reasons.length ? `: ${reasons.join(", ")}` : ""}.`;
 
     return {
       cardSlug: c.slug,

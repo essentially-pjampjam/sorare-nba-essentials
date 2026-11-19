@@ -1,4 +1,10 @@
 import { normalizePlayerName } from "../calculators/lineupOptimizerMath";
+import {
+  deriveGameOdds,
+  hasBackToBackDates,
+  isInGameWeekRange,
+  type TeamGameOdds,
+} from "../calculators/vegasMath";
 import type {
   InjuryReportEntry,
   InjuryStatus,
@@ -39,21 +45,19 @@ interface EspnScoreboardPayload {
         team?: { displayName?: string; abbreviation?: string };
         records?: Array<{ summary?: string }>;
       }>;
+      odds?: Array<{
+        details?: string;
+        overUnder?: number;
+        spread?: number;
+        homeTeamOdds?: { favorite?: boolean };
+        awayTeamOdds?: { favorite?: boolean };
+      }>;
     }>;
   }>;
 }
 
 function classifyDifficulty(score: number): "EASY" | "NEUTRAL" | "TOUGH" {
   return score <= 0.46 ? "EASY" : score >= 0.55 ? "TOUGH" : "NEUTRAL";
-}
-
-function positionalSeedOffset(oppAbbr: string, pos: "G" | "F" | "C"): number {
-  let sum = 0;
-  const tag = `${oppAbbr}:${pos}`;
-  for (let i = 0; i < tag.length; i += 1) {
-    sum = (sum * 31 + tag.charCodeAt(i)) % 97;
-  }
-  return ((sum % 17) - 8) * 0.01;
 }
 
 function parseWinPct(summary: string | undefined): number | null {
@@ -90,9 +94,19 @@ function formatEspnDate(d: Date): string {
   return `${y}${m}${day}`;
 }
 
-function buildSlateScoreboardUrl(): string {
-  const start = new Date();
-  const end = new Date(start.getTime() + 3 * 24 * 60 * 60 * 1000);
+export interface GameWeekWindow {
+  /** GW cutoff (first tip-off), ISO. */
+  startIso: string;
+  /** GW end, ISO. */
+  endIso: string;
+}
+
+function buildSlateScoreboardUrl(window?: GameWeekWindow | null): string {
+  const startMs = window ? Date.parse(window.startIso) : Number.NaN;
+  const endMs = window ? Date.parse(window.endIso) : Number.NaN;
+  // ESPN dates are US calendar days, so pad the UTC window by 12h on the left.
+  const start = Number.isFinite(startMs) ? new Date(startMs - 12 * 3_600_000) : new Date();
+  const end = Number.isFinite(endMs) ? new Date(endMs) : new Date(start.getTime() + 3 * 86_400_000);
   return `${ESPN_SCOREBOARD_URL}?dates=${formatEspnDate(start)}-${formatEspnDate(end)}&limit=100`;
 }
 
@@ -100,12 +114,12 @@ function buildSlateScoreboardUrl(): string {
  * Fetches live NBA injuries & 4-day Gameweek scoreboard matchups from ESPN's unauthenticated JSON endpoints
  * (cached 10 minutes in chrome.storage.local, zero Sorare API impact).
  */
-export async function fetchExternalNbaContext(): Promise<{
+export async function fetchExternalNbaContext(gwWindow?: GameWeekWindow | null): Promise<{
   injuriesByName: Record<string, InjuryReportEntry>;
   gamesPerTeam: Record<string, number>;
   scheduleByTeam: Record<string, TeamSlateSchedule>;
 }> {
-  const cacheKey = "espn_nba_context_v4";
+  const cacheKey = `espn_nba_context_v5:${gwWindow ? `${gwWindow.startIso}_${gwWindow.endIso}` : "next4d"}`;
   const cached = await getCached<{
     injuriesByName: Record<string, InjuryReportEntry>;
     gamesPerTeam: Record<string, number>;
@@ -130,6 +144,7 @@ export async function fetchExternalNbaContext(): Promise<{
       completedGames: number;
       upcomingGames: number;
       liveClockLabel: string | null;
+      odds: TeamGameOdds[];
     }
   > = {};
 
@@ -138,7 +153,7 @@ export async function fetchExternalNbaContext(): Promise<{
       credentials: "omit",
       signal: AbortSignal.timeout(12_000),
     }).then((r) => (r.ok ? (r.json() as Promise<EspnInjuriesPayload>) : null)),
-    fetch(buildSlateScoreboardUrl(), {
+    fetch(buildSlateScoreboardUrl(gwWindow), {
       credentials: "omit",
       signal: AbortSignal.timeout(12_000),
     }).then((r) => (r.ok ? (r.json() as Promise<EspnScoreboardPayload>) : null)),
@@ -173,7 +188,20 @@ export async function fetchExternalNbaContext(): Promise<{
     for (const ev of sbRes.value.events) {
       const eventDate = (ev.date ?? "").slice(0, 10);
       for (const comp of ev.competitions ?? []) {
+        // Only games inside the Game Week count (a player may play 2+ in one GW).
+        if (!isInGameWeekRange(comp.date ?? ev.date, gwWindow)) continue;
         const dateStr = (comp.date ?? eventDate).slice(0, 10);
+        const o = comp.odds?.[0];
+        const gameOdds = deriveGameOdds(
+          o
+            ? {
+                overUnder: o.overUnder,
+                spread: o.spread,
+                homeFavorite: o.homeTeamOdds?.favorite,
+                awayFavorite: o.awayTeamOdds?.favorite,
+              }
+            : null,
+        );
         const state = comp.status?.type?.state ?? "pre";
         const shortDetail = comp.status?.type?.shortDetail?.trim() ?? null;
         const competitors = comp.competitors ?? [];
@@ -206,7 +234,11 @@ export async function fetchExternalNbaContext(): Promise<{
               completedGames: 0,
               upcomingGames: 0,
               liveClockLabel: null,
+              odds: [],
             };
+          }
+          if (gameOdds) {
+            accByTeam[slug].odds.push(c.homeAway === "away" ? gameOdds.away : gameOdds.home);
           }
           accByTeam[slug].matchups.push(`${prefix}${oppAbbr}`);
           accByTeam[slug].oppAbbrs.push(oppAbbr);
@@ -229,27 +261,16 @@ export async function fetchExternalNbaContext(): Promise<{
 
   const scheduleByTeam: Record<string, TeamSlateSchedule> = {};
   for (const [slug, acc] of Object.entries(accByTeam)) {
-    const sortedDates = [...new Set(acc.dates)].sort();
-    let hasBackToBack = false;
-    for (let i = 1; i < sortedDates.length; i += 1) {
-      const diffMs = Date.parse(sortedDates[i]) - Date.parse(sortedDates[i - 1]);
-      if (diffMs > 0 && diffMs <= 86_400_000 * 1.1) {
-        hasBackToBack = true;
-        break;
-      }
-    }
+    const hasBackToBack = hasBackToBackDates(acc.dates);
+    const firstOdds = acc.odds[0] ?? null;
+    // overUnder / spread / ITT all describe the team's first game with a posted line.
+    const firstItt = firstOdds?.impliedTeamTotal ?? null;
     const avgOppWin =
       acc.oppWinPcts.length > 0
         ? acc.oppWinPcts.reduce((s, v) => s + v, 0) / acc.oppWinPcts.length
         : 0.5;
     const difficultyTag: TeamSlateSchedule["difficultyTag"] =
       avgOppWin <= 0.45 ? "EASY" : avgOppWin >= 0.56 ? "TOUGH" : "NEUTRAL";
-
-    const avgPosOffset = (pos: "G" | "F" | "C") =>
-      acc.oppAbbrs.length > 0
-        ? acc.oppAbbrs.reduce((s, a) => s + positionalSeedOffset(a, pos), 0) /
-          acc.oppAbbrs.length
-        : 0;
 
     scheduleByTeam[slug] = {
       teamSlug: slug,
@@ -259,11 +280,16 @@ export async function fetchExternalNbaContext(): Promise<{
       matchups: acc.matchups,
       hasBackToBack,
       difficultyTag,
+      // No real defence-vs-position feed yet: every position gets the opponent-strength tag.
       dvpByPos: {
-        G: classifyDifficulty(avgOppWin + avgPosOffset("G")),
-        F: classifyDifficulty(avgOppWin + avgPosOffset("F")),
-        C: classifyDifficulty(avgOppWin + avgPosOffset("C")),
+        G: classifyDifficulty(avgOppWin),
+        F: classifyDifficulty(avgOppWin),
+        C: classifyDifficulty(avgOppWin),
       },
+      overUnder: firstOdds?.overUnder ?? null,
+      spread: firstOdds?.spread ?? null,
+      impliedTeamTotal: firstItt,
+      blowoutRisk: acc.odds.some((g) => g.blowoutRisk),
       liveGames: acc.liveGames,
       completedGames: acc.completedGames,
       upcomingGames: acc.upcomingGames,

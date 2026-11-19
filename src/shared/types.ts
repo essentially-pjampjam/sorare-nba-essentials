@@ -293,6 +293,14 @@ export interface GalleryCard {
   /** Card is sealed in the manager's Vault (locked: not sellable, tradeable or playable). */
   sealed?: boolean;
   sealedAt?: string | null;
+  /** Live Sealing Points Sorare gives for sealing this card (`Card.sealableFor`). */
+  sealingPoints?: number | null;
+  /** When a sealed card can be unsealed again (`Card.unsealableAt`). */
+  unsealableAt?: string | null;
+  /** Sorare gameplay tier of the player (e.g. ROSTER); drives the live star rating. */
+  gameplayTier?: string | null;
+  /** "live" when starCost comes from Sorare's gameplay tier, else the L10 estimate. */
+  starSource?: "live" | "estimated";
   teamName: string | null;
   teamSlug: string | null;
   playerSlug: string;
@@ -423,6 +431,7 @@ export interface BargainListing {
   l5: number | null;
   projected: number | null;
   starCost: number;
+  starSource?: "live" | "estimated";
   saleType: "instant_buy" | "auction";
   priceCents: number | null;
   currency: Currency;
@@ -626,6 +635,9 @@ export type BackgroundRequest =
   | { type: "OPEN_URL_IN_ACTIVE_TAB"; url: string }
   | { type: "CLEAR_CACHE" }
   | { type: "RUN_WATCHLIST_CHECK" }
+  | { type: "RUN_ALERT_CHECK" }
+  | { type: "SEND_TEST_ALERT_NOTIFICATION" }
+  | { type: "GET_ALERT_FEED" }
   | { type: "CLEAR_WATCHLIST_ALERTS" }
   | { type: "DETECTED_USERNAME_FROM_CONTENT"; username: string; sourceUrl: string }
   | {

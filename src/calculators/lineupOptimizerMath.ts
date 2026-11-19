@@ -284,7 +284,7 @@ const ITT_ELASTICITY = 0.5;
 const B2B_MULTIPLIER = 0.96;
 /** Heavy favourite / underdog: starters can sit the 4th quarter. */
 const BLOWOUT_MULTIPLIER = 0.97;
-export const BLOWOUT_SPREAD = 12;
+export const BLOWOUT_SPREAD = 10;
 /** Score of a freely available bench card (about a 1-1.5 star L10). */
 export const REPLACEMENT_LEVEL_PTS = 12;
 const BASE_PLAYER_CV = 0.35;

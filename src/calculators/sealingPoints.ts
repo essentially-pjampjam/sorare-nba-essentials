@@ -39,9 +39,20 @@ export interface SealingPointsEstimate {
  * Estimates the Sealing Points tier. Sorare's real tier is its own quality rating, so this is
  * an estimate from scarcity and current form (L10); the in-game seal dialog shows the exact value.
  */
-export function estimateSealingPoints(card: Pick<GalleryCard, "rarity" | "l10">): SealingPointsEstimate {
+export function estimateSealingPoints(
+  card: Pick<GalleryCard, "rarity" | "l10"> & Partial<Pick<GalleryCard, "sealingPoints">>,
+): SealingPointsEstimate {
   const base = SCARCITY_TIER_BASE[card.rarity];
   if (base === undefined) return { tierIndex: -1, tier: "Not sealable", sealingPoints: 0 };
+  // Sorare's own value (`Card.sealableFor`) wins over the estimate.
+  if (typeof card.sealingPoints === "number" && Number.isFinite(card.sealingPoints) && card.sealingPoints > 0) {
+    const idx = SEALING_POINT_TIERS.findIndex((p) => p === card.sealingPoints);
+    return {
+      tierIndex: idx >= 0 ? idx : 0,
+      tier: idx >= 0 ? `Tier ${idx + 1}/6 (live)` : "Live",
+      sealingPoints: card.sealingPoints,
+    };
+  }
   const l10 = card.l10 ?? 0;
   const quality = l10 >= 35 ? 2 : l10 >= 25 ? 1 : 0;
   const tierIndex = Math.min(SEALING_POINT_TIERS.length - 1, base + quality);

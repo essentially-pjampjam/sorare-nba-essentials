@@ -537,6 +537,8 @@ export interface CompetitionRoomInfo {
   name: string;
   capLabel: string;
   eligibility: string;
+  /** Short live rules line (docs/SORARE_FACTS.md). */
+  rulesSummary?: string;
   url: string;
   maxEntries?: number;
   lineupsUrl?: string;
@@ -632,30 +634,34 @@ export const NBA_COMPETITION_DIRECTORY: CompetitionRoomInfo[] = [
     id: "set-arcade",
     group: "Set / Arcade",
     name: "Set Arcade: Solo Mode",
-    capLabel: "4 Lives • +5% Boost",
+    capLabel: "16★ Cap • 4 Teams • 4 Lives",
     eligibility:
-      "Daily Solo board with 4 Lives, +5% Edition & Collection boost, card tiers, and duplicate scrapping for Essence",
+      "Arcade (Solo): up to 4 teams of 5 Common cards, sum of stars 16 or less, 4 Lives per level, Hot Streak chapter/step ladder, up to +5% Collection boost; card tiers Reserve to Icon (1-5★), duplicates scrap for Essence (Bronze pack = 1000 Essence)",
+    rulesSummary: "Up to 4 Teams • 16★ Cap • 4 Lives • Hot Streak ladder",
     url: buildSetPlayUrl("arcade"),
+    maxEntries: 4,
   },
   {
     id: "set-squad",
     group: "Set / Arcade",
     name: "Set / Common: Squad Mode",
-    capLabel: "120 Cap + Free MVP",
+    capLabel: "16★ Cap • 1 Team",
     eligibility:
-      "Co-op / Common Squad boards (120 Cap + free MVP slot, 3 best lineups counted, +up to 5% Collection boost)",
+      "Squad of up to 10 managers, 1 team each (16★ cap); the squad's 3 best teams must beat the stage target, failing resets to level 1",
+    rulesSummary: "1 Team per manager • 16★ Cap • Squad of 10 • 3 best teams count",
     url: buildSetPlayUrl("squad"),
-    maxEntries: COMPETITION_ENTRY_LIMITS.squadBestLineupsCounted,
+    maxEntries: 1,
   },
   {
     id: "set-hot-streak",
     group: "Set / Arcade",
     name: "Set / Common: Hot Streak",
-    capLabel: "3 Entries • Target Pts",
+    capLabel: "4 Teams • Target Pts",
     eligibility:
-      "Hot Streak series (up to 3 entries, beat target score streak for Essence)",
+      "Arcade Hot Streak: chapter/step ladder (e.g. 180 PTS), up to 4 teams, 16★ cap, 4 Lives; rewards along the path (gems, cash)",
+    rulesSummary: "Up to 4 Teams • 16★ Cap • Chapter/Step target",
     url: buildSetPlayUrl("hot_streak"),
-    maxEntries: COMPETITION_ENTRY_LIMITS.hotStreakMaxEntries,
+    maxEntries: 4,
   },
 ];
 

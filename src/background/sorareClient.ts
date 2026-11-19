@@ -1,6 +1,6 @@
 import { scoreBargainListing } from "../calculators/bargainHunterMath";
 import { buildMarketPriceKey } from "../calculators/collectionEssenceMath";
-import { computeStarCost } from "../calculators/lineupOptimizerMath";
+import { buildTierStarMap, resolveStarRating } from "../calculators/starRatings";
 import {
   getActiveNbaSeasonYear,
   NBA_26_DRAFT_TOP_30_SLUGS,
@@ -1042,10 +1042,16 @@ export class SorareClient {
                 l5: averageScore(type: LAST_FIVE_AVERAGE_ALL_AROUND_SCORE)
                 nextClassicFixtureProjectedScore
                 nextDailyFixtureProjectedScore
-              }${proExtraFields}
+                ... on NBAPlayer { gameplayTier }
+              }
+              sealed
+              sealedAt
+              sealableFor
+              unsealableAt${proExtraFields}
             }
           }
         }
+        config { gameplayTierRatings(sport: NBA) { gameplayTier stars } }
         so5 {
           featuredSo5Fixtures(sport: NBA, first: 4) {
             slug
@@ -1078,7 +1084,12 @@ export class SorareClient {
         l5: number | null;
         nextClassicFixtureProjectedScore: number | null;
         nextDailyFixtureProjectedScore: number | null;
+        gameplayTier?: string | null;
       };
+      sealed?: boolean | null;
+      sealedAt?: string | null;
+      sealableFor?: number | null;
+      unsealableAt?: string | null;
       powerBreakdown?: {
         xp: string | null;
         season: string;
@@ -1100,12 +1111,14 @@ export class SorareClient {
           nodes: RawCardNode[];
         };
       } | null;
+      config?: { gameplayTierRatings?: Array<{ gameplayTier: string; stars: number }> } | null;
       so5: {
         featuredSo5Fixtures: So5FixtureSummary[];
       };
     }
 
     const pageSize = useFast ? 50 : 10;
+    let tierStars = buildTierStarMap(null);
     const cards: GalleryCard[] = [];
     const commonCards: GalleryCard[] = [];
     let fixtures: So5FixtureSummary[] = [];
@@ -1182,7 +1195,15 @@ export class SorareClient {
         l5: n.anyPlayer.l5,
         sorareClassicProjected: n.anyPlayer.nextClassicFixtureProjectedScore,
         sorareDailyProjected: n.anyPlayer.nextDailyFixtureProjectedScore,
-        starCost: computeStarCost(n.anyPlayer.l10),
+        ...(() => {
+          const rating = resolveStarRating(n.anyPlayer.gameplayTier, n.anyPlayer.l10, tierStars);
+          return { starCost: rating.stars, starSource: rating.source };
+        })(),
+        gameplayTier: n.anyPlayer.gameplayTier ?? null,
+        sealed: n.sealed === true,
+        sealedAt: n.sealedAt ?? null,
+        sealingPoints: typeof n.sealableFor === "number" ? n.sealableFor : null,
+        unsealableAt: n.unsealableAt ?? null,
       };
     };
 
@@ -1204,6 +1225,9 @@ export class SorareClient {
       }
       if (pages === 1 && data.so5?.featuredSo5Fixtures) {
         fixtures = data.so5.featuredSo5Fixtures;
+      }
+      if (pages === 1 && data.config?.gameplayTierRatings) {
+        tierStars = buildTierStarMap(data.config.gameplayTierRatings);
       }
       for (const n of data.user.cards?.nodes ?? []) {
         cards.push(mapNode(n));
@@ -1691,6 +1715,7 @@ export class SorareClient {
             l10: averageScore(type: LAST_TEN_PLAYED_SO5_AVERAGE_SCORE)
             l5: averageScore(type: LAST_FIVE_AVERAGE_ALL_AROUND_SCORE)
             projected: nextClassicFixtureProjectedScore
+            ... on NBAPlayer { gameplayTier }
           }
           liveSingleSaleOffer {
             dealStatus
@@ -1742,6 +1767,7 @@ export class SorareClient {
             l10: averageScore(type: LAST_TEN_PLAYED_SO5_AVERAGE_SCORE)
             l5: averageScore(type: LAST_FIVE_AVERAGE_ALL_AROUND_SCORE)
             projected: nextClassicFixtureProjectedScore
+            ... on NBAPlayer { gameplayTier }
           }
           latestEnglishAuction {
             dealStatus
@@ -1780,6 +1806,7 @@ export class SorareClient {
         l10: number | null;
         l5: number | null;
         projected: number | null;
+        gameplayTier?: string | null;
       };
       liveSingleSaleOffer?: LiveOfferRaw | null;
       livePrimaryOffer?: { price?: MonetaryAmountsRaw | null } | null;
@@ -1921,7 +1948,10 @@ export class SorareClient {
         l10,
         l5,
         projected,
-        starCost: computeStarCost(l10),
+        ...(() => {
+          const rating = resolveStarRating(c.anyPlayer.gameplayTier, l10);
+          return { starCost: rating.stars, starSource: rating.source };
+        })(),
         saleType,
         priceCents,
         currency,

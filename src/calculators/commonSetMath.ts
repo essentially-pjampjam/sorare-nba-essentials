@@ -106,7 +106,8 @@ export interface SetAutoBuildResult {
 /**
  * Builds configurable N teams (e.g., 4 teams or any N in 1..8) for Common / Set Play:
  * - "solo": Top N unique single-player picks for Set Solo / Arcade progression boards.
- * - "squad": Top N distinct 5-card Cap 120 + MVP teams (16★/120+MVP Set Squad rules).
+ * - "squad": Top N distinct 5-card teams under the live 16-star cap (Arcade: up to 4 teams;
+ *   Squad: 1 team per manager, the squad's 3 best teams count).
  */
 export function buildSetTeams(
   commonCards: GalleryCard[],
@@ -162,9 +163,10 @@ export function buildSetTeams(
     };
   }
 
-  // Generate up to count squad teams via the branch-and-bound optimizer
+  // Live Set rules (2026-11-19, docs/SORARE_FACTS.md): Arcade and Squad teams are 5 cards
+  // under a 16-star cap (Sorare gameplay-tier stars); the old 120 L10 + MVP rule is retired.
   const squadRes = generateTopLineups(commonCards, {
-    format: "daily_120_mvp",
+    format: "champion_16",
     rarityFilter: "common",
     projectionSource: options.projectionSource,
     customProjectionsRaw: options.customProjectionsRaw,

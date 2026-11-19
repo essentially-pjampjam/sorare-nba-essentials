@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "pjampjam's Sorare NBA Essentials",
   "short_name": "Sorare NBA",
-  "version": "2.6.8",
-  "version_name": "2.6.8-exp.M2",
+  "version": "2.6.9",
+  "version_name": "2.6.9-exp.M3",
   "description": "Sorare NBA Collect Helper, Craft Reveal & Probability EV Advisor, and Essence Optimizer by pjampjam.",
   "icons": {
     "16": "icons/icon16.png",
@@ -39,7 +39,7 @@
       "matches": ["https://sorare.com/*", "https://*.sorare.com/*"]
     }
   ],
-  "permissions": ["sidePanel", "storage", "alarms"],
+  "permissions": ["sidePanel", "storage", "alarms", "notifications"],
   "host_permissions": [
     "https://api.sorare.com/*",
     "https://sorare.com/*",

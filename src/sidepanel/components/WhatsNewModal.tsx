@@ -20,6 +20,18 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.6.9-exp.M3",
+    title: "Experimental M3: Live Sorare Data",
+    items: [
+      "Star ratings now come from Sorare itself (player gameplay tier), so lineup star totals match the lineup editor and legal lineups no longer get false cap-fix swaps.",
+      "Vault / sealing points use Sorare's live value for each card; sealed cards are read from Sorare and kept out of lineups.",
+      "Projections use real Vegas lines (implied team totals, blowout risk) and count back-to-backs and games inside the current Game Week only.",
+      "Set rules updated: Arcade up to 4 teams and Squad 1 team, both with a 16-star cap (the old 120 rule is gone).",
+      "Background alert tracker and browser notifications are ready (GW cutoff, daily reset at 07:00 UTC, price surges, injuries); switches arrive with the M4 UI.",
+      "Builder: a second card of the same player can now go in another lineup.",
+    ],
+  },
+  {
     version: "2.6.8-exp.M2",
     title: "Experimental M2: Smarter Lineup Math",
     items: [

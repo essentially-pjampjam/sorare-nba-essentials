@@ -1,5 +1,15 @@
 import { buildMarketPriceKey } from "../calculators/collectionEssenceMath";
 import { evaluateStarTierShift } from "../calculators/lineupOptimizerMath";
+import { selectOpenGameWeek } from "../calculators/countdownMath";
+import {
+  ALERT_TRACKER_ALARM_NAME,
+  getAlertFeed,
+  runAlertTracker,
+  saveAlertSnapshot,
+  sendTestAlertNotification,
+  syncAlertTrackerAlarm,
+  takeNotificationTarget,
+} from "./alertTracker";
 import {
   AUTO_PRICE_TOP_N,
   COOLDOWN_429_MS,
@@ -193,13 +203,44 @@ chrome.runtime.onInstalled.addListener(() => {
 
 ensureWatchlistAlarm();
 
+async function runAlertTrackerFromStorage(): Promise<ReturnType<typeof runAlertTracker>> {
+  const settings = await loadSettings();
+  // The tracker makes no network calls: it reuses the last gallery load (cards, lineups,
+  // fixtures, ESPN injuries), so it never adds Sorare API traffic.
+  const events = await runAlertTracker(settings);
+  if (events.length > 0) {
+    broadcastMessage({ type: "ALERT_FEED_UPDATED", events: await getAlertFeed() });
+  }
+  return events;
+}
+
 if (chrome.alarms?.onAlarm) {
+  // Returning the promise keeps the MV3 worker alive until the check finishes.
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === WATCHLIST_ALARM_NAME) {
+      // Market scan can take minutes behind the rate-limited queue: fire and forget.
       void runWatchlistCheck();
+      return undefined;
     }
+    if (alarm.name === ALERT_TRACKER_ALARM_NAME) {
+      return runAlertTrackerFromStorage().then(() => undefined);
+    }
+    return undefined;
   });
 }
+
+if (chrome.notifications?.onClicked) {
+  chrome.notifications.onClicked.addListener((notificationId) => {
+    return (async () => {
+      const target = await takeNotificationTarget(notificationId);
+      const url = target && isAllowedNavTargetUrl(target) ? target : buildProPlayUrl();
+      await chrome.tabs.create({ url });
+      chrome.notifications.clear(notificationId);
+    })();
+  });
+}
+
+void loadSettings().then(syncAlertTrackerAlarm).catch(() => {});
 
 if (chrome.sidePanel?.setPanelBehavior) {
   void chrome.sidePanel
@@ -419,6 +460,20 @@ async function saveSettings(
       ...current.milestoneRulesByRarity,
       ...(patch.milestoneRulesByRarity ?? {}),
     },
+    alertsEnabled:
+      typeof patch.alertsEnabled === "boolean" ? patch.alertsEnabled : current.alertsEnabled,
+    cutoffReminderEnabled:
+      typeof patch.cutoffReminderEnabled === "boolean"
+        ? patch.cutoffReminderEnabled
+        : current.cutoffReminderEnabled,
+    cutoffReminderMinutesBefore:
+      typeof patch.cutoffReminderMinutesBefore === "number" &&
+      Number.isFinite(patch.cutoffReminderMinutesBefore)
+        ? Math.max(5, Math.min(240, patch.cutoffReminderMinutesBefore))
+        : current.cutoffReminderMinutesBefore,
+    alertPreferences: patch.alertPreferences
+      ? { ...(current.alertPreferences ?? {}), ...patch.alertPreferences }
+      : current.alertPreferences,
   };
 
   const { sorareApiKey: _omitSecret, ...publicSettings } = next;
@@ -432,6 +487,7 @@ async function saveSettings(
     },
   });
   applyNetworkMode(next);
+  syncAlertTrackerAlarm(next);
   return next;
 }
 
@@ -958,13 +1014,16 @@ async function fetchGalleryForLineups(
 
   const [
     { cards, commonCards, fixtures, currentLineups, leaderboardBenchmarks },
-    external,
     domLineups,
   ] = await Promise.all([
     sorareClient.fetchUserGalleryAndFixtures(cleanUser, controller.signal),
-    fetchExternalNbaContext(),
     readStoredDomLineups(),
   ]);
+  // Count ESPN games inside the opened Game Week (cutoff -> end), not a rolling window.
+  const openGw = selectOpenGameWeek(fixtures, Date.now());
+  const external = await fetchExternalNbaContext(
+    openGw ? { startIso: openGw.fixture.cutOffDate, endIso: openGw.fixture.endDate } : null,
+  );
 
   const result: GalleryResult = {
     username: cleanUser,
@@ -982,6 +1041,13 @@ async function fetchGalleryForLineups(
 
   if (!controller.signal.aborted) {
     await setCached(cacheKey, result);
+    await saveAlertSnapshot({
+      cards: result.cards,
+      currentLineups: result.currentLineups,
+      fixtures: result.fixtures,
+      currency: (await loadSettings()).currency,
+      injuriesByName: result.injuriesByName,
+    });
     await syncOverlayLookup(result.cards);
     broadcastProgress({
       phase: "done",
@@ -1612,6 +1678,17 @@ async function handleMessage(
       case "RUN_WATCHLIST_CHECK": {
         const alerts = await runWatchlistCheck(true);
         return { ok: true, data: alerts };
+      }
+      case "RUN_ALERT_CHECK": {
+        const events = await runAlertTrackerFromStorage();
+        return { ok: true, data: events };
+      }
+      case "SEND_TEST_ALERT_NOTIFICATION": {
+        const sent = await sendTestAlertNotification(await loadSettings());
+        return { ok: true, data: sent };
+      }
+      case "GET_ALERT_FEED": {
+        return { ok: true, data: await getAlertFeed() };
       }
       case "CLEAR_WATCHLIST_ALERTS": {
         await saveSettings({ watchlistAlerts: [] });

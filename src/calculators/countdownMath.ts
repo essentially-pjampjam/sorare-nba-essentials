@@ -31,10 +31,15 @@ export function selectOpenGameWeek(
 
 /** Live GW cutoff + daily reset countdowns; pure, so the UI can tick it every second. */
 export function computeCountdownSnapshot(
-  fixtures: So5FixtureSummary[],
+  fixtures: So5FixtureSummary[] | string | null,
   nowMs: number = Date.now(),
 ): CountdownSnapshot {
-  const gw = selectOpenGameWeek(fixtures, nowMs);
+  // A bare cutoff ISO string is treated as one opened Game Week.
+  const list: So5FixtureSummary[] =
+    typeof fixtures === "string"
+      ? [{ slug: "gw", displayName: "", cutOffDate: fixtures, endDate: "", aasmState: "opened" }]
+      : (fixtures ?? []);
+  const gw = selectOpenGameWeek(list, nowMs);
   const resetMs = nextDailyResetMs(nowMs);
   return {
     gwCutoffIso: gw ? new Date(gw.cutoffMs).toISOString() : null,
