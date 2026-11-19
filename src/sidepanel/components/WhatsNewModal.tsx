@@ -20,6 +20,16 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.6.7-exp.M1.1",
+    title: "Experimental M1.1: Lineup Sync Keeps Up With Your Edits",
+    items: [
+      "Fixed: after editing a lineup on Sorare (e.g. swapping a player), the synced lineup now updates. Board pages that show your lineup also sync, using Sorare's own lineup id.",
+      "Synced lineups are updated one by one, so a page showing only 1 of your lineups no longer wipes the others.",
+      "Lineups are labelled with Sorare's real competition (e.g. Classic Limited Contender, 11 stars) instead of a guessed Arena format.",
+      "Experimental builds show a red version badge.",
+    ],
+  },
+  {
     version: "2.6.7-exp.M1",
     title: "Experimental v2.7.0 M1: Working Sorare Links & Reliable Lineup Sync",
     items: [

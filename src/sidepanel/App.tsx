@@ -141,6 +141,11 @@ export function App() {
   }, []);
 
   const version = useMemo(() => getExtensionVersion(), []);
+  // "2.6.7-exp.M1.1" -> red badge "v2.6.7·M1.1" (kept on one line); stable builds stay amber.
+  const isExperimentalBuild = /-exp\b/i.test(version);
+  const versionBadgeLabel = isExperimentalBuild
+    ? `v${version.replace(/-exp\.?/i, "·")}`
+    : `v${version}`;
   const activeRarity = settings.selectedRarity;
   const activeEssence = settings.essenceByRarity[activeRarity] ?? 0;
 
@@ -834,10 +839,14 @@ export function App() {
                         // Ignore
                       }
                     }}
-                    className="inline-flex items-center gap-1 rounded bg-white/8 px-1.5 py-0.2 font-mono text-[9px] font-medium text-amber-300 transition hover:bg-amber-400/20"
-                    title="What's New & Send Feedback"
+                    className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.2 font-mono text-[9px] font-medium transition ${
+                      isExperimentalBuild
+                        ? "border border-rose-400/50 bg-rose-500/15 text-rose-300 hover:bg-rose-500/25"
+                        : "bg-white/8 text-amber-300 hover:bg-amber-400/20"
+                    }`}
+                    title={`${isExperimentalBuild ? "Experimental build " : ""}v${version} • What's New & Send Feedback`}
                   >
-                    <span>v{version}</span>
+                    <span>{versionBadgeLabel}</span>
                     {hasUnseenWhatsNew && (
                       <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
                     )}

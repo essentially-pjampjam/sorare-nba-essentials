@@ -13,6 +13,7 @@ import {
   RESERVED_USER_SLUGS,
   SORARE_NBA_CARD_URL,
 } from "../shared/constants";
+import { upsertDomLineups } from "../shared/domLineupMerge";
 import {
   buildProPlayUrl,
   isAllowedSorareUrl as isVerifiedSorareNavUrl,
@@ -1352,14 +1353,38 @@ async function handleMessage(
             captainCardSlug:
               typeof item.captainCardSlug === "string" ? item.captainCardSlug : null,
             source: "dom",
+            contestKind:
+              item.contestKind === "arena" || item.contestKind === "pro"
+                ? item.contestKind
+                : undefined,
+            seasonScope:
+              item.seasonScope === "in_season" || item.seasonScope === "classic"
+                ? item.seasonScope
+                : undefined,
+            starCap:
+              typeof item.starCap === "number" && item.starCap > 0 && item.starCap <= 40
+                ? item.starCap
+                : null,
+            fixtureSlug:
+              typeof item.fixtureSlug === "string" ? item.fixtureSlug.slice(0, 80) : null,
+            sorareLineupId:
+              typeof item.sorareLineupId === "string"
+                ? item.sorareLineupId.slice(0, 64)
+                : null,
           }));
 
         if (sanitized.length > 0) {
-          await chrome.storage.local.set({ [DETECTED_LINEUPS_KEY]: sanitized });
+          const merged = upsertDomLineups(
+            await readStoredDomLineups(),
+            sanitized,
+            msg.partial === true,
+          );
+          await chrome.storage.local.set({ [DETECTED_LINEUPS_KEY]: merged });
           broadcastMessage({
             type: "DETECTED_LINEUPS_UPDATED",
-            lineups: sanitized,
+            lineups: merged,
           });
+          return { ok: true, data: merged };
         }
         return { ok: true, data: sanitized };
       }

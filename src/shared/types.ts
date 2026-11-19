@@ -312,6 +312,13 @@ export interface CurrentLineupEntry {
   captainCardSlug: string | null;
   playerNames?: string[];
   source?: "api" | "dom";
+  /** DOM-synced extras (from the content script parser). */
+  contestKind?: "arena" | "pro";
+  seasonScope?: "in_season" | "classic";
+  starCap?: number | null;
+  fixtureSlug?: string | null;
+  /** Sorare's own lineup UUID when the page exposes it; used to update lineups in place. */
+  sorareLineupId?: string | null;
 }
 
 export interface LeaderboardBenchmark {
@@ -611,6 +618,8 @@ export type BackgroundRequest =
   | {
       type: "DETECTED_LINEUPS_FROM_CONTENT";
       lineups: CurrentLineupEntry[];
+      /** True when the page shows only some lineups (board pages); merge instead of replace. */
+      partial?: boolean;
     };
 
 export type BackgroundResponse<T = unknown> =

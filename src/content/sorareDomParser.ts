@@ -40,6 +40,107 @@ export interface DomDetectedLineup extends CurrentLineupEntry {
   expectedCardCount?: number;
 }
 
+interface SorareLineupRef {
+  fixtureSlug: string;
+  leaderboardSlug: string;
+  /** Sorare lineup UUID; null when only the competition is known (board URL). */
+  lineupId: string | null;
+}
+
+/** Board lineup pages: /nba/play/boards/arena/<kind>/<gw>/<gw>-nba_limited_contender/lineups */
+const BOARD_LINEUPS_PATH_RE = /\/nba\/play\/boards\/[^?#]*?\/(nba-[a-z0-9-]+?)-(nba_[a-z0-9_]+)\/lineups\/?$/i;
+
+function sorareRefFromBoardUrl(pathLower: string): SorareLineupRef | null {
+  const m = pathLower.match(BOARD_LINEUPS_PATH_RE);
+  if (!m?.[1] || !m[2]) return null;
+  return { fixtureSlug: m[1], leaderboardSlug: m[2], lineupId: null };
+}
+
+/** True for Sorare pages that show only some of the manager's lineups (board pages). */
+export function isPartialLineupPage(url: string): boolean {
+  return getPathname(url).toLowerCase().includes("/nba/play/boards");
+}
+
+/** `nba-21-23-nov-2026-nba_limited_contender~so5-lineup~<uuid>` (element id or link href). */
+const SORARE_LINEUP_REF_RE =
+  /(nba-[a-z0-9-]+?)-(nba_[a-z0-9_]+)~so5-lineup~([0-9a-f]{8}-[0-9a-f-]{27,})/i;
+
+function matchSorareLineupRef(raw: string | null | undefined): SorareLineupRef | null {
+  const m = (raw ?? "").match(SORARE_LINEUP_REF_RE);
+  if (!m?.[1] || !m[2] || !m[3]) return null;
+  return {
+    fixtureSlug: m[1].toLowerCase(),
+    leaderboardSlug: m[2].toLowerCase(),
+    lineupId: m[3].toLowerCase(),
+  };
+}
+
+/** Finds Sorare's lineup reference on the box, its link descendants, or a close ancestor id. */
+function findSorareLineupRef(box: DomElementLike): SorareLineupRef | null {
+  const links = box.querySelectorAll("a[href]");
+  for (let i = 0; i < links.length; i += 1) {
+    const ref = matchSorareLineupRef(links[i]?.getAttribute("href"));
+    if (ref) return ref;
+  }
+  const withIds = box.querySelectorAll("[id]");
+  for (let i = 0; i < withIds.length; i += 1) {
+    const ref = matchSorareLineupRef(withIds[i]?.getAttribute("id"));
+    if (ref) return ref;
+  }
+  let cur: DomElementLike | null = box;
+  for (let depth = 0; depth < 5 && cur; depth += 1) {
+    const ref = matchSorareLineupRef(cur.getAttribute("id"));
+    if (ref) return ref;
+    cur = cur.parentElement;
+  }
+  return null;
+}
+
+const RARITY_LABELS: Record<string, string> = {
+  limited: "Limited",
+  rare: "Rare",
+  super_rare: "Super Rare",
+  unique: "Unique",
+  common: "Common",
+};
+
+/**
+ * Turns a Sorare leaderboard slug into display info. Caps live-verified 2026-11-19
+ * (docs/SORARE_FACTS.md): Champion 16★, Contender / U23 / Veterans 11★, Uncapped none.
+ */
+function describeSorareLeaderboardSlug(slug: string): {
+  label: string;
+  seasonScope?: "in_season" | "classic";
+  starCap: number | null;
+  isRoom: boolean;
+} {
+  const s = slug.toLowerCase();
+  const rarityKey = Object.keys(RARITY_LABELS)
+    .sort((a, b) => b.length - a.length)
+    .find((k) => s.includes(`_${k}_`) || s.endsWith(`_${k}`));
+  const tier = /uncapped/.test(s)
+    ? "Uncapped"
+    : /u23/.test(s)
+      ? "U23"
+      : /veteran/.test(s)
+        ? "Veterans"
+        : /champion/.test(s)
+          ? "Champion"
+          : /contender/.test(s)
+            ? "Contender"
+            : "";
+  const isRoom = /arena|room|uncapped|u23|veteran/.test(s);
+  const seasonScope = /in_season/.test(s) ? "in_season" : isRoom ? undefined : "classic";
+  const starCap =
+    tier === "Champion" ? 16 : tier === "Contender" || tier === "U23" || tier === "Veterans" ? 11 : null;
+  const parts = [
+    isRoom ? "Arena Room" : seasonScope === "in_season" ? "In-Season" : "Classic",
+    rarityKey ? RARITY_LABELS[rarityKey] : "",
+    tier,
+  ].filter(Boolean);
+  return { label: parts.join(" "), seasonScope, starCap, isRoom };
+}
+
 const ACTION_BUTTON_RE =
   /^(edit lineup|clear team|view lineup|delete lineup|modify lineup)$/i;
 const PRIMARY_ACTION_RE =
@@ -1319,9 +1420,13 @@ export function extractOpenLineupsFromDocument(
   doc: DomDocumentLike,
   url: string,
 ): DomDetectedLineup[] {
-  if (!isProOrArenaLineupUrl(url)) return [];
-
   const pathLower = getPathname(url).toLowerCase();
+  // Board lineup pages (/nba/play/boards/.../<gw>-<leaderboard>/lineups) show the manager's own
+  // lineups for that competition (with Edit / Clear buttons). Other board views stay ignored.
+  const isBoardPage = pathLower.includes("/nba/play/boards");
+  const boardRef = isBoardPage ? sorareRefFromBoardUrl(pathLower) : null;
+  if (!isProOrArenaLineupUrl(url) && !boardRef) return [];
+
   const fixtureSlug = extractArenaFixtureSlug(url);
   const allButtons = doc.querySelectorAll("button, a");
   const actionEls: DomElementLike[] = [];
@@ -1329,7 +1434,8 @@ export function extractOpenLineupsFromDocument(
     const el = allButtons[i];
     if (!el) continue;
     const txt = (el.textContent ?? "").replace(/\s+/g, " ").trim();
-    if (PRIMARY_ACTION_RE.test(txt) || (!pathLower.includes("/ongoing") && /^view lineup$/i.test(txt))) {
+    const allowView = !isBoardPage && !pathLower.includes("/ongoing");
+    if (PRIMARY_ACTION_RE.test(txt) || (allowView && /^view lineup$/i.test(txt))) {
       actionEls.push(el);
     }
   }
@@ -1365,6 +1471,7 @@ export function extractOpenLineupsFromDocument(
   const urlArena = pathLower.includes("/arena");
 
   for (const box of containers) {
+    const sorareRef = findSorareLineupRef(box) ?? boardRef;
     const cardSlugs: string[] = [];
     const seenSlugs = new Set<string>();
     const slugFallbackNames: string[] = [];
@@ -1512,18 +1619,34 @@ export function extractOpenLineupsFromDocument(
     else if (seasonScope === "classic") compParts.push("Classic");
     if (tier) compParts.push(tier);
 
-    const leaderboardName =
+    let leaderboardName =
       compParts.length > 0 ? compParts.join(" ") : "Sorare Pro Lineup";
-    const leaderboardSlug = leaderboardName
+    let leaderboardSlug = leaderboardName
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "_")
       .replace(/^_+|_+$/g, "");
+    let finalContestKind = contestKind;
+    let finalSeasonScope = seasonScope;
+    let finalStarCap = starCap;
+
+    // Sorare's own leaderboard slug (e.g. nba_limited_in_season_contender) beats page heuristics:
+    // the /nba/lineups/arena/<gw> page also lists Pro Classic & In-Season lineups.
+    if (sorareRef) {
+      const info = describeSorareLeaderboardSlug(sorareRef.leaderboardSlug);
+      leaderboardSlug = sorareRef.leaderboardSlug;
+      leaderboardName = info.label;
+      finalContestKind = info.isRoom ? "arena" : "pro";
+      finalSeasonScope = info.seasonScope ?? seasonScope;
+      finalStarCap = starCap ?? info.starCap;
+    }
 
     const lineupIndex = out.length + 1;
     const nameSig = [...cardSlugs, ...playerNames.slice(0, 5)].join("|").slice(0, 80);
 
     out.push({
-      id: `dom-${leaderboardSlug}-${lineupIndex}-${nameSig.length}`,
+      id: sorareRef?.lineupId
+        ? `dom-${sorareRef.lineupId}`
+        : `dom-${leaderboardSlug}-${lineupIndex}-${nameSig.length}`,
       name: `${leaderboardName} #${lineupIndex}`,
       leaderboardSlug,
       leaderboardName,
@@ -1532,12 +1655,13 @@ export function extractOpenLineupsFromDocument(
       playerNames: playerNames.slice(0, 5),
       captainCardSlug: null,
       source: "dom",
-      contestKind,
-      seasonScope,
-      starCap,
-      fixtureSlug,
+      contestKind: finalContestKind,
+      seasonScope: finalSeasonScope,
+      starCap: finalStarCap,
+      fixtureSlug: sorareRef?.fixtureSlug ?? fixtureSlug,
       lineupIndex,
       expectedCardCount: 5,
+      sorareLineupId: sorareRef?.lineupId ?? null,
     });
   }
 

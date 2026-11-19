@@ -5,6 +5,7 @@ import {
   classifySorareContext,
   extractOpenLineupsFromDocument,
   formatDisplayPlayerName,
+  isPartialLineupPage,
   type DomDocumentLike,
   type DomElementLike,
   type DomNodeLike,
@@ -1284,14 +1285,14 @@ describe("sorareDomParser & sorareDetector", () => {
         </article>
       </div>`;
     const html = `<main><div id="nba-21-23-nov-2026~competition_with_arena~contender">${[
-      lineup("a1", [
+      lineup("a1000000-0000-4000-8000-000000000001", [
         card("c1", "Morez Johnson Jr.", "SAT 2:30 AM"),
         card("c2", "DeMar DeRozan", "SAT 3:00 AM"),
         card("c3", "Malik Monk", "SAT 2:30 AM"),
         card("c4", "Christian Anderson", "SAT 8:00 PM"),
         card("c5", "Taylor Hendricks", "SAT 2:30 AM"),
       ].join("")),
-      lineup("a2", [
+      lineup("a2000000-0000-4000-8000-000000000002", [
         card("d1", "Jarace Walker", "SAT 2:30 AM"),
         card("d2", "Bub Carrington", "SAT 2:30 AM"),
         card("d3", "Allen Graves", "SAT 3:00 AM"),
@@ -1320,5 +1321,67 @@ describe("sorareDomParser & sorareDetector", () => {
     ]);
     expect(lineups[0].seasonScope).toBe("classic");
     expect(lineups[0].fixtureSlug).toBe("nba-21-23-nov-2026");
+    // Sorare's own leaderboard slug wins over the "/arena" page URL heuristic.
+    expect(lineups[0]).toMatchObject({
+      name: "Classic Limited Contender #1",
+      leaderboardSlug: "nba_limited_contender",
+      contestKind: "pro",
+      starCap: 11,
+      sorareLineupId: "a1000000-0000-4000-8000-000000000001",
+      id: "dom-a1000000-0000-4000-8000-000000000001",
+    });
+
+    // Board page (shows just the edited lineup after Edit Lineup -> Confirm) now syncs too,
+    // but only boxes carrying Sorare's own lineup id.
+    // Live board lineup page (captured 2026-11-19): no ~so5-lineup~ ids in the markup, the
+    // competition comes from the URL. Mirrors the page after swapping Quenton -> Morez.
+    const boardUrl =
+      "https://sorare.com/nba/play/boards/arena/essence/nba-21-23-nov-2026/nba-21-23-nov-2026-nba_limited_contender/lineups";
+    const boardCards = [
+      card("c1", "Aaron Gordon", "SAT 5:00 AM"),
+      card("c2", "Brook Lopez", "SUN 3:00 AM"),
+      card("c3", "Wendell Carter Jr.", "SAT 2:30 AM"),
+      card("c4", "Morez Johnson Jr.", "SUN 3:00 AM"),
+      card("c5", "Dillon Brooks", "SAT 4:30 AM"),
+    ].join("");
+    const boardHtml = `<main><article><div><div>Classic</div><div>Contender</div><div>922</div></div>
+      <div>${boardCards}</div><div>LEVEL UP</div><button>Clear Team</button><button>Edit Lineup</button></article>
+      <button>View all lineups</button></main>`;
+    const board = extractOpenLineupsFromDocument(parseHtmlToDocument(boardHtml), boardUrl);
+    expect(board).toHaveLength(1);
+    expect(board[0]).toMatchObject({
+      leaderboardSlug: "nba_limited_contender",
+      leaderboardName: "Classic Limited Contender",
+      fixtureSlug: "nba-21-23-nov-2026",
+      starCap: 11,
+      sorareLineupId: null,
+    });
+    expect(board[0].playerNames).toContain("Morez Johnson Jr.");
+    expect(board[0].playerNames).not.toContain("Quenton Jackson");
+    expect(isPartialLineupPage(boardUrl)).toBe(true);
+    expect(isPartialLineupPage("https://sorare.com/nba/lineups/arena/nba-21-23-nov-2026")).toBe(false);
+    // The board map view (no /lineups) still yields nothing.
+    expect(
+      extractOpenLineupsFromDocument(
+        parseHtmlToDocument(boardHtml),
+        "https://sorare.com/nba/play/boards/arena/essence/nba-21-23-nov-2026/nba-21-23-nov-2026-nba_limited_contender",
+      ),
+    ).toEqual([]);
+  });
+
+  it("describes In-Season, Champion and Arena Room leaderboard slugs with live-verified caps", () => {
+    const html = (slug: string) => `<main><div id="nba-21-23-nov-2026-${slug}~so5-lineup~b2000000-0000-4000-8000-000000000002"><article>
+      <div><div><img alt="Aaron Gordon - rare" src="https://assets.sorare.com/x.png" /></div><div><img alt="Brook Lopez - rare" src="https://assets.sorare.com/y.png" /></div></div>
+      <button>Clear Team</button><button>Edit Lineup</button></article></div></main>`;
+    const url = "https://sorare.com/nba/lineups/arena/nba-21-23-nov-2026";
+    const inSeason = extractOpenLineupsFromDocument(parseHtmlToDocument(html("nba_rare_in_season_champion")), url);
+    expect(inSeason[0]).toMatchObject({
+      leaderboardName: "In-Season Rare Champion",
+      seasonScope: "in_season",
+      starCap: 16,
+      contestKind: "pro",
+    });
+    const superRare = extractOpenLineupsFromDocument(parseHtmlToDocument(html("nba_super_rare_contender")), url);
+    expect(superRare[0]).toMatchObject({ leaderboardName: "Classic Super Rare Contender", starCap: 11 });
   });
 });

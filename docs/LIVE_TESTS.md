@@ -8,6 +8,14 @@ Then reload any open sorare.com tabs so the new content script runs.
 
 ---
 
+## 2.6.7-exp.M1.1 — Lineup sync keeps up with edits
+
+| # | Do this | Expect |
+|---|---|---|
+| 1 | Open the side panel | Badge is **red** and on one line: `v2.6.7·M1.1` |
+| 2 | Open `sorare.com/nba/lineups/arena/<current GW>` (Open Sorare Arena to Sync) and wait ~5 s | Current Open Lineups shows **all** your open lineups, labelled e.g. **Classic Limited Contender** |
+| 3 | On Sorare, edit one lineup (swap a player) → Confirm → land on the board page; wait ~5 s | That lineup updates in the panel (new player shown); your other lineups are still listed |
+
 ## 2.6.7-exp.M1 — Working Sorare links & reliable lineup sync
 
 | # | Do this | Expect |

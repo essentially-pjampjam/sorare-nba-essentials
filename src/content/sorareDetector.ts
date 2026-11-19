@@ -9,6 +9,7 @@ import {
   classifySorareContext as classifyContextFromUrl,
   extractOpenLineupsFromDocument,
   isCraftRoute as isCraftRouteUrl,
+  isPartialLineupPage,
   normalizeNameForMatch,
   type DomDetectedLineup,
 } from "./sorareDomParser";
@@ -402,6 +403,7 @@ import {
           chrome.runtime.sendMessage({
             type: "DETECTED_LINEUPS_FROM_CONTENT",
             lineups: domLineups,
+            partial: isPartialLineupPage(window.location.href),
           });
         } catch {
           // Ignore

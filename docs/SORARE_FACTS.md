@@ -32,7 +32,8 @@ Status legend: `LIVE-VERIFIED` (seen on sorare.com) · `OFFICIAL DOC` (Sorare he
 | Arena rooms use the same caps as Pro (Champion 16★ / Contender 11★) | Code currently models Arena Champion **15★** / Arena Contender **12★** | `OUTDATED IN CODE?` — THIRD-PARTY sources + live 11★ meter disagree with code. Fix in M2 after user confirms |
 | "Arena" lineups on `/nba/lineups/arena/<gw>` | Includes Pro **Classic** (All Seasons) Limited Contender lineups (container id `...~competition_with_arena~contender`) | LIVE-VERIFIED — parser labels them "Arena Classic Contender" |
 | Arena cash boards | Board URL `/nba/play/boards/arena/cash/...`, showed `$5` entry, 833 entrants, `$5,125` prize | LIVE-VERIFIED (factual display only) |
-| Classic entry limits (4 Limited/Rare, 2 Super Rare/Unique) | In code | NEEDS CONFIRMATION — no current official source found; one guide claims "3 lineups per competition per scarcity" |
+| Classic entry limit | **3** per competition (Classic Limited Champion board "0 SET / 3"; Classic Limited Contender "1 SET / 3"). Code says 4 Limited/Rare, 2 SR/Unique | LIVE-VERIFIED 2026-11-19 (Limited); `OUTDATED IN CODE` — fix in M2 |
+| Board URLs | Classic boards: `/nba/play/boards/arena/essence/<gw>/<gw>-nba_limited_contender`; In-Season: `/boards/arena/cash/...`; your lineups: append `/lineups` (Edit/Clear buttons, no lineup ids in markup) | LIVE-VERIFIED |
 | Same card in two lineups in one Game Week | Editor has a **"Used in another lineup"** player filter → cards are tracked as committed | Strong LIVE evidence of no reuse; NEEDS CONFIRMATION (user) |
 | Same player, two different cards, two lineups | Unknown | NEEDS CONFIRMATION |
 | Player scoring with 2+ games in a Game Week | Best game counts | OFFICIAL DOC (help: player scores) / THIRD-PARTY |
@@ -50,6 +51,7 @@ Ignore Sorare's naming overlap ("Arena", "Rooms"); classify by these three branc
 | Arena **In-Season** | Limited, Rare, Super Rare (Unique allowed inside the Super Rare section: "missing 5 Unique or Super Rare cards") | Champion 16★, Contender 11★ | Min 4 In-Season (26/27) cards; max 4 per team; Rare = card score +10%; "0 SET / 5" entries |
 | In-Season **Hot Streak** | per competition | Limited Champion: score 240+ → $5 credit (0/5 steps); Limited Contender: 190+ → 150 energy | Shown as badge on the competition |
 | **PRO** events (e.g. Most Wanted, featured, ends in 18 days) | Limited, higher scarcities permitted | 16★ cap | Step targets ("reach more than 200 PTS" → 500 energy), 4 lives (hearts), min 1 Most Wanted Edition card |
+| PRO **Most Wanted** ladder | — | Consecutive levels: 500 energy → 1,000 energy → $10 → $50 (locks until previous step done) | 4 lives (hearts), event ends in 18 days; Pro main section has similar level ladders; Daily Picker missions too |
 | Prize pools | — | Limited Contender (In-Season), 364 entrants: 1st $500, 2nd $250, 3rd $100, then energy tiers down to 1,501–2,500th | Must be read live; changes every GW |
 
 **Direction (user request):** rules, events, hot-streak thresholds, entry costs and prizes change often, so
