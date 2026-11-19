@@ -1,3 +1,4 @@
+import { mergeApiAndDomLineups } from "../shared/domLineupMerge";
 import {
   AlertCircle,
   AlignJustify,
@@ -410,12 +411,9 @@ export function App() {
       (domLineups) => {
         setGalleryResult((prev) => {
           if (!prev) return prev;
-          const apiOnly = (prev.currentLineups ?? []).filter(
-            (l) => l.source !== "dom",
-          );
           return {
             ...prev,
-            currentLineups: [...apiOnly, ...domLineups],
+            currentLineups: mergeApiAndDomLineups(prev.currentLineups ?? [], domLineups, "live"),
           };
         });
       },

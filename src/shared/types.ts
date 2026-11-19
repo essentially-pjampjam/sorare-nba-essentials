@@ -330,6 +330,8 @@ export interface CurrentLineupEntry {
   fixtureSlug?: string | null;
   /** Sorare's own lineup UUID when the page exposes it; used to update lineups in place. */
   sorareLineupId?: string | null;
+  /** When a page capture was taken (ms). Page captures can go stale if edited elsewhere. */
+  detectedAt?: number;
 }
 
 export interface LeaderboardBenchmark {

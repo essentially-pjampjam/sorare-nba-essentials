@@ -1369,6 +1369,29 @@ describe("sorareDomParser & sorareDetector", () => {
     ).toEqual([]);
   });
 
+  it("ignores Sorare's open '...' menu (Edit Lineup / Move to bottom) instead of adding a ghost lineup", () => {
+    const lineupCard = `
+        <div class="arena-lineup-card">
+          <div class="header"><span>In Season</span><span>Contender</span><button>Edit Lineup</button></div>
+          <div class="slots-grid">
+            ${makeCardSlotHtml({ first: "AARON", last: "GORDON", team: "DEN", pos: "F", jersey: "32", kickoff: "SAT 5:00 AM" })}
+            ${makeCardSlotHtml({ first: "DILLON", last: "BROOKS", team: "PHX", pos: "F", jersey: "3", kickoff: "SAT 4:30 AM" })}
+            ${makeCardSlotHtml({ first: "BROOK", last: "LOPEZ", team: "LAC", pos: "C", jersey: "11", kickoff: "SUN 3:00 AM" })}
+          </div>
+        </div>`;
+    for (const menu of [
+      `<div role="menu"><button role="menuitem">Edit Lineup</button><button role="menuitem">Move to bottom</button></div>`,
+      `<div class="portal-layer"><div><button>Edit Lineup</button><button>Move to bottom</button></div></div>`,
+    ]) {
+      const lineups = extractOpenLineupsFromDocument(
+        parseHtmlToDocument(`<main>${lineupCard}</main>${menu}`),
+        "https://sorare.com/nba/lineups/arena/nba-21-23-nov-2026",
+      );
+      expect(lineups).toHaveLength(1);
+      expect(lineups[0].playerNames).toHaveLength(3);
+    }
+  });
+
   it("describes In-Season, Champion and Arena Room leaderboard slugs with live-verified caps", () => {
     const html = (slug: string) => `<main><div id="nba-21-23-nov-2026-${slug}~so5-lineup~b2000000-0000-4000-8000-000000000002"><article>
       <div><div><img alt="Aaron Gordon - rare" src="https://assets.sorare.com/x.png" /></div><div><img alt="Brook Lopez - rare" src="https://assets.sorare.com/y.png" /></div></div>

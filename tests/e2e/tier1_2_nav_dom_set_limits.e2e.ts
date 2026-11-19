@@ -1582,10 +1582,9 @@ describe("Feature 4: Set Arcade / Solo vs. Squad / Hot Streak Rules & Go Actions
     expect(byId.get("set-arcade")?.rulesSummary).toContain("4 Lives");
     expect(byId.get("set-squad")?.url).toBe("https://sorare.com/nba/series/squad");
     expect(byId.get("set-squad")?.rulesSummary).toContain("16★ Cap");
-    expect(byId.get("set-hot-streak")?.url).toBe(
-      "https://sorare.com/nba/series/play",
-    );
-    expect(byId.get("set-hot-streak")?.rulesSummary).toContain("4 Teams");
+    // Live (user, 2026-11-19): Set has only Solo (Arcade) and Squad; Hot Streak is part of Solo.
+    expect(byId.has("set-hot-streak")).toBe(false);
+    expect(byId.get("set-arcade")?.rulesSummary).toContain("Hot Streak");
   });
 
   it("F4-T2-5: Set Go buttons target /nba/series/* routes and never prohibited /nba/set", async () => {

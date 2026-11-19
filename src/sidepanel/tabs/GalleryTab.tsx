@@ -19,7 +19,10 @@ import { useMemo, useState } from "react";
 import {
   evaluateStarTierShift,
   evaluateVaultVsSellRoi,
+  resolveSyncedLineupCardSlugs,
+  type VaultAdviceContext,
 } from "../../calculators/lineupOptimizerMath";
+import { evaluateSealCandidates } from "../../calculators/vaultSealingMath";
 import {
   NBA_POSITION_LABELS,
   RARITY_META,
@@ -59,12 +62,8 @@ function getProjEdge(c: GalleryCard): number | null {
   return Math.round((proj - c.l10) * 10) / 10;
 }
 
-function isSealCandidate(c: GalleryCard): boolean {
-  return (
-    !c.inSeasonEligible &&
-    (c.openedLineupIds?.length ?? 0) === 0 &&
-    (c.l10 ?? 0) >= 15
-  );
+function isSealCandidate(c: GalleryCard, ctx: VaultAdviceContext): boolean {
+  return evaluateVaultVsSellRoi(c, ctx).action === "SEAL_VAULT";
 }
 
 interface GalleryTabProps {
@@ -135,6 +134,23 @@ export function GalleryTab({
     return gallery.cards.filter((c) => c.rarity === rarity);
   }, [gallery, poolMode, rarity]);
 
+  // Cards in synced (page-captured) lineups and spare duplicates drive the Vault advice.
+  const vaultContextBySlug = useMemo(() => {
+    const map = new Map<string, VaultAdviceContext>();
+    if (!gallery) return map;
+    const locked = new Set(resolveSyncedLineupCardSlugs(gallery.currentLineups ?? [], gallery.cards));
+    const duplicates = new Set(
+      evaluateSealCandidates(gallery.cards, { currentLineups: gallery.currentLineups ?? [] })
+        .filter((e) => e.isDuplicate)
+        .map((e) => e.cardSlug),
+    );
+    for (const c of gallery.cards) {
+      map.set(c.slug, { locked: locked.has(c.slug), duplicate: duplicates.has(c.slug) });
+    }
+    return map;
+  }, [gallery]);
+  const vaultContext = (c: GalleryCard): VaultAdviceContext => vaultContextBySlug.get(c.slug) ?? {};
+
   const formCounts = useMemo(() => {
     let hot = 0;
     let cold = 0;
@@ -149,10 +165,10 @@ export function GalleryTab({
       if (fd !== null && fd <= -3.5) cold += 1;
       if (pe !== null && pe >= 3.0) proj += 1;
       if (st.direction !== "stable") shift += 1;
-      if (isSealCandidate(c)) seal += 1;
+      if (isSealCandidate(c, vaultContext(c))) seal += 1;
     }
     return { hot, cold, proj, shift, seal };
-  }, [sourceCards]);
+  }, [sourceCards, vaultContextBySlug]);
 
   const vaultSummary = useMemo(() => {
     let sealableCards = 0;
@@ -160,8 +176,8 @@ export function GalleryTab({
     let sellRecommendedCards = 0;
     let totalFloorCents = 0;
     for (const c of sourceCards) {
-      if (c.inSeasonEligible || (c.openedLineupIds?.length ?? 0) > 0) continue;
-      const advice = evaluateVaultVsSellRoi(c);
+      if (c.inSeasonEligible || (c.openedLineupIds?.length ?? 0) > 0 || vaultContext(c).locked) continue;
+      const advice = evaluateVaultVsSellRoi(c, vaultContext(c));
       if (advice.action === "SEAL_VAULT") {
         sealableCards += 1;
         totalVaultPoints += advice.vaultPoints;
@@ -178,7 +194,7 @@ export function GalleryTab({
       sellRecommendedCards,
       totalFloorCents,
     };
-  }, [sourceCards]);
+  }, [sourceCards, vaultContextBySlug]);
 
   const filteredAndSorted = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -194,7 +210,7 @@ export function GalleryTab({
         if (formFilter === "cold" && (fd === null || fd > -3.5)) return false;
         if (formFilter === "proj" && (pe === null || pe < 3.0)) return false;
         if (formFilter === "shift" && st.direction === "stable") return false;
-        if (formFilter === "seal" && !isSealCandidate(c)) return false;
+        if (formFilter === "seal" && !isSealCandidate(c, vaultContext(c))) return false;
       }
       if (q) {
         const hay = `${c.playerName} ${c.teamName ?? ""} ${c.cardEditionName ?? ""}`.toLowerCase();
@@ -275,7 +291,7 @@ export function GalleryTab({
       lockedCount,
       bestToSell,
     };
-  }, [sourceCards]);
+  }, [sourceCards, vaultContextBySlug]);
 
   const handleExportCsv = () => {
     if (filteredAndSorted.length === 0) return;
@@ -712,7 +728,7 @@ export function GalleryTab({
           const isOnFire = formDelta !== null && formDelta >= 3.5;
           const isCold = formDelta !== null && formDelta <= -3.5;
           const tierShift = evaluateStarTierShift(c.l10, c.l5);
-          const vaultAdvice = evaluateVaultVsSellRoi(c);
+          const vaultAdvice = evaluateVaultVsSellRoi(c, vaultContext(c));
           const showVaultBadge =
             !c.inSeasonEligible &&
             (c.openedLineupIds?.length ?? 0) === 0 &&

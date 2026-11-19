@@ -1416,6 +1416,22 @@ function isDescendant(ancestor: DomElementLike, node: DomElementLike): boolean {
   return false;
 }
 
+const POPUP_ROLES = new Set(["menu", "menuitem", "listbox", "option", "tooltip"]);
+
+/** True when the element sits inside a dropdown / popup menu (portal) rather than a lineup card. */
+function isInsidePopupMenu(el: DomElementLike): boolean {
+  let cur: DomElementLike | null = el;
+  for (let depth = 0; depth < 8 && cur; depth += 1) {
+    const role = (cur.getAttribute("role") ?? "").toLowerCase();
+    if (POPUP_ROLES.has(role)) return true;
+    if (cur.getAttribute("data-radix-popper-content-wrapper") !== null) return true;
+    const cls = (cur.getAttribute("class") ?? "").toLowerCase();
+    if (/(dropdown|popover|menu-?list|contextmenu)/.test(cls)) return true;
+    cur = cur.parentElement;
+  }
+  return false;
+}
+
 export function extractOpenLineupsFromDocument(
   doc: DomDocumentLike,
   url: string,
@@ -1435,6 +1451,8 @@ export function extractOpenLineupsFromDocument(
     if (!el) continue;
     const txt = (el.textContent ?? "").replace(/\s+/g, " ").trim();
     const allowView = !isBoardPage && !pathLower.includes("/ongoing");
+    // Sorare's "..." menu also has an "Edit Lineup" item; it is not a lineup card.
+    if (isInsidePopupMenu(el)) continue;
     if (PRIMARY_ACTION_RE.test(txt) || (allowView && /^view lineup$/i.test(txt))) {
       actionEls.push(el);
     }
@@ -1569,7 +1587,8 @@ export function extractOpenLineupsFromDocument(
       pushPlayerName(fallback);
     }
 
-    if (cardSlugs.length === 0 && playerNames.length === 0) {
+    // A real lineup shows at least 2 players; fewer means a menu, toast or empty shell.
+    if (Math.max(cardSlugs.length, playerNames.length) < 2) {
       continue;
     }
 

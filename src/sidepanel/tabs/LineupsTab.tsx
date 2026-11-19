@@ -92,8 +92,8 @@ interface LineupsTabProps {
 const FORMAT_OPTIONS: Array<{ id: LineupFormat; label: string; sub: string }> = [
   { id: "champion_16", label: "Champion", sub: "16★ Cap" },
   { id: "contender_11", label: "Contender", sub: "11★ Cap" },
-  { id: "arena_champion_15", label: "Arena Champ", sub: "15★ Cap" },
-  { id: "arena_contender_12", label: "Arena Cont", sub: "12★ Cap" },
+  { id: "arena_champion_15", label: "Arena Champ", sub: "16★ Cap" },
+  { id: "arena_contender_12", label: "Arena Cont", sub: "11★ Cap" },
   { id: "uncapped", label: "Uncapped", sub: "Raw Best" },
 ];
 

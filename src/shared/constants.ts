@@ -577,6 +577,10 @@ export const SET_ARCADE_RULES = {
   cardTiers: ["TIER_0", "TIER_1", "TIER_2", "TIER_3", "TIER_4", "TIER_5"] as const,
 } as const;
 
+/**
+ * Live Sorare NBA competitions (checked 2026-11-19 with the user's screenshots and the live site,
+ * docs/SORARE_FACTS.md). M3+ reads rules live where the API allows; this is the display copy.
+ */
 export const NBA_COMPETITION_DIRECTORY: CompetitionRoomInfo[] = [
   {
     id: "pro-in-season-champ",
@@ -584,7 +588,8 @@ export const NBA_COMPETITION_DIRECTORY: CompetitionRoomInfo[] = [
     name: "In-Season Champion",
     capLabel: "16★ Cap • Up to 5",
     eligibility:
-      "4 In-Season + 1 Classic (or 5/5 In-Season) • Up to 5 In-Season/Arena entries (0 SET / 5) • Best game in GW counts",
+      "Min 4 In-Season (2026-27) cards, max 4 per NBA team, Rare cards +10% • Up to 5 entries (0 SET / 5) • Hot Streak: Limited 240+ pts -> $5",
+    rulesSummary: "16★ Cap • Min 4 In-Season • Up to 5 entries",
     url: buildProPlayUrl(),
     maxEntries: COMPETITION_ENTRY_LIMITS.proInSeasonMaxEntries,
   },
@@ -594,7 +599,8 @@ export const NBA_COMPETITION_DIRECTORY: CompetitionRoomInfo[] = [
     name: "In-Season Contender",
     capLabel: "11★ Cap • Up to 5",
     eligibility:
-      "4 In-Season + 1 Classic • Limited / Rare / Super Rare • Shares 5-entry Pro In-Season/Arena cap",
+      "Min 4 In-Season cards, max 4 per NBA team • Limited / Rare / Super Rare • Up to 5 entries • Hot Streak: Limited 190+ pts -> 150 energy",
+    rulesSummary: "11★ Cap • Min 4 In-Season • Up to 5 entries",
     url: buildProPlayUrl(),
     maxEntries: COMPETITION_ENTRY_LIMITS.proInSeasonMaxEntries,
   },
@@ -602,19 +608,21 @@ export const NBA_COMPETITION_DIRECTORY: CompetitionRoomInfo[] = [
     id: "pro-classic",
     group: "Pro Bi-Weekly",
     name: "Classic Champion & Contender",
-    capLabel: "16★ / 11★ • 4 Lim/Rare",
+    capLabel: "16★ / 11★ • 3 Entries",
     eligibility:
-      "All-Season / prior-season Pro cards • Up to 4 entries (Limited/Rare) or 2 entries (Super Rare/Unique)",
+      "Any season, all rarities, max 4 per NBA team • Up to 3 entries per competition (Limited, live)",
+    rulesSummary: "16★ / 11★ • Any season • 3 entries",
     url: buildProPlayUrl(),
     maxEntries: COMPETITION_ENTRY_LIMITS.proClassicMaxEntriesByRarity.limited,
   },
   {
     id: "arena-main",
     group: "Pro Arena",
-    name: "Arena Contender, Champion & Uncapped",
-    capLabel: "12★ / 15★ / ∞ • Up to 5",
+    name: "Arena Rooms: Contender, Champion & Uncapped",
+    capLabel: "11★ / 16★ / ∞ • Energy",
     eligibility:
-      "10-team Arena cash/Pro pods (ARENA_75, ARENA_140, ARENA_UNCAPPED) • Counts toward 5 In-Season/Arena entries",
+      "10-manager rooms in Limited / Rare / Super Rare • Contender 11★ (75 energy), Champion 16★ (150 energy), Uncapped (200 energy)",
+    rulesSummary: "11★ / 16★ / Uncapped • 10-manager rooms",
     url: buildArenaOngoingUrl(),
     lineupsUrl: buildArenaOngoingUrl(),
     maxEntries: COMPETITION_ENTRY_LIMITS.arenaCashMaxEntries,
@@ -622,10 +630,10 @@ export const NBA_COMPETITION_DIRECTORY: CompetitionRoomInfo[] = [
   {
     id: "arena-sub",
     group: "Pro Arena",
-    name: "Arena Sub-Rooms: U23 & Veterans",
-    capLabel: "U23 12★ / Vet 15★",
-    eligibility:
-      "Age-restricted 10-team Arena rooms (U23 <=23 yrs, Veterans 30+) • Counts toward 5 Arena/In-Season entries",
+    name: "Arena Rooms: U23 & Veterans",
+    capLabel: "U23 11★ / Vet 11★",
+    eligibility: "Age-restricted 10-manager rooms (U23: 23 and under, Veterans: 30+), both 11★",
+    rulesSummary: "U23 11★ • Veterans 11★",
     url: buildProPlayUrl(),
     lineupsUrl: buildArenaOngoingUrl(),
     maxEntries: COMPETITION_ENTRY_LIMITS.arenaCashMaxEntries,
@@ -633,10 +641,10 @@ export const NBA_COMPETITION_DIRECTORY: CompetitionRoomInfo[] = [
   {
     id: "set-arcade",
     group: "Set / Arcade",
-    name: "Set Arcade: Solo Mode",
+    name: "Set Solo Mode (Arcade, incl. Hot Streak)",
     capLabel: "16★ Cap • 4 Teams • 4 Lives",
     eligibility:
-      "Arcade (Solo): up to 4 teams of 5 Common cards, sum of stars 16 or less, 4 Lives per level, Hot Streak chapter/step ladder, up to +5% Collection boost; card tiers Reserve to Icon (1-5★), duplicates scrap for Essence (Bronze pack = 1000 Essence)",
+      "Solo (Arcade): up to 4 teams of 5 Common cards, sum of stars 16 or less, 4 Lives; Hot Streak chapter/step ladder (e.g. 180 PTS) with rewards along the path; up to +5% Collection boost; card tiers Reserve to Icon (1-5★), duplicates scrap for Essence (Bronze pack = 1000 Essence)",
     rulesSummary: "Up to 4 Teams • 16★ Cap • 4 Lives • Hot Streak ladder",
     url: buildSetPlayUrl("arcade"),
     maxEntries: 4,
@@ -644,24 +652,13 @@ export const NBA_COMPETITION_DIRECTORY: CompetitionRoomInfo[] = [
   {
     id: "set-squad",
     group: "Set / Arcade",
-    name: "Set / Common: Squad Mode",
+    name: "Set Squad Mode",
     capLabel: "16★ Cap • 1 Team",
     eligibility:
       "Squad of up to 10 managers, 1 team each (16★ cap); the squad's 3 best teams must beat the stage target, failing resets to level 1",
     rulesSummary: "1 Team per manager • 16★ Cap • Squad of 10 • 3 best teams count",
     url: buildSetPlayUrl("squad"),
     maxEntries: 1,
-  },
-  {
-    id: "set-hot-streak",
-    group: "Set / Arcade",
-    name: "Set / Common: Hot Streak",
-    capLabel: "4 Teams • Target Pts",
-    eligibility:
-      "Arcade Hot Streak: chapter/step ladder (e.g. 180 PTS), up to 4 teams, 16★ cap, 4 Lives; rewards along the path (gems, cash)",
-    rulesSummary: "Up to 4 Teams • 16★ Cap • Chapter/Step target",
-    url: buildSetPlayUrl("hot_streak"),
-    maxEntries: 4,
   },
 ];
 
@@ -671,7 +668,7 @@ export const BOOSTING_GUIDE_RULES = [
     title: "2026-27 Star-Cap Scoring (No Captain in Pro)",
     tag: "Pro Rules",
     detail:
-      "Bi-weekly Pro (Champion 16★, Contender 11★) and Arena (Champion 15★, Contender 12★, Uncapped, U23, Veterans) count each player's single best game per Game Week with no Captain multiplier. Set/Common Squad uses its own board rules.",
+      "Bi-weekly Pro (Champion 16★, Contender 11★) and Arena Rooms (Champion 16★, Contender 11★, Uncapped, U23 11★, Veterans 11★) count each player's single best game per Game Week with no Captain multiplier. Set/Common Squad uses its own board rules.",
   },
   {
     id: "in-season-flat",

@@ -65,3 +65,33 @@ export function upsertDomLineups(
   }
   return result.slice(0, 12);
 }
+
+/** API lineup ids look like "So5Lineup:<uuid>" or "...~so5-lineup~<uuid>"; DOM ids are the uuid. */
+function idsMatch(api: CurrentLineupEntry, dom: CurrentLineupEntry): boolean {
+  const uuid = dom.sorareLineupId;
+  return Boolean(uuid && (api.id === uuid || api.id.endsWith(uuid)));
+}
+
+function matchesApiLineup(api: CurrentLineupEntry, dom: CurrentLineupEntry): boolean {
+  return idsMatch(api, dom) || sharedPlayerCount(api, dom) >= 3;
+}
+
+/**
+ * Combines Sorare API lineups with lineups captured from sorare.com pages.
+ *
+ * - `"load"` (gallery fetch): the API list is the source of truth when it has any lineup,
+ *   because stored page captures can be stale (lineups edited while the panel was closed).
+ *   Without API lineups (no key / API down) the page captures are used.
+ * - `"live"` (a page was just synced): page captures are the freshest view; they replace the
+ *   API lineups they match, and unmatched API lineups are kept.
+ */
+export function mergeApiAndDomLineups(
+  apiLineups: CurrentLineupEntry[],
+  domLineups: CurrentLineupEntry[],
+  mode: "load" | "live",
+): CurrentLineupEntry[] {
+  const api = apiLineups.filter((l) => l.source !== "dom");
+  if (mode === "load") return api.length > 0 ? api : domLineups;
+  const keptApi = api.filter((a) => !domLineups.some((d) => matchesApiLineup(a, d)));
+  return [...keptApi, ...domLineups];
+}

@@ -23,7 +23,7 @@ import {
   RESERVED_USER_SLUGS,
   SORARE_NBA_CARD_URL,
 } from "../shared/constants";
-import { upsertDomLineups } from "../shared/domLineupMerge";
+import { mergeApiAndDomLineups, upsertDomLineups } from "../shared/domLineupMerge";
 import {
   buildProPlayUrl,
   isAllowedSorareUrl as isVerifiedSorareNavUrl,
@@ -943,17 +943,13 @@ async function priceCraftCandidates(
 function mergeCurrentLineups(
   apiLineups: CurrentLineupEntry[],
   domLineups: CurrentLineupEntry[],
+  openFixtureSlug: string | null = null,
 ): CurrentLineupEntry[] {
-  const nonDom = apiLineups.filter((l) => l.source !== "dom");
-  if (domLineups.length === 0) return nonDom;
-  const seenApiSigs = new Set<string>(
-    nonDom.map((l) => [...l.cardSlugs].sort().join("|")).filter(Boolean),
-  );
-  const filteredDom = domLineups.filter((d) => {
-    const sig = [...d.cardSlugs].sort().join("|");
-    return !sig || !seenApiSigs.has(sig);
-  });
-  return [...nonDom, ...filteredDom];
+  // Page captures from a Game Week that is no longer open are finished lineups: drop them.
+  const current = openFixtureSlug
+    ? domLineups.filter((l) => !l.fixtureSlug || l.fixtureSlug === openFixtureSlug)
+    : domLineups;
+  return mergeApiAndDomLineups(apiLineups, current, "load");
 }
 
 async function readStoredDomLineups(): Promise<CurrentLineupEntry[]> {
@@ -1030,7 +1026,7 @@ async function fetchGalleryForLineups(
     cards,
     commonCards,
     fixtures,
-    currentLineups: mergeCurrentLineups(currentLineups, domLineups),
+    currentLineups: mergeCurrentLineups(currentLineups, domLineups, openGw?.fixture.slug ?? null),
     leaderboardBenchmarks,
     injuriesByName: external.injuriesByName,
     gamesPerTeam: external.gamesPerTeam,
@@ -1040,6 +1036,11 @@ async function fetchGalleryForLineups(
   };
 
   if (!controller.signal.aborted) {
+    // Fresh API lineups supersede stored page captures (they may predate edits made
+    // while the panel was closed); later page syncs start from a clean slate.
+    if (currentLineups.some((l) => l.source !== "dom")) {
+      await chrome.storage.local.set({ [DETECTED_LINEUPS_KEY]: [] });
+    }
     await setCached(cacheKey, result);
     await saveAlertSnapshot({
       cards: result.cards,
@@ -1437,6 +1438,7 @@ async function handleMessage(
               typeof item.sorareLineupId === "string"
                 ? item.sorareLineupId.slice(0, 64)
                 : null,
+            detectedAt: Date.now(),
           }));
 
         if (sanitized.length > 0) {

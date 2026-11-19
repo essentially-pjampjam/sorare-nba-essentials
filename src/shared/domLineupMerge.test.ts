@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { upsertDomLineups } from "./domLineupMerge";
+import { mergeApiAndDomLineups, upsertDomLineups } from "./domLineupMerge";
 import type { CurrentLineupEntry } from "./types";
 
 const lineup = (
@@ -69,3 +69,34 @@ describe("upsertDomLineups", () => {
     expect(upsertDomLineups(stored, [], true)).toBe(stored);
   });
 });
+
+describe("mergeApiAndDomLineups", () => {
+  const api = (id: string, names: string[]): CurrentLineupEntry => ({
+    id,
+    name: id,
+    leaderboardSlug: "lb",
+    leaderboardName: "LB",
+    draft: false,
+    cardSlugs: names.map((n) => n.toLowerCase()),
+    captainCardSlug: null,
+    playerNames: names,
+    source: "api",
+  });
+  const dom = (id: string, names: string[]): CurrentLineupEntry => ({ ...api(id, names), cardSlugs: [], source: "dom" });
+
+  it("lets the API win on load and keeps page captures only without API lineups", () => {
+    const a = api("So5Lineup:1", ["A", "B", "C", "D", "E"]);
+    const staleDom = dom("dom-1", ["A", "B", "C", "X", "Y"]);
+    expect(mergeApiAndDomLineups([a], [staleDom], "load")).toEqual([a]);
+    expect(mergeApiAndDomLineups([], [staleDom], "load")).toEqual([staleDom]);
+  });
+
+  it("replaces only matched API lineups on a live page sync", () => {
+    const a1 = api("So5Lineup:1", ["A", "B", "C", "D", "E"]);
+    const a2 = api("So5Lineup:2", ["F", "G", "H", "I", "J"]);
+    const fresh = dom("dom-1", ["A", "B", "C", "D", "Z"]);
+    const merged = mergeApiAndDomLineups([a1, a2], [fresh], "live");
+    expect(merged.map((l) => l.id)).toEqual(["So5Lineup:2", "dom-1"]);
+  });
+});
+

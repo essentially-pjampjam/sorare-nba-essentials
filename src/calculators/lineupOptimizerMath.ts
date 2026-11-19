@@ -1935,11 +1935,24 @@ export interface VaultVsSellAdvice {
   reason: string;
 }
 
+/** Cards below this L10 are bench depth; at or above it they still help Classic lineups. */
+export const VAULT_BENCH_L10 = 18;
+
+export interface VaultAdviceContext {
+  /** Card sits in an open / synced lineup (sealing would cancel it). */
+  locked?: boolean;
+  /** A better copy of the same player in the same scarcity is kept playable. */
+  duplicate?: boolean;
+}
+
 /**
- * Compares prior-season Sorare Vault contribution against live cash liquidity
- * to advise sealing vs. selling on the market.
+ * Seal vs sell vs keep for one card. Seals only spare duplicates and bench-level cards;
+ * lineup players (in a lineup, In-Season, or L10 >= VAULT_BENCH_L10) are kept.
  */
-export function evaluateVaultVsSellRoi(card: GalleryCard): VaultVsSellAdvice {
+export function evaluateVaultVsSellRoi(
+  card: GalleryCard,
+  context: VaultAdviceContext = {},
+): VaultVsSellAdvice {
   // Sealing Points tier estimate (1/2/5/20/50/200); Sorare shows the exact value before sealing.
   const vaultPoints = estimateSealingPoints(card).sealingPoints;
 
@@ -1952,33 +1965,37 @@ export function evaluateVaultVsSellRoi(card: GalleryCard): VaultVsSellAdvice {
     };
   }
 
-  if (card.inSeasonEligible || (card.openedLineupIds?.length ?? 0) > 0) {
+  const locked = context.locked === true || (card.openedLineupIds?.length ?? 0) > 0;
+  if (locked || card.inSeasonEligible) {
     return {
       action: "HOLD_DEPTH",
       vaultPoints,
       label: "Active Roster",
-      reason: card.inSeasonEligible
-        ? "In-season card eligible for Pro leaderboards."
-        : "Locked inside an open Gameweek lineup.",
+      reason: locked
+        ? "In one of your open lineups: keep it (sealing would cancel that lineup)."
+        : "In-Season card eligible for In-Season competitions.",
     };
   }
 
+  const l10 = card.l10 ?? 0;
   const askCents = card.lowestAskCents ?? 0;
-  if (askCents >= 250 && (card.l10 ?? 0) < 28) {
+  if (askCents >= 250 && l10 < 28 && !context.duplicate) {
     return {
       action: "SELL_CASH",
       vaultPoints,
       label: "💶 Sell > Seal",
-      reason: `Strong floor liquidity vs +${vaultPoints} VP Vault contribution.`,
+      reason: `Floor ${(askCents / 100).toFixed(2)} is worth more than +${vaultPoints} VP in the Vault.`,
     };
   }
 
-  if ((card.l10 ?? 0) >= 15) {
+  if (context.duplicate || l10 < VAULT_BENCH_L10) {
     return {
       action: "SEAL_VAULT",
       vaultPoints,
       label: `🔒 Seal (+${vaultPoints} VP)`,
-      reason: "Unlocked prior-season contributor adds efficient Vault score.",
+      reason: context.duplicate
+        ? "Spare copy: a better copy of this player stays playable."
+        : `Bench-level card (L10 ${l10.toFixed(1)}): more useful as Vault points.`,
     };
   }
 
@@ -1986,7 +2003,7 @@ export function evaluateVaultVsSellRoi(card: GalleryCard): VaultVsSellAdvice {
     action: "HOLD_DEPTH",
     vaultPoints,
     label: `+${vaultPoints} VP`,
-    reason: "Low L10 depth card; hold or scrap/seal as needed.",
+    reason: `Lineup-useful (L10 ${l10.toFixed(1)}): keep for Classic lineups.`,
   };
 }
 

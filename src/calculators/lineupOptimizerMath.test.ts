@@ -301,7 +301,7 @@ describe("lineupOptimizerMath", () => {
   });
 
   it("advises Seal vs Sell Cash ROI for prior-season cards", () => {
-    const cheapVeteran = makeCard("vet-seal", "Veteran Seal", 22, 23, {
+    const cheapVeteran = makeCard("vet-seal", "Veteran Seal", 12, 13, {
       inSeasonEligible: false,
       seasonYear: 2024,
       isFirstOwner: true,
@@ -315,6 +315,15 @@ describe("lineupOptimizerMath", () => {
       lowestAskCents: 450,
     });
     expect(evaluateVaultVsSellRoi(liquidRole).action).toBe("SELL_CASH");
+
+    const goodVeteran = makeCard("vet-keep", "Good Veteran", 25, 26, {
+      inSeasonEligible: false,
+      seasonYear: 2025,
+      lowestAskCents: 120,
+    });
+    expect(evaluateVaultVsSellRoi(goodVeteran).action).toBe("HOLD_DEPTH");
+    expect(evaluateVaultVsSellRoi(goodVeteran, { locked: true }).action).toBe("HOLD_DEPTH");
+    expect(evaluateVaultVsSellRoi(goodVeteran, { duplicate: true }).action).toBe("SEAL_VAULT");
   });
 
   it("jointly optimizes disjoint lineups across multiple competitions", () => {
