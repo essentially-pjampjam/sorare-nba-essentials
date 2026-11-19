@@ -38,6 +38,25 @@ Status legend: `LIVE-VERIFIED` (seen on sorare.com) · `OFFICIAL DOC` (Sorare he
 | Player scoring with 2+ games in a Game Week | Best game counts | OFFICIAL DOC (help: player scores) / THIRD-PARTY |
 | Star rating | From L10 average, 1–5★ | THIRD-PARTY |
 
+## Mode structure — user screenshots 2026-11-19 (GW10) — LIVE-VERIFIED
+
+Sorare's "Choose Mode" menu: **PRO** (events) and **ARENA** → **In-Season** / **Classic** / **Rooms**.
+Ignore Sorare's naming overlap ("Arena", "Rooms"); classify by these three branches.
+
+| Branch | Rarities | Formats & caps | Other rules |
+|---|---|---|---|
+| Arena **Rooms** (10-player rooms) | Limited, Rare, Super Rare | Contender 11★ (75 energy), Champion 16★ (150), Uncapped ∞ (200), U23 11★ (150), Veterans 11★ (150) | Entry cost in energy per format. **Supersedes code's 12★/15★ and third-party "Veterans 16★"** |
+| Arena **Classic** | Limited, Rare, Super Rare, Unique | Champion 16★, Contender 11★ | Any season ("All Seasons"); 5 cards of the rarity; max 4 players per NBA team |
+| Arena **In-Season** | Limited, Rare, Super Rare (Unique allowed inside the Super Rare section: "missing 5 Unique or Super Rare cards") | Champion 16★, Contender 11★ | Min 4 In-Season (26/27) cards; max 4 per team; Rare = card score +10%; "0 SET / 5" entries |
+| In-Season **Hot Streak** | per competition | Limited Champion: score 240+ → $5 credit (0/5 steps); Limited Contender: 190+ → 150 energy | Shown as badge on the competition |
+| **PRO** events (e.g. Most Wanted, featured, ends in 18 days) | Limited, higher scarcities permitted | 16★ cap | Step targets ("reach more than 200 PTS" → 500 energy), 4 lives (hearts), min 1 Most Wanted Edition card |
+| Prize pools | — | Limited Contender (In-Season), 364 entrants: 1st $500, 2nd $250, 3rd $100, then energy tiers down to 1,501–2,500th | Must be read live; changes every GW |
+
+**Direction (user request):** rules, events, hot-streak thresholds, entry costs and prizes change often, so
+detect them **live** (Sorare GraphQL `so5Fixture.so5Leaderboards` + rules/rewards fields, from the
+background worker) instead of hard-coding. Still open: Classic entry limits per rarity; whether one card
+can sit in two lineups in the same GW (editor's "Used in another lineup" filter suggests not).
+
 ## Set / Common
 
 | Fact | Value | Status / Source |
