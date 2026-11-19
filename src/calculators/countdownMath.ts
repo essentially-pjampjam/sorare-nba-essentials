@@ -1,9 +1,8 @@
 import type { CountdownSnapshot, So5FixtureSummary } from "../shared/types";
 
 /**
- * Daily reset hour (UTC) for Sorare NBA daily content (Daily Picker / daily missions).
- * From the v2.7.0 handoff spec; NOT yet confirmed live (Sorare's Football help says
- * "9 AM CET", which is 08:00 UTC in winter). Tracked in docs/SORARE_FACTS.md.
+ * Daily reset hour (UTC) for Sorare NBA daily content (Set daily packs, Daily Picker, missions).
+ * Live-verified 2026-11-19 from the Set daily countdown (docs/SORARE_FACTS.md).
  */
 export const DAILY_RESET_UTC_HOUR = 7;
 const DAY_MS = 86_400_000;

@@ -68,6 +68,32 @@ can sit in two lineups in the same GW (editor's "Used in another lineup" filter 
 | Power bonus | Shown per card (+0% / +6% / +9%) | LIVE-VERIFIED |
 | Time to lock | Header badge (e.g. "1d 19h") | LIVE-VERIFIED |
 
+## Sorare GraphQL fields (public API, probed 2026-11-19, no auth)
+
+| Need | Field | Example |
+|---|---|---|
+| Star rating per player | `anyPlayer { ... on NBAPlayer { gameplayTier } }` | Dillon Brooks `ROSTER`, DeMar DeRozan `DNP_PLUS` |
+| Tier -> stars map | `config { gameplayTierRatings(sport: NBA) { gameplayTier stars } }` | GOAT 5, STAR_PLUS 4.5, STAR 4, IMPACT_PLUS 3.5, IMPACT 3, ROSTER_PLUS 2.5, ROSTER 2, DNP_PLUS 1.5, DNP 1 |
+| Set pack tier names | Same tiers, Set naming: Icon = GOAT, Star+ / Star, Key+ = IMPACT_PLUS, Key = IMPACT, Roster+ / Roster, Reserve+ = DNP_PLUS, Reserve = DNP | Pack odds screenshots |
+| Sealing | Card `sealed`, `sealable`, `sealableFor` (live Sealing Points, e.g. 2 for a DNP Limited), `unsealableAt` | `sealableFor: 2` on Limited DNP cards |
+| Introspection | Disabled (`__type` not on Query); read field names from sorare.com's Apollo cache (`window.__APOLLO_CLIENT__.cache.extract()`) | - |
+
+## Multi-game Game Weeks
+
+| Fact | Value | Status |
+|---|---|---|
+| GW span | Biweekly: Mon-Thu and Fri-Sun (3-4 days); submit before the GW's first game | OFFICIAL help (schedule article) |
+| 2+ games in a GW | The player's **best single game** counts | THIRD-PARTY guide (laligaexpert); matches the extension's best-of-k model. Live check: a 2-game player's lineup score on a closed GW |
+
+## Card reuse (user-confirmed 2026-11-19)
+
+| Fact | Value | Status |
+|---|---|---|
+| Same card, two lineups, same GW | **Not allowed** (maybe in rare special events) | USER |
+| Two cards of the same player in one lineup | **Not allowed** | USER |
+| Two different cards of the same player in separate lineups (same GW) | **Allowed** | USER |
+| Classic board note | "One of the card was listed on the marketplace" warning on a submitted lineup | LIVE (Top Lineups screenshot) |
+
 ## Vault / Sealing (NBA)
 
 | Fact | Value | Status / Source |
@@ -84,7 +110,7 @@ can sit in two lineups in the same GW (editor's "Used in another lineup" filter 
 
 | Fact | Value | Status / Source |
 |---|---|---|
-| Daily reset | Code uses **07:00 UTC** (handoff spec). Sorare Football missions reset 9 AM CET (= 08:00 UTC in winter) | `UNVERIFIED` for NBA: confirm from the in-app daily timer |
+| Daily reset | **07:00 UTC** (Set daily countdown read 11H 47M at 19:12:58 UTC on 2026-11-19 = 07:00 UTC). Only shown as a countdown in the Set section (Live Today packs, daily missions) | LIVE-VERIFIED 2026-11-19 |
 | GW cutoff | `so5Fixture.cutOffDate` of the opened fixture | API |
 
 ## Set / Common
@@ -92,7 +118,18 @@ can sit in two lineups in the same GW (editor's "Used in another lineup" filter 
 | Fact | Value | Status / Source |
 |---|---|---|
 | Daily Picker mission | Player must beat L10 by **7** pts and score **≥ 20** | LIVE-VERIFIED (Squad page mission text) |
-| Squad cap | Code uses a **120** non-MVP L10 cap (`SET_ARCADE_RULES.squadSalaryCap`) | `UNVERIFIED`: with 6 Commons at L10 32-43 no lineup fits; read live in M3 |
+| Set modes | **Arcade (Solo)** and **Squad**; the current theme/season is **Divination** ("1M 18D" left; Divination set ends Jan 7th; Divination Essence and cards can't be used in the next set; Divination Streaks count through the last game Wed Jan 6th) | LIVE (user screenshots 2026-11-19) |
+| Arcade (Solo) | Up to **4 teams** at once, one rule: **16 stars cap** ("sum of players' stars must remain below 16"). Hot Streak ladder: "Chapter 1 - Step 2", target **180 PTS**, rewards along the path (10 gems, 30 gems, €100, €1,000), 4 lives (hearts) | LIVE (user screenshots) |
+| Squad | Join a squad of **max 10 managers** (e.g. "Lazy Goats" 10/10, has a Captain). Each manager sets **1 team** (16★ cap). Squad stage target uses the squad's **3 best teams** (e.g. "Opts: your 3 best teams need to score 650+ PTS", next stage 730). Failing a stage resets to level 1. Result settles at a fixed time (e.g. "Friday 8:30 AM"). A Squad **Hub** shares members' wins | LIVE (user screenshots + user) |
+| Squad cap (old code) | Code used a **120** non-MVP L10 cap (`SET_ARCADE_RULES.squadSalaryCap`) | `OUTDATED IN CODE`: live rule is a 16-star cap, fix in M3 |
+| Set card stars | Set cards carry star tiers shown on packs: Reserve 1★, Reserve+ 1.5★, Roster 2★, Roster+ 2.5★, Key 3★, Key+ 3.5★, Star 4★, Star+ 4.5★, Icon 5★ | LIVE (pack odds screenshots) |
+| Set card editions | Standard / Shiny / Holo (filter icons; Legendary Chase pack: Full Holo 0.5%, Full Shiny 1%, Slot 5 Legendary 1%) | LIVE |
+| Packs (Divination shop) | Gold 50 gems, Silver 10 gems, Bronze 1000 Essence, Bronze+ unlocks after a 10-step progress bar; "Live Today" Silver (10 gems) / Bronze (1000 Essence) packs of today's playing teams, 3 cards, ends with the day; Legendary Chase 65 gems (4 cards + 1% bonus 5th Legendary card) | LIVE (user screenshots) |
+| Pack odds | Shown per card slot (#1-#4); odds improve per slot and the **#4 slot carries the best tier** (Bronze #4: Icon 0.1%, Star+ 0.4%, Star 1.5%, Key+ 2.76%, Key 15.64%, Roster+ 11.94%, Roster 67.66%; Bronze #1: Roster+ 4.5%, Roster 25.5%, Reserve+ 10.5%, Reserve 59.5%) | LIVE (pack details) |
+| Gems | Bought with cash: 5 = €0.99 ... 500 (+250) = €99.95; bundles 320 + 2 Gold packs €59.95, 850 + 6 Gold packs €149.95 | LIVE (shop) |
+| Daily Boost | Checklist: Open Daily Pack, Buy a Pack, Play the Daily Picker, Collect at least a 3-stars player | LIVE |
+| Daily Pack | Free pack openable once per day | USER |
+| Gallery | Set gallery shows count per scarcity tier (e.g. 495 / 89 / 18 / 0), duplicate toggle, injury tags (OUT / GTD), star badge and power % per card | LIVE |
 | Set lives | Start each level with **4 Lives**; lose a life when a lineup misses target; restart from level 1 at 0 lives | OFFICIAL DOC ("What is Sorare Set (NBA)?") |
 | Collection Bonus | Up to **+5%** for owning multiple players of the same team | OFFICIAL DOC |
 | Set cards get no XP / In-Season bonus | Only Collection Bonus applies | OFFICIAL DOC (Set launch blog) |

@@ -2034,7 +2034,6 @@ export function optimizeMultiCompetitionPortfolio(
 
   for (const order of orders) {
     let remaining = [...cards];
-    const usedPlayerSlugs = new Set<string>();
     const chosenMap = new Map<LineupFormat, SuggestedLineup>();
     let combinedScore = 0;
 
@@ -2050,13 +2049,10 @@ export function optimizeMultiCompetitionPortfolio(
       chosenMap.set(fmt, built);
       combinedScore += built.odds.essencePct * 1.5 + built.totalScore * 0.2;
 
+      // Sorare (user-confirmed 2026-11-19): a card can't sit in two lineups of the same GW,
+      // but a different card of the same player can go in another lineup.
       const usedCards = new Set(built.slots.map((s) => s.evaluated.card.slug));
-      for (const s of built.slots) {
-        usedPlayerSlugs.add(s.evaluated.card.playerSlug);
-      }
-      remaining = remaining.filter(
-        (c) => !usedCards.has(c.slug) && !usedPlayerSlugs.has(c.playerSlug),
-      );
+      remaining = remaining.filter((c) => !usedCards.has(c.slug));
     }
 
     if (
