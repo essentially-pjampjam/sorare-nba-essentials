@@ -20,6 +20,15 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.6.7-exp.M1",
+    title: "Experimental v2.7.0 M1: Working Sorare Links & Reliable Lineup Sync",
+    items: [
+      "Open Sorare Arena to Sync now opens the current Game Week's Arena lineups page (no more /nba/arena 404); Open Pro Play and Live Competition Rooms use verified Sorare NBA routes.",
+      "The background now blocks known-404 Sorare routes, and lineup highlight can open a verified Sorare page first (groundwork for Go buttons).",
+      "Arena lineup sync ignores status badges like Late Swap / 4/5 Locked and restores names shown in ALL CAPS (DeMar DeRozan, LeBron, LaMelo).",
+    ],
+  },
+  {
     version: "2.6.6",
     title: "Live GW Cutoffs, Arena Open Lineup Sync & Market Buy Upgrades",
     items: [

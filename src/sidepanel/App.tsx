@@ -74,9 +74,11 @@ type ActiveTab = "collections" | "craft" | "lineups" | "bargains" | "gallery";
 
 function getExtensionVersion(): string {
   try {
-    return chrome.runtime.getManifest().version;
+    // version_name carries the human build label (e.g. "2.6.7-exp.M1"); Chrome requires numeric `version`.
+    const manifest = chrome.runtime.getManifest();
+    return manifest.version_name ?? manifest.version;
   } catch {
-    return "2.6.3";
+    return "0.0.0";
   }
 }
 

@@ -1268,4 +1268,57 @@ describe("sorareDomParser & sorareDetector", () => {
     expect(lineups).toHaveLength(1);
     expect(lineups[0].playerNames).toEqual(["Aaron Gordon", "Brook Lopez"]);
   });
+  it("parses live Sorare lineup markup (2026-11-19 capture): 'Name - limited' alts, one article per lineup", () => {
+    const card = (id: string, name: string, time: string) =>
+      `<div><img alt="${name} - limited" src="https://assets.sorare.com/image-resize/card/${id}/picture/tinified-x.png" /><div>${time}</div><div>○</div></div>`;
+    const lineup = (uuid: string, cards: string) => `
+      <div id="nba-21-23-nov-2026-nba_limited_contender~so5-lineup~${uuid}">
+        <article>
+          <a href="/nba/play/classic/nba-21-23-nov-2026/contender/nba-21-23-nov-2026-nba_limited_contender~so5-lineup~${uuid}">
+            <img alt="" src="https://frontend-assets.sorare.com/football/manager_team/limited/icon.png" />
+            <div>Classic</div><div>Contender</div><div>919</div>
+          </a>
+          <div>${cards}</div>
+          <div>LEVEL UP</div>
+          <button>Clear Team</button><button>Edit Lineup</button>
+        </article>
+      </div>`;
+    const html = `<main><div id="nba-21-23-nov-2026~competition_with_arena~contender">${[
+      lineup("a1", [
+        card("c1", "Morez Johnson Jr.", "SAT 2:30 AM"),
+        card("c2", "DeMar DeRozan", "SAT 3:00 AM"),
+        card("c3", "Malik Monk", "SAT 2:30 AM"),
+        card("c4", "Christian Anderson", "SAT 8:00 PM"),
+        card("c5", "Taylor Hendricks", "SAT 2:30 AM"),
+      ].join("")),
+      lineup("a2", [
+        card("d1", "Jarace Walker", "SAT 2:30 AM"),
+        card("d2", "Bub Carrington", "SAT 2:30 AM"),
+        card("d3", "Allen Graves", "SAT 3:00 AM"),
+        card("d4", "Dean Wade", "SAT 2:30 AM"),
+        card("d5", "Nikola Vučević", "SAT 2:30 AM"),
+      ].join("")),
+    ].join("")}</div></main>`;
+    const lineups = extractOpenLineupsFromDocument(
+      parseHtmlToDocument(html),
+      "https://sorare.com/nba/lineups/arena/nba-21-23-nov-2026",
+    );
+    expect(lineups).toHaveLength(2);
+    expect(lineups[0].playerNames).toEqual([
+      "Morez Johnson Jr.",
+      "DeMar DeRozan",
+      "Malik Monk",
+      "Christian Anderson",
+      "Taylor Hendricks",
+    ]);
+    expect(lineups[1].playerNames).toEqual([
+      "Jarace Walker",
+      "Bub Carrington",
+      "Allen Graves",
+      "Dean Wade",
+      "Nikola Vučević",
+    ]);
+    expect(lineups[0].seasonScope).toBe("classic");
+    expect(lineups[0].fixtureSlug).toBe("nba-21-23-nov-2026");
+  });
 });

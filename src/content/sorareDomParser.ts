@@ -673,6 +673,8 @@ function cleanAltOrAriaPlayerName(raw: string): string | null {
     .replace(/\s*\(?(?:20\d{2}(?:-\d{2})?|\d{2}-\d{2})\)?\s*(?:limited|rare|super[\s_]?rare|unique|common)?\s*(?:#\d+)?$/i, "")
     .replace(/\s*(?:limited|rare|super[\s_]?rare|unique|common)\s*(?:#\d+)?$/i, "")
     .replace(/\s*#\d+$/i, "")
+    // Live Sorare alts read "DeMar DeRozan - limited": drop the dangling separator.
+    .replace(/\s*[-–—|·•:]+$/, "")
     .trim();
   if (!stripped || isNoiseWordOrToken(stripped) || isNoisePhrase(stripped)) {
     return null;
