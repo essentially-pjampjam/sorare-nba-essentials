@@ -6,6 +6,7 @@ import {
   evaluateStarTierShift,
   evaluateVaultVsSellRoi,
   generateTopLineups,
+  getFormatStarCap,
   optimizeMultiCompetitionPortfolio,
   parseCustomProjections,
   recommendBestFormat,
@@ -17,6 +18,7 @@ import type {
   CurrentLineupEntry,
   GalleryCard,
   InjuryReportEntry,
+  LeaderboardBenchmark,
 } from "../shared/types";
 
 function makeCard(
@@ -640,5 +642,210 @@ describe("lineupOptimizerMath", () => {
     expect(combos[0].newTotalStars).toBeLessThanOrEqual(11);
     expect(combos[0].deltaLineupPts).toBeGreaterThan(10);
     expect(combos[0].totalCostCents).toBe(390);
+  });
+
+  it("supports Arena 15-star / 12-star caps and U23 / Veterans age filters", () => {
+    expect(getFormatStarCap("champion_16")).toBe(16);
+    expect(getFormatStarCap("arena_champion_15")).toBe(15);
+    expect(getFormatStarCap("arena_contender_12")).toBe(12);
+    expect(getFormatStarCap("contender_11")).toBe(11);
+    expect(getFormatStarCap("uncapped")).toBeNull();
+
+    const mixedRoster: GalleryCard[] = [
+      makeCard("y1", "Young One", 34, 38, { playerAge: 20 }),
+      makeCard("y2", "Young Two", 28, 32, { playerAge: 21 }),
+      makeCard("y3", "Young Three", 24, 28, { playerAge: 22 }),
+      makeCard("y4", "Young Four", 20, 24, { playerAge: 23 }),
+      makeCard("y5", "Young Five", 10, 14, { playerAge: 19 }),
+      makeCard("v1", "Vet One", 44, 48, { playerAge: 32 }),
+      makeCard("v2", "Vet Two", 34, 36, { playerAge: 31 }),
+      makeCard("v3", "Vet Three", 28, 30, { playerAge: 30 }),
+      makeCard("v4", "Vet Four", 22, 24, { playerAge: 34 }),
+      makeCard("v5", "Vet Five", 14, 18, { playerAge: 33 }),
+    ];
+
+    const u23Res = generateTopLineups(mixedRoster, {
+      format: "arena_contender_12",
+      rarityFilter: "limited",
+      projectionSource: "sorare_projected",
+      customProjectionsRaw: "",
+      injuriesByName: {},
+      gamesPerTeam: {},
+      excludeOut: true,
+      excludeQuestionable: false,
+      inSeasonOnly: false,
+      minInSeasonCards: 0,
+      disjointAcrossLineups: false,
+      ageFilter: "u23",
+      maxLineups: 1,
+    });
+    expect(u23Res.lineups).toHaveLength(1);
+    expect(u23Res.lineups[0].capLimit).toBe(12);
+    expect(u23Res.lineups[0].slots.every((s) => (s.evaluated.card.playerAge ?? 99) <= 23)).toBe(true);
+
+    const vetRes = generateTopLineups(mixedRoster, {
+      format: "arena_champion_15",
+      rarityFilter: "limited",
+      projectionSource: "sorare_projected",
+      customProjectionsRaw: "",
+      injuriesByName: {},
+      gamesPerTeam: {},
+      excludeOut: true,
+      excludeQuestionable: false,
+      inSeasonOnly: false,
+      minInSeasonCards: 0,
+      disjointAcrossLineups: false,
+      ageFilter: "veterans",
+      maxLineups: 1,
+    });
+    expect(vetRes.lineups).toHaveLength(1);
+    expect(vetRes.lineups[0].capLimit).toBe(15);
+    expect(vetRes.lineups[0].slots.every((s) => (s.evaluated.card.playerAge ?? 0) >= 30)).toBe(true);
+  });
+
+  it("calibrates lineup odds, In-Season vs Classic tips, and DOM playerNames lineup matching using closed-GW benchmarks", () => {
+    const benchmarks: LeaderboardBenchmark[] = [
+      {
+        fixtureSlug: "nba-14-16-nov-2026",
+        fixtureName: "Game Week 8",
+        leaderboardSlug: "nba-14-16-nov-2026-nba_limited_contender",
+        displayName: "Limited Contender",
+        format: "contender_11",
+        seasonScope: "classic",
+        rarity: "limited",
+        totalEntries: 9098,
+        paidPlaces: 1000,
+        rewardWinRatePct: 11.0,
+        paidCutoffScore: 193.7,
+        top20Score: 180.0,
+        top5Score: 215.0,
+        podiumScore: 245.0,
+        top1Score: 256.5,
+      },
+      {
+        fixtureSlug: "nba-14-16-nov-2026",
+        fixtureName: "Game Week 8",
+        leaderboardSlug: "nba-14-16-nov-2026-nba_limited_in_season_contender",
+        displayName: "In-Season Contender",
+        format: "contender_11",
+        seasonScope: "in_season",
+        rarity: "limited",
+        totalEntries: 4582,
+        paidPlaces: 2500,
+        rewardWinRatePct: 54.6,
+        paidCutoffScore: 144.3,
+        top20Score: 172.6,
+        top5Score: 199.9,
+        podiumScore: 260.0,
+        top1Score: 280.5,
+      },
+      {
+        fixtureSlug: "nba-14-16-nov-2026",
+        fixtureName: "Game Week 8",
+        leaderboardSlug: "nba-14-16-nov-2026-nba_limited_arena_75-pod1",
+        displayName: "Arena Contender",
+        format: "arena_contender_12",
+        seasonScope: "arena",
+        ageScope: "all",
+        rarity: "limited",
+        totalEntries: 828,
+        paidPlaces: 414,
+        rewardWinRatePct: 50.0,
+        paidCutoffScore: 159.1,
+        top20Score: 185.0,
+        top5Score: 205.0,
+        podiumScore: 211.5,
+        top1Score: 211.5,
+        podSize: 10,
+      },
+    ];
+
+    const roster: GalleryCard[] = [
+      makeCard("wendell-carter-jr", "Wendell Carter Jr.", 28, 32, { inSeasonEligible: true }),
+      makeCard("aaron-gordon", "Aaron Gordon", 23, 27, { inSeasonEligible: true }),
+      makeCard("brook-lopez", "Brook Lopez", 19, 26, { inSeasonEligible: true }),
+      makeCard("demar-derozan", "DeMar DeRozan", 14, 22, { inSeasonEligible: true }),
+      makeCard("malik-monk", "Malik Monk", 12, 19, { inSeasonEligible: true }),
+      makeCard("jalen-johnson", "Jalen Johnson", 18, 39, { inSeasonEligible: true }),
+    ];
+
+    const classicBuilt = generateTopLineups(roster, {
+      format: "contender_11",
+      rarityFilter: "limited",
+      projectionSource: "sorare_projected",
+      customProjectionsRaw: "",
+      injuriesByName: {},
+      gamesPerTeam: {},
+      excludeOut: true,
+      excludeQuestionable: false,
+      inSeasonOnly: false,
+      minInSeasonCards: 0,
+      disjointAcrossLineups: false,
+      maxLineups: 1,
+      benchmarks,
+      benchmarkSeasonScope: "classic",
+    });
+
+    expect(classicBuilt.lineups[0].odds.essenceTarget).toBe(194);
+    expect(classicBuilt.lineups[0].odds.estRank).toBeGreaterThan(1000);
+    expect(classicBuilt.lineups[0].odds.totalEntries).toBe(9098);
+
+    const rec = recommendBestFormat(roster, {
+      rarityFilter: "limited",
+      projectionSource: "sorare_projected",
+      customProjectionsRaw: "",
+      injuriesByName: {},
+      gamesPerTeam: {},
+      excludeOut: true,
+      excludeQuestionable: false,
+      inSeasonOnly: false,
+      minInSeasonCards: 0,
+      disjointAcrossLineups: false,
+      benchmarks,
+      benchmarkSeasonScope: "classic",
+    });
+    expect(rec.recommendedFormat).toBe("arena_contender_12");
+    expect(rec.inSeasonVsClassicTip).toContain("54.6%");
+    expect(rec.inSeasonVsClassicTip).toContain("11%");
+
+    // DOM-synced Arena lineup with abbreviated player names and empty cardSlugs
+    const domEntries: CurrentLineupEntry[] = [
+      {
+        id: "dom-arena-classic-contender-1",
+        name: "Arena Classic Contender #1",
+        leaderboardSlug: "arena_classic_contender",
+        leaderboardName: "Arena Classic Contender",
+        draft: false,
+        cardSlugs: [],
+        playerNames: [
+          "W. CARTER JR.",
+          "AARON GORDON",
+          "BROOK LOPEZ",
+          "D. DEROZAN",
+          "MALIK MONK",
+        ],
+        captainCardSlug: null,
+        source: "dom",
+      },
+    ];
+
+    const cmps = compareCurrentVsOptimalLineups(domEntries, roster, {
+      rarityFilter: "limited",
+      projectionSource: "sorare_projected",
+      customProjectionsRaw: "",
+      injuriesByName: {},
+      gamesPerTeam: {},
+      excludeOut: true,
+      excludeQuestionable: false,
+      inSeasonOnly: false,
+      minInSeasonCards: 0,
+      disjointAcrossLineups: false,
+      benchmarks,
+    });
+    expect(cmps).toHaveLength(1);
+    expect(cmps[0].resolvedCardSlugs).toHaveLength(5);
+    expect(cmps[0].currentProjected).toBeGreaterThan(100);
+    expect(cmps[0].paidCutoffScore).toBe(159.1);
+    expect(cmps[0].swaps.some((s) => s.inPlayer === "Jalen Johnson")).toBe(true);
   });
 });

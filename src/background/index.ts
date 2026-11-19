@@ -22,6 +22,7 @@ import type {
   CollectionRaw,
   CraftPoolResult,
   Currency,
+  CurrentLineupEntry,
   GalleryCard,
   GalleryResult,
   MissingSlot,
@@ -46,6 +47,7 @@ const LEGACY_SETTINGS_KEY = "jamassist_settings_v1";
 const API_KEY_STORAGE = "jamassist_api_key_v1";
 const CONTENT_FLAGS_KEY = "jamassist_content_flags_v1";
 const DETECTED_USER_KEY = "jamassist_detected_username";
+const DETECTED_LINEUPS_KEY = "jamassist_detected_lineups_v1";
 const PENDING_TAB_KEY = "jamassist_pending_tab";
 const PENDING_LINEUP_HUD_KEY = "jamassist_pending_lineup_hud";
 const OVERLAY_LOOKUP_KEY = "jamassist_overlay_lookup_v1";
@@ -65,6 +67,7 @@ const CONTENT_ALLOWED_TYPES = new Set<string>([
   "SORARE_PAGE_CONTEXT",
   "DETECTED_ESSENCE_FROM_CONTENT",
   "DETECTED_WALLET_FROM_CONTENT",
+  "DETECTED_LINEUPS_FROM_CONTENT",
 ]);
 
 function isAllowedSorareUrl(rawUrl: string | undefined): boolean {
@@ -862,6 +865,33 @@ async function priceCraftCandidates(
   return merged;
 }
 
+function mergeCurrentLineups(
+  apiLineups: CurrentLineupEntry[],
+  domLineups: CurrentLineupEntry[],
+): CurrentLineupEntry[] {
+  const nonDom = apiLineups.filter((l) => l.source !== "dom");
+  if (domLineups.length === 0) return nonDom;
+  const seenApiSigs = new Set<string>(
+    nonDom.map((l) => [...l.cardSlugs].sort().join("|")).filter(Boolean),
+  );
+  const filteredDom = domLineups.filter((d) => {
+    const sig = [...d.cardSlugs].sort().join("|");
+    return !sig || !seenApiSigs.has(sig);
+  });
+  return [...nonDom, ...filteredDom];
+}
+
+async function readStoredDomLineups(): Promise<CurrentLineupEntry[]> {
+  try {
+    const raw = await chrome.storage.local.get(DETECTED_LINEUPS_KEY);
+    const list = raw[DETECTED_LINEUPS_KEY];
+    if (!Array.isArray(list)) return [];
+    return list as CurrentLineupEntry[];
+  } catch {
+    return [];
+  }
+}
+
 async function fetchGalleryForLineups(
   username: string,
   forceRefresh = false,
@@ -873,12 +903,20 @@ async function fetchGalleryForLineups(
     throw new Error("Enter a Sorare username or slug first.");
   }
 
-  const cacheKey = `gallery_v5:${cleanUser}`;
+  const cacheKey = `gallery_v6:${cleanUser}`;
   if (!forceRefresh) {
     const cached = await getCached<GalleryResult>(cacheKey);
     if (cached) {
       void syncOverlayLookup(cached.value.cards);
-      return { ...cached.value, fromCache: true };
+      const domLineups = await readStoredDomLineups();
+      return {
+        ...cached.value,
+        currentLineups: mergeCurrentLineups(
+          cached.value.currentLineups ?? [],
+          domLineups,
+        ),
+        fromCache: true,
+      };
     }
     if (cacheOnly) {
       return null;
@@ -896,21 +934,26 @@ async function fetchGalleryForLineups(
     phase: "collections",
     completed: 0,
     total: 2,
-    message: `Loading ${cleanUser}'s NBA gallery (Pro + Common) & live ESPN injuries...`,
+    message: `Loading ${cleanUser}'s NBA gallery (Pro + Common), live cutoffs & ESPN injuries...`,
   });
 
-  const [{ cards, commonCards, fixtures, currentLineups }, external] =
-    await Promise.all([
-      sorareClient.fetchUserGalleryAndFixtures(cleanUser, controller.signal),
-      fetchExternalNbaContext(),
-    ]);
+  const [
+    { cards, commonCards, fixtures, currentLineups, leaderboardBenchmarks },
+    external,
+    domLineups,
+  ] = await Promise.all([
+    sorareClient.fetchUserGalleryAndFixtures(cleanUser, controller.signal),
+    fetchExternalNbaContext(),
+    readStoredDomLineups(),
+  ]);
 
   const result: GalleryResult = {
     username: cleanUser,
     cards,
     commonCards,
     fixtures,
-    currentLineups,
+    currentLineups: mergeCurrentLineups(currentLineups, domLineups),
+    leaderboardBenchmarks,
     injuriesByName: external.injuriesByName,
     gamesPerTeam: external.gamesPerTeam,
     scheduleByTeam: external.scheduleByTeam,
@@ -1086,7 +1129,7 @@ async function fetchBargainsResult(
   forceRefresh = false,
   cacheOnly = false,
 ): Promise<BargainsResult | null> {
-  const cacheKey = `bargains_v5:${rarity}:${mode}:${currency}`;
+  const cacheKey = `bargains_v6:${rarity}:${mode}:${currency}`;
   if (!forceRefresh) {
     const cached = await getCached<BargainsResult>(cacheKey);
     if (cached) {
@@ -1261,6 +1304,47 @@ async function handleMessage(
         }
         return { ok: true, data: nextBalances };
       }
+      case "DETECTED_LINEUPS_FROM_CONTENT": {
+        const rawList = Array.isArray(msg.lineups) ? msg.lineups : [];
+        const sanitized: CurrentLineupEntry[] = rawList
+          .slice(0, 12)
+          .filter(
+            (item): item is CurrentLineupEntry =>
+              Boolean(item) &&
+              typeof item === "object" &&
+              typeof item.id === "string" &&
+              typeof item.leaderboardName === "string",
+          )
+          .map((item) => ({
+            id: item.id.slice(0, 80),
+            name: String(item.name || item.leaderboardName).slice(0, 60),
+            leaderboardSlug: String(item.leaderboardSlug || "").slice(0, 80),
+            leaderboardName: String(item.leaderboardName).slice(0, 60),
+            draft: Boolean(item.draft),
+            cardSlugs: Array.isArray(item.cardSlugs)
+              ? item.cardSlugs
+                  .filter((s): s is string => typeof s === "string" && s.length > 0)
+                  .slice(0, 5)
+              : [],
+            playerNames: Array.isArray(item.playerNames)
+              ? item.playerNames
+                  .filter((n): n is string => typeof n === "string" && n.length > 0)
+                  .slice(0, 5)
+              : [],
+            captainCardSlug:
+              typeof item.captainCardSlug === "string" ? item.captainCardSlug : null,
+            source: "dom",
+          }));
+
+        if (sanitized.length > 0) {
+          await chrome.storage.local.set({ [DETECTED_LINEUPS_KEY]: sanitized });
+          broadcastMessage({
+            type: "DETECTED_LINEUPS_UPDATED",
+            lineups: sanitized,
+          });
+        }
+        return { ok: true, data: sanitized };
+      }
       case "SCAN_COLLECTIONS": {
         const result = await scanUserCollections(
           msg.username,
@@ -1385,7 +1469,7 @@ async function handleMessage(
           fromCache: false,
         };
         if (!controller.signal.aborted) {
-          await setCached(`gallery_v5:${cleanUser}`, updatedGallery);
+          await setCached(`gallery_v6:${cleanUser}`, updatedGallery);
           broadcastProgress({
             phase: "done",
             completed: 1,

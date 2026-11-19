@@ -1,3 +1,10 @@
+import {
+  buildArenaOngoingUrl,
+  buildProPlayUrl,
+  buildSetPlayUrl,
+  SORARE_NBA_CARD_URL,
+  SORARE_NBA_MARKET_URL,
+} from "./routes";
 import type {
   AppTheme,
   CardQualityTier,
@@ -9,8 +16,7 @@ import type {
 } from "./types";
 
 export const SORARE_GRAPHQL_URL = "https://api.sorare.com/graphql";
-export const SORARE_NBA_MARKET_URL = "https://sorare.com/nba/market";
-export const SORARE_NBA_CARD_URL = "https://sorare.com/nba/cards";
+export { SORARE_NBA_CARD_URL, SORARE_NBA_MARKET_URL };
 
 /**
  * Dynamically resolves the active Sorare NBA season start year (e.g. 2026 for 2026-27,
@@ -71,6 +77,12 @@ export const RESERVED_USER_SLUGS: ReadonlySet<string> = new Set([
   "pro",
   "set",
   "arcade",
+  "series",
+  "squad",
+  "boards",
+  "cash",
+  "prev",
+  "ongoing",
   "leaderboards",
   "gameplay",
   "daily",
@@ -513,38 +525,166 @@ export const LINEUP_FORMAT_TARGETS: Record<
 > = {
   champion_16: { essenceTarget: 175, tier1Target: 215, podiumTarget: 255 },
   contender_11: { essenceTarget: 105, tier1Target: 130, podiumTarget: 155 },
+  arena_champion_15: { essenceTarget: 165, tier1Target: 200, podiumTarget: 240 },
+  arena_contender_12: { essenceTarget: 115, tier1Target: 140, podiumTarget: 170 },
   daily_120_mvp: { essenceTarget: 135, tier1Target: 165, podiumTarget: 195 },
   uncapped: { essenceTarget: 205, tier1Target: 245, podiumTarget: 280 },
 };
 
+export interface CompetitionRoomInfo {
+  id: string;
+  group: "Pro Bi-Weekly" | "Pro Arena" | "Set / Arcade";
+  name: string;
+  capLabel: string;
+  eligibility: string;
+  playUrl: string;
+  maxEntries?: number;
+  lineupsUrl?: string;
+}
+
+export const COMPETITION_ENTRY_LIMITS = {
+  proInSeasonMaxEntries: 5,
+  arenaCashMaxEntries: 5,
+  proClassicMaxEntriesByRarity: {
+    limited: 4,
+    rare: 4,
+    super_rare: 2,
+    unique: 2,
+  },
+  hotStreakMaxEntries: 3,
+  squadBestLineupsCounted: 3,
+  arenaPodSize: 10,
+} as const;
+
+export const SET_ARCADE_RULES = {
+  livesPerRun: 4,
+  collectionBonusPctMax: 5,
+  editionBoostPct: {
+    standard: 0,
+    shiny: 5,
+    holo: 10,
+  },
+  dailyPickerMinScore: 20,
+  dailyPickerL10Offset: 7,
+  squadSalaryCap: 120,
+  squadMvpFree: true,
+  hotStreakDefaultTargetPts: 150,
+  duplicateScrapReward: "Essence",
+  cardTiers: ["TIER_0", "TIER_1", "TIER_2", "TIER_3", "TIER_4", "TIER_5"] as const,
+} as const;
+
+export const NBA_COMPETITION_DIRECTORY: CompetitionRoomInfo[] = [
+  {
+    id: "pro-in-season-champ",
+    group: "Pro Bi-Weekly",
+    name: "In-Season Champion",
+    capLabel: "16★ Cap • Up to 5",
+    eligibility:
+      "4 In-Season + 1 Classic (or 5/5 In-Season) • Up to 5 In-Season/Arena entries (0 SET / 5) • Best game in GW counts",
+    playUrl: buildProPlayUrl(),
+    maxEntries: COMPETITION_ENTRY_LIMITS.proInSeasonMaxEntries,
+  },
+  {
+    id: "pro-in-season-cont",
+    group: "Pro Bi-Weekly",
+    name: "In-Season Contender",
+    capLabel: "11★ Cap • Up to 5",
+    eligibility:
+      "4 In-Season + 1 Classic • Limited / Rare / Super Rare • Shares 5-entry Pro In-Season/Arena cap",
+    playUrl: buildProPlayUrl(),
+    maxEntries: COMPETITION_ENTRY_LIMITS.proInSeasonMaxEntries,
+  },
+  {
+    id: "pro-classic",
+    group: "Pro Bi-Weekly",
+    name: "Classic Champion & Contender",
+    capLabel: "16★ / 11★ • 4 Lim/Rare",
+    eligibility:
+      "All-Season / prior-season Pro cards • Up to 4 entries (Limited/Rare) or 2 entries (Super Rare/Unique)",
+    playUrl: buildProPlayUrl(),
+    maxEntries: COMPETITION_ENTRY_LIMITS.proClassicMaxEntriesByRarity.limited,
+  },
+  {
+    id: "arena-main",
+    group: "Pro Arena",
+    name: "Arena Contender, Champion & Uncapped",
+    capLabel: "12★ / 15★ / ∞ • Up to 5",
+    eligibility:
+      "10-team Arena cash/Pro pods (ARENA_75, ARENA_140, ARENA_UNCAPPED) • Counts toward 5 In-Season/Arena entries",
+    playUrl: buildArenaOngoingUrl(),
+    lineupsUrl: buildArenaOngoingUrl(),
+    maxEntries: COMPETITION_ENTRY_LIMITS.arenaCashMaxEntries,
+  },
+  {
+    id: "arena-sub",
+    group: "Pro Arena",
+    name: "Arena Sub-Rooms: U23 & Veterans",
+    capLabel: "U23 12★ / Vet 15★",
+    eligibility:
+      "Age-restricted 10-team Arena rooms (U23 <=23 yrs, Veterans 30+) • Counts toward 5 Arena/In-Season entries",
+    playUrl: buildProPlayUrl(),
+    lineupsUrl: buildArenaOngoingUrl(),
+    maxEntries: COMPETITION_ENTRY_LIMITS.arenaCashMaxEntries,
+  },
+  {
+    id: "set-arcade",
+    group: "Set / Arcade",
+    name: "Set Arcade: Solo Mode",
+    capLabel: "4 Lives • +5% Boost",
+    eligibility:
+      "Daily Solo board with 4 Lives, +5% Edition & Collection boost, card tiers, and duplicate scrapping for Essence",
+    playUrl: buildSetPlayUrl("arcade"),
+  },
+  {
+    id: "set-squad",
+    group: "Set / Arcade",
+    name: "Set / Common: Squad Mode",
+    capLabel: "120 Cap + Free MVP",
+    eligibility:
+      "Co-op / Common Squad boards (120 Cap + free MVP slot, 3 best lineups counted, +up to 5% Collection boost)",
+    playUrl: buildSetPlayUrl("squad"),
+    maxEntries: COMPETITION_ENTRY_LIMITS.squadBestLineupsCounted,
+  },
+  {
+    id: "set-hot-streak",
+    group: "Set / Arcade",
+    name: "Set / Common: Hot Streak",
+    capLabel: "3 Entries • Target Pts",
+    eligibility:
+      "Hot Streak series (up to 3 entries, beat target score streak for Essence)",
+    playUrl: buildSetPlayUrl("hot_streak"),
+    maxEntries: COMPETITION_ENTRY_LIMITS.hotStreakMaxEntries,
+  },
+];
+
 export const BOOSTING_GUIDE_RULES = [
   {
-    id: "mvp-daily",
-    title: "Cap-Free MVP (Daily 120) vs. Star-Cap Pro",
-    tag: "Rules Accuracy",
+    id: "star-cap-pro",
+    title: "2026-27 Star-Cap Scoring (No Captain in Pro)",
+    tag: "Pro Rules",
     detail:
-      "Champion (16★) and Contender (11★) score all 5 players evenly using card bonuses (no +20% Captain). In Daily Pickup (120 + MVP), assign the highest-L10 superstar to the Cap-Free MVP slot.",
+      "Bi-weekly Pro (Champion 16★, Contender 11★) and Arena (Champion 15★, Contender 12★, Uncapped, U23, Veterans) count each player's single best game per Game Week with no Captain multiplier. Set/Common Squad uses its own board rules.",
   },
   {
-    id: "collection-bonus",
-    title: "Team Collection Bonus (+1% to +5%)",
+    id: "in-season-flat",
+    title: "In-Season Card Bonus (+5%) + Team Collection (+1% to +5%)",
     tag: "Stackable",
     detail:
-      "Hitting collection score milestones permanently boosts every card you field from that exact NBA team & season.",
+      "Current 2026-27 Pro cards carry a flat +5% In-Season score boost. Team Collections permanently add +1% to +5% to every matching team/season card you field (and Set Collection boosts up to +5% in Set mode).",
   },
   {
-    id: "in-season",
-    title: "In-Season Card Bonus (+5% / +10%)",
-    tag: "Pro Eligible",
+    id: "xp-scarcity-vault",
+    title: "Card XP (+1%/Lvl), Scarcity Mix & Vault Sealing",
+    tag: "Rewards Boost",
     detail:
-      "Current-season cards add native season multiplier plus meet In-Season Pro leaderboard minimums without diluting star cap.",
+      "Cards level 0-10 (+1% score/lvl; XP halves by 50% when sold). Mixing higher-scarcity cards or raising your Vault Level via Sealing adds % reward boosts on permanent Pro Cash & Essence leaderboards.",
   },
   {
-    id: "xp-level",
-    title: "Card XP & Hold Discipline",
-    tag: "Long-Term",
+    id: "unlisted-discipline",
+    title: "Keep Core & Collection Cards Unlisted",
+    tag: "Checklist",
     detail:
-      "Listing cards can reset/pause momentum; keep core starters in your club to compound XP bonus alongside Collection & Captain multipliers.",
+      "Cards listed on the market do NOT count toward Team Collection Score thresholds while listed, and selling resets half of accumulated card XP. Delist before locking lineups or checking bonuses.",
   },
 ];
 

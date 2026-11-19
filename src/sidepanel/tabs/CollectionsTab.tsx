@@ -223,6 +223,9 @@ export function CollectionsTab({
   const [pricedOnly, setPricedOnly] = useState<boolean>(false);
   const [expandedSlug, setExpandedSlug] = useState<string | null>(null);
   const [expandedQuestId, setExpandedQuestId] = useState<string | null>(null);
+  const [activeBatchButton, setActiveBatchButton] = useState<
+    "top3" | "season" | "all" | null
+  >(null);
   const [questBuyFilter, setQuestBuyFilter] = useState<
     "all" | "primary_instant" | "auction"
   >("all");
@@ -230,6 +233,8 @@ export function CollectionsTab({
   const rarityMeta = RARITY_META[rarity];
   const pricedSet = useMemo(() => new Set(pricedSlugs), [pricedSlugs]);
   const ownedCount = getOwnedCountForRarity(cardCounts, rarity);
+  const isBatchLoading = pricingSlug === "__batch__";
+  const currentBatchBtn = isBatchLoading ? activeBatchButton : null;
   const hasCustomTeamTiers = useMemo(
     () => analyses.some((a) => a.nextEssenceMilestone !== null),
     [analyses],
@@ -1148,14 +1153,19 @@ export function CollectionsTab({
                   <button
                     type="button"
                     disabled={Boolean(pricingSlug)}
-                    onClick={() => onPriceTopCollections(closestUnpricedSlugs)}
+                    onClick={() => {
+                      setActiveBatchButton("top3");
+                      onPriceTopCollections(closestUnpricedSlugs);
+                    }}
                     className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-gradient-to-b from-emerald-300 to-emerald-500 px-2.5 py-1 text-[10.5px] font-bold text-slate-950 shadow-xs transition hover:from-emerald-200 hover:to-emerald-400 disabled:opacity-50"
                     title="Price the 3 closest unpriced teams (~4s)"
                   >
-                    {pricingSlug === "__batch__" && (
+                    {currentBatchBtn === "top3" && (
                       <Loader2 className="h-3 w-3 animate-spin" />
                     )}
-                    Top {closestUnpricedSlugs.length}
+                    {currentBatchBtn === "top3"
+                      ? "Loading Top 3..."
+                      : `Top ${closestUnpricedSlugs.length}`}
                   </button>
                 )}
                 {!inSeasonOnly &&
@@ -1163,22 +1173,38 @@ export function CollectionsTab({
                     <button
                       type="button"
                       disabled={Boolean(pricingSlug)}
-                      onClick={() => onPriceTopCollections(inSeasonUnpricedSlugs)}
+                      onClick={() => {
+                        setActiveBatchButton("season");
+                        onPriceTopCollections(inSeasonUnpricedSlugs);
+                      }}
                       className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-sky-400/50 bg-sky-500/20 px-2.5 py-1 text-[10.5px] font-bold text-sky-100 transition hover:bg-sky-500/30 disabled:opacity-50"
                       title="Price all incomplete active 2026-27 team collections (~45s in Public Mode)"
                     >
-                      Load 26-27 ({inSeasonUnpricedSlugs.length})
+                      {currentBatchBtn === "season" && (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      )}
+                      {currentBatchBtn === "season"
+                        ? "Loading 26-27..."
+                        : `Load 26-27 (${inSeasonUnpricedSlugs.length})`}
                     </button>
                   )}
                 {allUnpricedIncompleteSlugs.length > closestUnpricedSlugs.length && (
                   <button
                     type="button"
                     disabled={Boolean(pricingSlug)}
-                    onClick={() => onPriceTopCollections(allUnpricedIncompleteSlugs)}
+                    onClick={() => {
+                      setActiveBatchButton("all");
+                      onPriceTopCollections(allUnpricedIncompleteSlugs);
+                    }}
                     className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-gradient-to-b from-amber-300 to-amber-500 px-2.5 py-1 text-[10.5px] font-bold text-slate-950 shadow-xs transition hover:from-amber-200 hover:to-amber-400 disabled:opacity-50"
                     title="Price every incomplete team in this view (2-4 min in Public Mode)"
                   >
-                    Load All ({allUnpricedIncompleteSlugs.length})
+                    {currentBatchBtn === "all" && (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    )}
+                    {currentBatchBtn === "all"
+                      ? "Loading All..."
+                      : `Load All (${allUnpricedIncompleteSlugs.length})`}
                   </button>
                 )}
                 {Boolean(pricingSlug) && onCancelScan && (

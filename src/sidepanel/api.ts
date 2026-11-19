@@ -5,6 +5,7 @@ import type {
   BargainsResult,
   CraftPoolResult,
   Currency,
+  CurrentLineupEntry,
   EssenceBalances,
   GalleryResult,
   Rarity,
@@ -248,6 +249,7 @@ export function connectProgressPort(
   onEssenceUpdated?: (balances: EssenceBalances) => void,
   onWalletUpdated?: (wallet: WalletBalanceInfo) => void,
   onWatchlistAlerts?: (alerts: WatchlistAlert[]) => void,
+  onLineupsUpdated?: (lineups: CurrentLineupEntry[]) => void,
 ): () => void {
   let activePort: chrome.runtime.Port | null = null;
   let disposed = false;
@@ -261,6 +263,7 @@ export function connectProgressPort(
     essenceByRarity?: EssenceBalances;
     walletBalance?: WalletBalanceInfo;
     alerts?: WatchlistAlert[];
+    lineups?: CurrentLineupEntry[];
   }) => {
     if (msg.type === "SCAN_PROGRESS" && msg.progress) {
       onProgress(msg.progress);
@@ -290,6 +293,12 @@ export function connectProgressPort(
       onWatchlistAlerts
     ) {
       onWatchlistAlerts(msg.alerts);
+    } else if (
+      msg.type === "DETECTED_LINEUPS_UPDATED" &&
+      Array.isArray(msg.lineups) &&
+      onLineupsUpdated
+    ) {
+      onLineupsUpdated(msg.lineups);
     }
   };
 

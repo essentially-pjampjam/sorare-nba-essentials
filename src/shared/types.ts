@@ -250,8 +250,12 @@ export type ProjectionSource =
 export type LineupFormat =
   | "champion_16"
   | "contender_11"
+  | "arena_champion_15"
+  | "arena_contender_12"
   | "daily_120_mvp"
   | "uncapped";
+
+export type LineupAgeFilter = "all" | "u23" | "veterans";
 
 export type InjuryStatus = "ACTIVE" | "DAY_TO_DAY" | "QUESTIONABLE" | "DOUBTFUL" | "OUT";
 
@@ -306,6 +310,28 @@ export interface CurrentLineupEntry {
   draft: boolean;
   cardSlugs: string[];
   captainCardSlug: string | null;
+  playerNames?: string[];
+  source?: "api" | "dom";
+}
+
+export interface LeaderboardBenchmark {
+  fixtureSlug: string;
+  fixtureName: string;
+  leaderboardSlug: string;
+  displayName: string;
+  format: LineupFormat;
+  seasonScope: "in_season" | "classic" | "arena";
+  ageScope?: LineupAgeFilter;
+  rarity: CardRarity;
+  totalEntries: number;
+  paidPlaces: number;
+  rewardWinRatePct: number;
+  paidCutoffScore: number | null;
+  top20Score: number | null;
+  top5Score: number | null;
+  podiumScore: number | null;
+  top1Score: number | null;
+  podSize?: number;
 }
 
 export interface So5FixtureSummary {
@@ -341,6 +367,7 @@ export interface GalleryResult {
   commonCards: GalleryCard[];
   fixtures: So5FixtureSummary[];
   currentLineups: CurrentLineupEntry[];
+  leaderboardBenchmarks?: LeaderboardBenchmark[];
   injuriesByName: Record<string, InjuryReportEntry>;
   gamesPerTeam: Record<string, number>;
   scheduleByTeam?: Record<string, TeamSlateSchedule>;
@@ -576,6 +603,10 @@ export type BackgroundRequest =
   | {
       type: "DETECTED_ESSENCE_FROM_CONTENT";
       balances: Partial<EssenceBalances>;
+    }
+  | {
+      type: "DETECTED_LINEUPS_FROM_CONTENT";
+      lineups: CurrentLineupEntry[];
     };
 
 export type BackgroundResponse<T = unknown> =

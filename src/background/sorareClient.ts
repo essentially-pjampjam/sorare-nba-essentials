@@ -22,6 +22,9 @@ import type {
   Currency,
   CurrentLineupEntry,
   GalleryCard,
+  LeaderboardBenchmark,
+  LineupAgeFilter,
+  LineupFormat,
   MissingSlot,
   NbaPosition,
   QuestCardSummary,
@@ -985,6 +988,7 @@ export class SorareClient {
     commonCards: GalleryCard[];
     fixtures: So5FixtureSummary[];
     currentLineups: CurrentLineupEntry[];
+    leaderboardBenchmarks: LeaderboardBenchmark[];
   }> {
     const useFast = this.hasApiKey();
     const proExtraFields = useFast
@@ -1001,7 +1005,12 @@ export class SorareClient {
                 draft
                 so5Leaderboard { slug displayName }
               }`
-      : "";
+      : `
+              openedSo5Lineups {
+                id
+                name
+                draft
+              }`;
 
     const buildCardsQuery = (raritiesLiteral: string) => `
       query GalleryAndFixtures($slug: String!, $first: Int!, $after: String) {
@@ -1038,7 +1047,7 @@ export class SorareClient {
           }
         }
         so5 {
-          featuredSo5Fixtures(sport: NBA, first: 3) {
+          featuredSo5Fixtures(sport: NBA, first: 4) {
             slug
             displayName
             cutOffDate
@@ -1080,7 +1089,7 @@ export class SorareClient {
         id: string;
         name: string | null;
         draft: boolean;
-        so5Leaderboard: { slug: string; displayName: string } | null;
+        so5Leaderboard?: { slug: string; displayName: string } | null;
       }>;
     }
 
@@ -1096,7 +1105,7 @@ export class SorareClient {
       };
     }
 
-    const pageSize = useFast ? 50 : 15;
+    const pageSize = useFast ? 50 : 10;
     const cards: GalleryCard[] = [];
     const commonCards: GalleryCard[] = [];
     let fixtures: So5FixtureSummary[] = [];
@@ -1118,6 +1127,12 @@ export class SorareClient {
           if (!existing.cardSlugs.includes(n.slug)) {
             existing.cardSlugs.push(n.slug);
           }
+          if (
+            existing.playerNames &&
+            !existing.playerNames.includes(n.anyPlayer.displayName)
+          ) {
+            existing.playerNames.push(n.anyPlayer.displayName);
+          }
         } else {
           lineupsById.set(ln.id, {
             id: ln.id,
@@ -1126,7 +1141,9 @@ export class SorareClient {
             leaderboardName: ln.so5Leaderboard?.displayName ?? ln.name ?? "Sorare Pro",
             draft: ln.draft,
             cardSlugs: [n.slug],
+            playerNames: [n.anyPlayer.displayName],
             captainCardSlug: null,
+            source: "api",
           });
         }
       }
@@ -1172,8 +1189,9 @@ export class SorareClient {
     // 1) Pro Cards (Limited / Rare / Super Rare / Unique)
     let after: string | null = null;
     let pages = 0;
+    const maxProPages = useFast ? 4 : 6;
     const proQuery = buildCardsQuery("limited, rare, super_rare, unique");
-    while (pages < 4) {
+    while (pages < maxProPages) {
       pages += 1;
       const data: Resp = await this.postGraphQL<Resp>(
         proQuery,
@@ -1220,12 +1238,276 @@ export class SorareClient {
       commonAfter = data.user.cards.pageInfo.endCursor;
     }
 
+    const closedFixture = fixtures.find((f) => f.aasmState === "closed") ?? null;
+    let leaderboardBenchmarks: LeaderboardBenchmark[] = [];
+    if (closedFixture) {
+      try {
+        leaderboardBenchmarks = await this.fetchClosedLeaderboardBenchmarks(
+          closedFixture.slug,
+          closedFixture.displayName,
+          "limited",
+          signal,
+        );
+      } catch {
+        // Non-fatal: lineup builder falls back cleanly to static targets
+      }
+    }
+
     return {
       cards,
       commonCards,
       fixtures,
       currentLineups: Array.from(lineupsById.values()),
+      leaderboardBenchmarks,
     };
+  }
+
+  /**
+   * Fetches real closed-Gameweek field counts, paid places, and exact cutoff scores
+   * across In-Season, Classic, and Arena rooms so win odds & entry recommendations
+   * reflect live Sorare NBA competition difficulty rather than static estimates.
+   */
+  async fetchClosedLeaderboardBenchmarks(
+    fixtureSlug: string,
+    fixtureName: string,
+    rarity: CardRarity = "limited",
+    signal?: AbortSignal,
+  ): Promise<LeaderboardBenchmark[]> {
+    const listQuery = `
+      query ClosedFixtureBoards($slug: String!) {
+        so5 {
+          so5Fixture(slug: $slug) {
+            slug
+            so5Leaderboards {
+              slug
+              displayName
+              rarityType
+              so5LineupsCount
+              rewardsConfig {
+                ranking { ranks }
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    interface RawLb {
+      slug: string;
+      displayName: string;
+      rarityType: string | null;
+      so5LineupsCount: number | null;
+      rewardsConfig?: {
+        ranking?: Array<{ ranks?: number | null }>;
+      } | null;
+    }
+
+    interface ListResp {
+      so5: {
+        so5Fixture: {
+          slug: string;
+          so5Leaderboards: RawLb[];
+        } | null;
+      };
+    }
+
+    const listResp = await this.postGraphQL<ListResp>(
+      listQuery,
+      { slug: fixtureSlug },
+      `benchmarks_list_v1:${fixtureSlug}:${rarity}`,
+      signal,
+    );
+
+    const allBoards = listResp.so5?.so5Fixture?.so5Leaderboards ?? [];
+    const suffixRarity = rarity.toLowerCase();
+
+    interface TargetAgg {
+      key: string;
+      format: LineupFormat;
+      seasonScope: "in_season" | "classic" | "arena";
+      ageScope: LineupAgeFilter;
+      displayName: string;
+      sampleSlug: string;
+      sampleTotal: number;
+      samplePaid: number;
+      totalEntries: number;
+      paidPlaces: number;
+      isPod: boolean;
+    }
+
+    const aggMap = new Map<string, TargetAgg>();
+
+    const recordAgg = (
+      key: string,
+      lb: RawLb,
+      format: LineupFormat,
+      seasonScope: "in_season" | "classic" | "arena",
+      ageScope: LineupAgeFilter,
+      isPod: boolean,
+    ) => {
+      const entries = Math.max(0, Number(lb.so5LineupsCount ?? 0) || 0);
+      if (entries <= 0) return;
+      const paid = (lb.rewardsConfig?.ranking ?? []).reduce(
+        (sum, r) => sum + Math.max(0, Number(r.ranks ?? 0) || 0),
+        0,
+      );
+      const existing = aggMap.get(key);
+      if (existing) {
+        existing.totalEntries += entries;
+        existing.paidPlaces += paid;
+        if (entries > existing.sampleTotal) {
+          existing.sampleSlug = lb.slug;
+          existing.sampleTotal = entries;
+          existing.samplePaid = paid;
+        }
+      } else {
+        aggMap.set(key, {
+          key,
+          format,
+          seasonScope,
+          ageScope,
+          displayName: lb.displayName,
+          sampleSlug: lb.slug,
+          sampleTotal: entries,
+          samplePaid: paid,
+          totalEntries: entries,
+          paidPlaces: paid,
+          isPod,
+        });
+      }
+    };
+
+    for (const lb of allBoards) {
+      if ((lb.rarityType ?? "").toLowerCase() !== suffixRarity) continue;
+      const s = lb.slug.toLowerCase();
+      if (s.endsWith(`-nba_${suffixRarity}_in_season_champion`)) {
+        recordAgg("in_champ", lb, "champion_16", "in_season", "all", false);
+      } else if (s.endsWith(`-nba_${suffixRarity}_champion`)) {
+        recordAgg("cl_champ", lb, "champion_16", "classic", "all", false);
+      } else if (s.endsWith(`-nba_${suffixRarity}_in_season_contender`)) {
+        recordAgg("in_cont", lb, "contender_11", "in_season", "all", false);
+      } else if (s.endsWith(`-nba_${suffixRarity}_contender`)) {
+        recordAgg("cl_cont", lb, "contender_11", "classic", "all", false);
+      } else if (s.includes(`-nba_${suffixRarity}_arena_75-`)) {
+        recordAgg("ar_cont", lb, "arena_contender_12", "arena", "all", true);
+      } else if (s.includes(`-nba_${suffixRarity}_arena_140-`)) {
+        recordAgg("ar_champ", lb, "arena_champion_15", "arena", "all", true);
+      } else if (s.includes(`-nba_${suffixRarity}_arena_140_under_twenty_one-`)) {
+        recordAgg("ar_u23", lb, "arena_champion_15", "arena", "u23", true);
+      } else if (s.includes(`-nba_${suffixRarity}_arena_140_veterans-`)) {
+        recordAgg("ar_vet", lb, "arena_champion_15", "arena", "veterans", true);
+      } else if (s.includes(`-nba_${suffixRarity}_arena_uncapped-`)) {
+        recordAgg("ar_uncap", lb, "uncapped", "arena", "all", true);
+      }
+    }
+
+    const targets = Array.from(aggMap.values()).filter((t) => t.sampleTotal >= 5);
+    if (targets.length === 0) return [];
+
+    const encodeRankCursor = (rankOneBased: number): string => {
+      const offset = Math.max(0, Math.min(rankOneBased - 1, 50_000));
+      return btoa(
+        JSON.stringify([offset, "00000000-0000-0000-0000-000000000000"]),
+      );
+    };
+
+    const varDecls: string[] = [];
+    const variables: Record<string, string> = {};
+    const blocks: string[] = [];
+
+    targets.forEach((t, idx) => {
+      const n = t.sampleTotal;
+      const paidRank =
+        t.samplePaid > 0
+          ? Math.min(n, t.samplePaid)
+          : Math.max(1, Math.round(n * 0.2));
+      const top20Rank = Math.max(1, Math.min(n, Math.round(n * 0.2)));
+      const top5Rank = Math.max(1, Math.min(n, Math.round(n * 0.05)));
+      const podiumRank = Math.max(1, Math.min(n, Math.min(3, Math.round(n * 0.02))));
+
+      const vPaid = `p_${idx}`;
+      const vTop20 = `t20_${idx}`;
+      const vTop5 = `t5_${idx}`;
+      const vPod = `pod_${idx}`;
+      varDecls.push(`$${vPaid}: String`, `$${vTop20}: String`, `$${vTop5}: String`, `$${vPod}: String`);
+      variables[vPaid] = encodeRankCursor(paidRank);
+      variables[vTop20] = encodeRankCursor(top20Rank);
+      variables[vTop5] = encodeRankCursor(top5Rank);
+      variables[vPod] = encodeRankCursor(podiumRank);
+
+      blocks.push(`
+        ${t.key}: so5Leaderboard(slug: "${t.sampleSlug}") {
+          top1: so5Rankings(first: 1) { nodes { score } }
+          podium: so5Rankings(first: 1, after: $${vPod}) { nodes { score } }
+          top5: so5Rankings(first: 1, after: $${vTop5}) { nodes { score } }
+          top20: so5Rankings(first: 1, after: $${vTop20}) { nodes { score } }
+          paidCut: so5Rankings(first: 1, after: $${vPaid}) { nodes { score } }
+        }
+      `);
+    });
+
+    const cutoffQuery = `
+      query ClosedCutoffs(${varDecls.join(", ")}) {
+        so5 {
+          ${blocks.join("\n")}
+        }
+      }
+    `;
+
+    interface ScoreConn {
+      nodes?: Array<{ score?: number | null }>;
+    }
+    interface CutoffBoardResp {
+      top1?: ScoreConn;
+      podium?: ScoreConn;
+      top5?: ScoreConn;
+      top20?: ScoreConn;
+      paidCut?: ScoreConn;
+    }
+    interface CutoffResp {
+      so5: Record<string, CutoffBoardResp | null>;
+    }
+
+    const cutoffsResp = await this.postGraphQL<CutoffResp>(
+      cutoffQuery,
+      variables,
+      `benchmarks_cutoffs_v1:${fixtureSlug}:${rarity}`,
+      signal,
+    );
+
+    const readScore = (conn?: ScoreConn): number | null => {
+      const val = conn?.nodes?.[0]?.score;
+      return typeof val === "number" && Number.isFinite(val)
+        ? Math.round(val * 10) / 10
+        : null;
+    };
+
+    return targets.map((t) => {
+      const b = cutoffsResp.so5?.[t.key];
+      const winRate =
+        t.totalEntries > 0
+          ? Math.round((t.paidPlaces / t.totalEntries) * 1000) / 10
+          : 0;
+      return {
+        fixtureSlug,
+        fixtureName,
+        leaderboardSlug: t.sampleSlug,
+        displayName: t.displayName,
+        format: t.format,
+        seasonScope: t.seasonScope,
+        ageScope: t.ageScope,
+        rarity,
+        totalEntries: t.totalEntries,
+        paidPlaces: t.paidPlaces,
+        rewardWinRatePct: winRate,
+        paidCutoffScore: readScore(b?.paidCut),
+        top20Score: readScore(b?.top20),
+        top5Score: readScore(b?.top5),
+        podiumScore: readScore(b?.podium),
+        top1Score: readScore(b?.top1),
+        podSize: t.isPod ? t.sampleTotal : undefined,
+      };
+    });
   }
 
   /**
@@ -1657,16 +1939,18 @@ export class SorareClient {
       groupPageSize: number,
       maxHydrate: number,
       tag: string,
+      sortField: "price" | "best_value" = "price",
+      sortDir: "ASC" | "DESC" = "ASC",
     ): Promise<void> => {
       if (signal?.aborted) return;
       const groupResp = await this.postGraphQL<GroupedIdsResp>(
         groupedDiscoverQuery,
         {
           filters: [...baseFilters, ...extraFilters],
-          sorts: [{ field: "price", direction: "ASC" }],
+          sorts: [{ field: sortField, direction: sortDir }],
           pageSize: groupPageSize,
         },
-        `bargains_grp_v7:${rarity}:${tag}:${groupPageSize}`,
+        `bargains_grp_v8:${rarity}:${tag}:${sortField}:${sortDir}:${groupPageSize}`,
         signal,
       );
 
@@ -1855,7 +2139,23 @@ export class SorareClient {
       return Array.from(bySlug.values());
     }
 
-    // mode === "instant_value": unique cheap players across all seasons, 2026 In-Season, and 1ST Primary Offers
+    // mode === "instant_value": best-value starters + unique cheap players across all seasons, 2026 In-Season, and 1ST Primary Offers
+    await runGroupedBuys(
+      "secondary_instant",
+      [
+        {
+          field: "sale.type",
+          operator: "EQUAL",
+          values: [{ stringValue: "SingleSaleOffer" }],
+        },
+      ],
+      useFast ? 40 : 30,
+      useFast ? 36 : 24,
+      "sso_best_val_all",
+      "best_value",
+      "DESC",
+    );
+
     await runGroupedBuys(
       "secondary_instant",
       [
@@ -1866,7 +2166,7 @@ export class SorareClient {
         },
       ],
       useFast ? 40 : 25,
-      useFast ? 36 : 12,
+      useFast ? 36 : 24,
       "sso_all",
     );
 
@@ -1884,9 +2184,11 @@ export class SorareClient {
           values: [{ stringValue: activeSeasonStr }],
         },
       ],
-      useFast ? 40 : 25,
-      useFast ? 36 : 12,
+      useFast ? 40 : 30,
+      useFast ? 36 : 24,
       `sso_${activeSeasonStr}`,
+      "best_value",
+      "DESC",
     );
 
     await runGroupedBuys(

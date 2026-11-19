@@ -3,8 +3,16 @@
  * 1. Detects the viewed/logged-in Sorare username and Craft pages across SPA navigations.
  * 2. Injects a Liquid Glass bottom-right launcher pill displaying the user's logo.png.
  * 3. Supports optional auto-open on Craft / Sorare pages on first user gesture.
- * Self-contained (zero external imports) so MV3 runs it cleanly as a classic script.
+ * Imports only ./sorareDomParser (inlined by Rollup into a classic zero-import/zero-export IIFE).
  */
+import {
+  classifySorareContext as classifyContextFromUrl,
+  extractOpenLineupsFromDocument,
+  isCraftRoute as isCraftRouteUrl,
+  normalizeNameForMatch,
+  type DomDetectedLineup,
+} from "./sorareDomParser";
+
 (() => {
   const RESERVED_SEGMENTS = new Set([
     "nba",
@@ -41,6 +49,12 @@
     "pro",
     "set",
     "arcade",
+    "series",
+    "squad",
+    "boards",
+    "cash",
+    "prev",
+    "ongoing",
     "leaderboards",
     "gameplay",
     "daily",
@@ -66,6 +80,7 @@
   let lastCraftState: boolean | null = null;
   let lastSentEssenceSig = "";
   let lastSentWalletSig = "";
+  let lastSentLineupsSig = "";
   let currentDetected: string | null = null;
   let currentRouteKind: "craft" | "quests" | "lineups" | "collections" | "market" | "general" = "general";
   let badgeSubEl: HTMLElement | null = null;
@@ -87,15 +102,7 @@
   }
 
   function isCraftRoute(href: string = window.location.href): boolean {
-    const lower = href.toLowerCase();
-    if (lower.includes("/boards/") || lower.includes("/arena/")) {
-      return false;
-    }
-    return (
-      lower.includes("/craft") ||
-      lower.includes("/card-factory") ||
-      /\/(?:nba|football|mlb)\/essence(?:[/?#]|$)/.test(lower)
-    );
+    return isCraftRouteUrl(href);
   }
 
   function hasCollectModalOpen(): boolean {
@@ -112,21 +119,7 @@
   function classifySorareContext(
     href: string = window.location.href,
   ): "craft" | "quests" | "lineups" | "collections" | "market" | "general" {
-    if (isCraftRoute(href)) return "craft";
-    if (hasCollectModalOpen()) return "quests";
-    const lower = href.toLowerCase();
-    if (
-      lower.includes("/nba/play") ||
-      lower.includes("/nba/lineups") ||
-      lower.includes("/nba/pro") ||
-      lower.includes("/nba/set") ||
-      lower.includes("/nba/arcade")
-    ) {
-      return "lineups";
-    }
-    if (lower.includes("/collections")) return "collections";
-    if (lower.includes("/market") || lower.includes("/nba/cards")) return "market";
-    return "general";
+    return classifyContextFromUrl(href, hasCollectModalOpen());
   }
 
   function detectUsername(): string | null {
@@ -287,6 +280,10 @@
     return { cashAmount, cashSymbol, ethAmount, cluesCount };
   }
 
+  function detectOpenLineupsFromDom(): DomDetectedLineup[] {
+    return extractOpenLineupsFromDocument(document, window.location.href);
+  }
+
   function isContextValid(): boolean {
     try {
       return Boolean(chrome.runtime?.id);
@@ -389,6 +386,22 @@
           chrome.runtime.sendMessage({
             type: "DETECTED_WALLET_FROM_CONTENT",
             wallet,
+          });
+        } catch {
+          // Ignore
+        }
+      }
+    }
+
+    const domLineups = detectOpenLineupsFromDom();
+    if (domLineups.length > 0) {
+      const lSig = JSON.stringify(domLineups);
+      if (lSig !== lastSentLineupsSig) {
+        lastSentLineupsSig = lSig;
+        try {
+          chrome.runtime.sendMessage({
+            type: "DETECTED_LINEUPS_FROM_CONTENT",
+            lineups: domLineups,
           });
         } catch {
           // Ignore
@@ -823,6 +836,7 @@
               slots?: LineupHighlightSlot[];
               formatLabel?: string;
               projectedTotal?: number;
+              autoHighlightFirst?: boolean;
               createdAt?: number;
             }
           | undefined;
@@ -839,6 +853,7 @@
             pending.formatLabel ?? "Lineup",
             pending.projectedTotal ?? 0,
             pending.slots,
+            Boolean(pending.autoHighlightFirst),
           );
         }
       });
@@ -964,6 +979,19 @@
     }
   }
 
+  const handleSpaNavigation = () => {
+    if (window.location.href !== lastHref) {
+      lastHref = window.location.href;
+      autoOpenedThisRoute = false;
+      checkPendingLineupHud();
+    }
+    reportContext();
+    void decorateSorareCardTiles();
+  };
+
+  window.addEventListener("popstate", handleSpaNavigation);
+  window.addEventListener("hashchange", handleSpaNavigation);
+
   const observer = new MutationObserver(() => {
     if (!document.getElementById("jamassist-sorare-root")) {
       injectBottomLauncher();
@@ -971,13 +999,7 @@
     if (observerTimer !== null) return;
     observerTimer = window.setTimeout(() => {
       observerTimer = null;
-      if (window.location.href !== lastHref) {
-        lastHref = window.location.href;
-        autoOpenedThisRoute = false;
-        checkPendingLineupHud();
-      }
-      reportContext();
-      void decorateSorareCardTiles();
+      handleSpaNavigation();
     }, 300);
   });
 
@@ -1014,9 +1036,9 @@
 
   function findDrawerSearchInput(): HTMLInputElement | null {
     const containers = Array.from(
-      document.querySelectorAll('[role="dialog"], aside, [class*="drawer" i], [class*="modal" i], main'),
-    );
-    const roots = containers.length > 0 ? containers : [document.body];
+      document.querySelectorAll('[role="dialog"], [class*="drawer" i], [class*="modal" i], main'),
+    ).filter(isElementVisible);
+    const roots = containers.length > 0 ? [...containers, document.body] : [document.body];
     for (const root of roots) {
       const inputs = Array.from(
         root.querySelectorAll('input[type="search"], input[type="text"], input:not([type])'),
@@ -1062,24 +1084,49 @@
     return candidate;
   }
 
+  function containsExactSlug(haystack: string, slug: string): boolean {
+    let idx = haystack.indexOf(slug);
+    while (idx !== -1) {
+      const before = idx > 0 ? haystack[idx - 1] : "";
+      const after = haystack[idx + slug.length] ?? "";
+      const beforeOk = !before || !/[a-z0-9-]/i.test(before);
+      const afterOk = !after || !/[a-z0-9-]/i.test(after);
+      if (beforeOk && afterOk) return true;
+      idx = haystack.indexOf(slug, idx + 1);
+    }
+    return false;
+  }
+
   function findCardTile(slot: LineupHighlightSlot): HTMLElement | null {
     const slugLower = slot.cardSlug.trim().toLowerCase();
+    const normName = normalizeNameForMatch(slot.playerName);
+    const playerSlug = slugLower
+      ? slugLower.replace(/-\d{4}-(?:common|limited|rare|super_rare|unique)(?:-\d+)?$/i, "")
+      : normName
+        ? normName.replace(/\s+/g, "-")
+        : "";
+
     const drawerRoots = Array.from(
-      document.querySelectorAll('[role="dialog"], aside, [class*="drawer" i], [class*="modal" i]'),
-    );
-    const searchRoots = drawerRoots.length > 0 ? drawerRoots : [document.body];
+      document.querySelectorAll('[role="dialog"], [class*="drawer" i], [class*="modal" i]'),
+    ).filter(isElementVisible);
+    const searchRoots =
+      drawerRoots.length > 0 ? [...drawerRoots, document.body] : [document.body];
 
     if (slugLower) {
       for (const root of searchRoots) {
-        const mediaOrLinks = root.querySelectorAll("img[src], a[href], [data-card-slug]");
+        const mediaOrLinks = root.querySelectorAll(
+          "img[src], a[href], [data-card-slug]",
+        );
         for (const node of Array.from(mediaOrLinks)) {
+          if (!isElementVisible(node)) continue;
           const src = (node.getAttribute("src") ?? "").toLowerCase();
           const href = (node.getAttribute("href") ?? "").toLowerCase();
           const dataSlug = (node.getAttribute("data-card-slug") ?? "").toLowerCase();
-          if (
-            (src.includes(slugLower) || href.includes(slugLower) || dataSlug === slugLower) &&
-            isElementVisible(node)
-          ) {
+          const matchesSlug =
+            containsExactSlug(src, slugLower) ||
+            containsExactSlug(href, slugLower) ||
+            dataSlug === slugLower;
+          if (matchesSlug) {
             const tile = pickClickableContainer(node);
             if (tile) return tile;
           }
@@ -1087,16 +1134,57 @@
       }
     }
 
-    const nameLower = slot.playerName.trim().toLowerCase();
-    if (nameLower) {
+    if (playerSlug || normName) {
       for (const root of searchRoots) {
-        const clickables = root.querySelectorAll('button, a, [role="button"]');
+        const mediaOrLinks = root.querySelectorAll(
+          "img[src], img[alt], a[href], [data-card-slug], [aria-label]",
+        );
+        for (const node of Array.from(mediaOrLinks)) {
+          if (!isElementVisible(node)) continue;
+          const src = (node.getAttribute("src") ?? "").toLowerCase();
+          const href = (node.getAttribute("href") ?? "").toLowerCase();
+          const dataSlug = (node.getAttribute("data-card-slug") ?? "").toLowerCase();
+          const altNorm = normalizeNameForMatch(node.getAttribute("alt") ?? "");
+          const ariaNorm = normalizeNameForMatch(node.getAttribute("aria-label") ?? "");
+          const matchesPlayerSlug = Boolean(
+            playerSlug &&
+              (src.includes(playerSlug) || href.includes(playerSlug) || dataSlug.startsWith(playerSlug)),
+          );
+          const matchesAltOrAria = Boolean(
+            normName && (altNorm.includes(normName) || ariaNorm.includes(normName)),
+          );
+          if (matchesPlayerSlug || matchesAltOrAria) {
+            const tile = pickClickableContainer(node);
+            if (tile) return tile;
+          }
+        }
+      }
+    }
+
+    if (normName) {
+      const compactName = normName.replace(/\s+/g, "");
+      for (const root of searchRoots) {
+        const clickables = root.querySelectorAll(
+          'button, a, [role="button"], article, [data-testid*="card" i]',
+        );
         for (const node of Array.from(clickables)) {
           if (!isElementVisible(node)) continue;
-          const text = (node.textContent ?? "").toLowerCase();
-          if (text.includes(nameLower)) {
+          const nodeNorm = normalizeNameForMatch(node.textContent ?? "");
+          const nodeCompact = nodeNorm.replace(/\s+/g, "");
+          const hasImgMatch = Array.from(
+            node.querySelectorAll("img[alt], [aria-label]"),
+          ).some((child) => {
+            const cAlt = normalizeNameForMatch(child.getAttribute("alt") ?? "");
+            const cAria = normalizeNameForMatch(child.getAttribute("aria-label") ?? "");
+            return cAlt.includes(normName) || cAria.includes(normName);
+          });
+          if (
+            nodeNorm.includes(normName) ||
+            (compactName.length >= 5 && nodeCompact.includes(compactName)) ||
+            hasImgMatch
+          ) {
             const rect = node.getBoundingClientRect();
-            if (rect.height >= 40 && rect.height <= 360) return node;
+            if (rect.height >= 40 && rect.height <= 420) return node;
           }
         }
       }
@@ -1120,6 +1208,7 @@
     formatLabel: string,
     projectedTotal: number,
     incomingSlots?: LineupHighlightSlot[],
+    autoHighlightFirst = false,
   ): void {
     clearActiveTileHighlight();
     const existing = document.getElementById("jamassist-lineup-hud");
@@ -1363,6 +1452,26 @@
     hud.append(hdr, list, footer);
     shadow.append(style, hud);
     document.body.appendChild(host);
+
+    if (autoHighlightFirst && resolvedSlots[0]) {
+      const firstSlot = resolvedSlots[0];
+      const immediateTile = findCardTile(firstSlot);
+      if (immediateTile) {
+        highlightTile(immediateTile);
+        statusEl.textContent = `Highlighted ${firstSlot.playerName}.`;
+      } else {
+        locateSlot(firstSlot, false);
+        window.setTimeout(() => {
+          if (!activeHighlightedTile) {
+            const retryTile = findCardTile(firstSlot);
+            if (retryTile) {
+              highlightTile(retryTile);
+              statusEl.textContent = `Highlighted ${firstSlot.playerName}.`;
+            }
+          }
+        }, 350);
+      }
+    }
   }
 
   try {
@@ -1372,6 +1481,7 @@
       formatLabel?: string;
       projectedTotal?: number;
       slots?: unknown[];
+      autoHighlightFirst?: boolean;
     }) => {
       if (
         msg.type === "SHOW_LINEUP_CHECKLIST" &&
@@ -1401,6 +1511,7 @@
           typeof msg.formatLabel === "string" ? msg.formatLabel : "Lineup",
           safeTotal,
           safeSlots,
+          Boolean(msg.autoHighlightFirst),
         );
       }
     });

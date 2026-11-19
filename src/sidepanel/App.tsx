@@ -400,6 +400,18 @@ export function App() {
           watchlistAlerts,
         }));
       },
+      (domLineups) => {
+        setGalleryResult((prev) => {
+          if (!prev) return prev;
+          const apiOnly = (prev.currentLineups ?? []).filter(
+            (l) => l.source !== "dom",
+          );
+          return {
+            ...prev,
+            currentLineups: [...apiOnly, ...domLineups],
+          };
+        });
+      },
     );
 
     void (async () => {
@@ -1414,7 +1426,7 @@ export function App() {
                   activeRarity,
                   "instant_value",
                   settings.currency,
-                  false,
+                  true,
                   false,
                 )
               }

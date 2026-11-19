@@ -25,7 +25,7 @@ import {
   Wand2,
   Zap,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   buildSetTeams,
   rankDailyPickerCandidates,
@@ -45,13 +45,18 @@ import {
   type LineupSlotPick,
 } from "../../calculators/lineupOptimizerMath";
 import { buildTeamOutStarMap } from "../../calculators/questOptimizerMath";
-import { BOOSTING_GUIDE_RULES, NBA_POSITION_LABELS } from "../../shared/constants";
+import {
+  BOOSTING_GUIDE_RULES,
+  NBA_COMPETITION_DIRECTORY,
+  NBA_POSITION_LABELS,
+} from "../../shared/constants";
 import type {
   BargainListing,
   BargainsResult,
   Currency,
   GalleryResult,
   InjuryStatus,
+  LineupAgeFilter,
   LineupFormat,
   ProjectionSource,
   Rarity,
@@ -84,7 +89,8 @@ interface LineupsTabProps {
 const FORMAT_OPTIONS: Array<{ id: LineupFormat; label: string; sub: string }> = [
   { id: "champion_16", label: "Champion", sub: "16★ Cap" },
   { id: "contender_11", label: "Contender", sub: "11★ Cap" },
-  { id: "daily_120_mvp", label: "Daily Pickup", sub: "120 + MVP" },
+  { id: "arena_champion_15", label: "Arena Champ", sub: "15★ Cap" },
+  { id: "arena_contender_12", label: "Arena Cont", sub: "12★ Cap" },
   { id: "uncapped", label: "Uncapped", sub: "Raw Best" },
 ];
 
@@ -175,6 +181,7 @@ export function LineupsTab({
 }: LineupsTabProps) {
   const [arenaMode, setArenaMode] = useState<"pro" | "set_common">("pro");
   const [format, setFormat] = useState<LineupFormat>("contender_11");
+  const [ageFilter, setAgeFilter] = useState<LineupAgeFilter>("all");
   const [rarityScope, setRarityScope] = useState<Rarity | "ALL">(activeRarity);
   const [excludeOut, setExcludeOut] = useState(true);
   const [excludeQuestionable, setExcludeQuestionable] = useState(false);
@@ -197,6 +204,8 @@ export function LineupsTab({
   const [customDraft, setCustomDraft] = useState(customProjectionsRaw);
   const [copiedRank, setCopiedRank] = useState<number | null>(null);
   const [buildSeed, setBuildSeed] = useState(0);
+  const [rebuildNotice, setRebuildNotice] = useState<string | null>(null);
+  const lineupsResultRef = useRef<HTMLDivElement>(null);
   const [budgetCents, setBudgetCents] = useState<number>(1000);
   const [includeOwnedInBudget, setIncludeOwnedInBudget] = useState<boolean>(true);
 
@@ -232,6 +241,9 @@ export function LineupsTab({
     ).length;
   }, [gallery]);
 
+  const benchmarkSeasonScope: "in_season" | "classic" =
+    seasonRule === "any_season" ? "classic" : "in_season";
+
   const formatRec = useMemo(() => {
     if (!gallery) return null;
     return recommendBestFormat(gallery.cards, {
@@ -245,9 +257,14 @@ export function LineupsTab({
       inSeasonOnly: strictInSeasonOnly,
       minInSeasonCards,
       disjointAcrossLineups: disjointLineups,
+      ageFilter,
       captainBonusPct: 0,
+      benchmarks: gallery.leaderboardBenchmarks,
+      benchmarkSeasonScope,
     });
   }, [
+    ageFilter,
+    benchmarkSeasonScope,
     customProjectionsRaw,
     disjointLineups,
     excludeOut,
@@ -273,8 +290,11 @@ export function LineupsTab({
       minInSeasonCards,
       disjointAcrossLineups: false,
       captainBonusPct: 0,
+      benchmarks: gallery.leaderboardBenchmarks,
+      benchmarkSeasonScope,
     });
   }, [
+    benchmarkSeasonScope,
     customProjectionsRaw,
     excludeOut,
     excludeQuestionable,
@@ -338,12 +358,17 @@ export function LineupsTab({
       inSeasonOnly: strictInSeasonOnly,
       minInSeasonCards,
       disjointAcrossLineups: disjointLineups,
+      ageFilter,
       excludeSubmittedCards,
       excludedCardSlugs,
       maxLineups: 3,
       captainBonusPct: 0,
+      benchmarks: gallery.leaderboardBenchmarks,
+      benchmarkSeasonScope,
     });
   }, [
+    ageFilter,
+    benchmarkSeasonScope,
     buildSeed,
     customProjectionsRaw,
     disjointLineups,
@@ -411,9 +436,12 @@ export function LineupsTab({
       excludeSubmittedCards,
       excludedCardSlugs,
       captainBonusPct: 0,
+      benchmarks: gallery.leaderboardBenchmarks,
+      benchmarkSeasonScope,
     });
   }, [
     arenaMode,
+    benchmarkSeasonScope,
     buildSeed,
     customProjectionsRaw,
     excludeOut,
@@ -626,10 +654,23 @@ export function LineupsTab({
                   <span className="rounded border border-sky-400/35 bg-sky-500/15 px-1 text-[9px] font-bold uppercase text-sky-200">
                     Optimal EV
                   </span>
+                  {formatRec.fieldPaidPct !== undefined && (
+                    <span className="rounded border border-emerald-400/35 bg-emerald-500/15 px-1 text-[9px] font-semibold text-emerald-200">
+                      {formatRec.fieldPaidPct}% Paid
+                      {formatRec.paidCutoffScore
+                        ? ` • Cut ~${Math.round(formatRec.paidCutoffScore)}`
+                        : ""}
+                    </span>
+                  )}
                 </div>
                 <p className="mt-0.5 text-[11px] leading-relaxed text-slate-300">
                   {formatRec.reason}
                 </p>
+                {formatRec.inSeasonVsClassicTip && (
+                  <p className="mt-1 text-[10px] font-medium text-amber-300">
+                    {formatRec.inSeasonVsClassicTip}
+                  </p>
+                )}
               </div>
             </div>
             {format !== formatRec.recommendedFormat && (
@@ -647,8 +688,11 @@ export function LineupsTab({
 
       {/* Current Submitted/Open Lineups & Upgrade Swaps */}
       {arenaMode === "pro" && gallery && (
-        <details className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
-          <summary className="flex w-full items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
+        <details
+          open={currentLineupComparisons.length > 0}
+          className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]"
+        >
+          <summary className="flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
             <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
               <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-sky-400" />
               <SlidersHorizontal className="h-3.5 w-3.5 text-sky-400" />
@@ -661,25 +705,51 @@ export function LineupsTab({
 
           <div className="space-y-2 border-t border-white/8 bg-[#0b101b] p-3 text-[11px]">
             {currentLineupComparisons.length === 0 ? (
-              <div className="text-slate-400">
-                {gallery.cards.some((c) => c.powerBreakdown !== undefined)
-                  ? "No active open SO5 Pro lineups found on your cards for this Game Week."
-                  : "Enter your local Sorare API Key (FAST mode) or hit Refresh to inspect your live submitted SO5 lineups alongside optimal swap upgrades."}
+              <div className="space-y-2 text-slate-400">
+                <p className="leading-relaxed">
+                  No pre-lock SO5 lineups returned by Sorare&apos;s public API yet. Open your Sorare Arena or Play page in Chrome while this extension is active to sync your live open lineups automatically.
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void openInActiveTab("https://sorare.com/nba/arena")
+                    }
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-gradient-to-r from-sky-400 to-emerald-400 px-2.5 py-1.5 text-[10px] font-bold text-slate-950 shadow-sm hover:from-sky-300 hover:to-emerald-300"
+                  >
+                    Open Sorare Arena to Sync
+                    <ExternalLink className="h-3 w-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void openInActiveTab("https://sorare.com/nba/play")
+                    }
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-white/15 bg-[#111726] px-2.5 py-1.5 text-[10px] font-semibold text-slate-200 hover:border-white/30"
+                  >
+                    Open Pro Play
+                    <ExternalLink className="h-3 w-3" />
+                  </button>
+                </div>
               </div>
             ) : (
               currentLineupComparisons.map((cmp) => {
                 const lowerName = cmp.entry.leaderboardName.toLowerCase();
-                const essTarget = lowerName.includes("contender")
-                  ? 105
-                  : lowerName.includes("daily")
-                    ? 135
-                    : 175;
+                const fallbackTarget = lowerName.includes("contender")
+                  ? 145
+                  : lowerName.includes("champion")
+                    ? 205
+                    : 155;
+                const essTarget = Math.round(cmp.paidCutoffScore ?? fallbackTarget);
                 const progressPct = Math.min(
                   100,
-                  Math.round((cmp.currentProjected / essTarget) * 100),
+                  Math.round((cmp.currentProjected / Math.max(1, essTarget)) * 100),
+                );
+                const activeSlugs = new Set(
+                  cmp.resolvedCardSlugs ?? cmp.entry.cardSlugs,
                 );
                 const submittedCards = gallery.cards.filter((gc) =>
-                  cmp.entry.cardSlugs.includes(gc.slug),
+                  activeSlugs.has(gc.slug),
                 );
                 const hotCount = submittedCards.filter(
                   (gc) => gc.l5 !== null && gc.l10 !== null && gc.l5 - gc.l10 >= 3.5,
@@ -719,10 +789,15 @@ export function LineupsTab({
                   className="rounded-xl border border-white/8 bg-[#111726] p-2.5"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <div className="font-semibold text-slate-100">
-                      {cmp.entry.leaderboardName}
+                    <div className="flex flex-wrap items-center gap-1 font-semibold text-slate-100">
+                      <span>{cmp.entry.leaderboardName}</span>
+                      {cmp.entry.source === "dom" && (
+                        <span className="rounded border border-emerald-400/35 bg-emerald-500/15 px-1 text-[8.5px] font-bold text-emerald-200">
+                          Live Synced
+                        </span>
+                      )}
                       {cmp.entry.draft && (
-                        <span className="ml-1.5 rounded bg-amber-500/20 px-1 text-[9px] text-amber-300">
+                        <span className="rounded bg-amber-500/20 px-1 text-[9px] text-amber-300">
                           DRAFT
                         </span>
                       )}
@@ -747,7 +822,12 @@ export function LineupsTab({
                       />
                     </div>
                     <span className="inline-flex flex-wrap items-center gap-1">
-                      <span>{progressPct}% of {essTarget} pts Essence</span>
+                      <span>
+                        {progressPct}% of {essTarget} cut
+                        {cmp.estRank && cmp.estTotalEntries
+                          ? ` • Est. #${cmp.estRank.toLocaleString()}/${cmp.estTotalEntries.toLocaleString()}`
+                          : ""}
+                      </span>
                       <strong className={`inline-flex items-center gap-0.5 ${paceBadge.cls}`}>
                         {paceBadge.kind === "hot" ? (
                           <Flame className="h-2.5 w-2.5" />
@@ -772,6 +852,12 @@ export function LineupsTab({
                       )}
                     </span>
                   </div>
+                  {submittedCards.length > 0 && (
+                    <div className="mt-1 truncate text-[9.5px] text-slate-400">
+                      Lineup ({submittedCards.length}/5):{" "}
+                      {submittedCards.map((sc) => sc.playerName).join(" • ")}
+                    </div>
+                  )}
                   {totalSlateGames > 0 && (
                     <div className="mt-1 flex flex-wrap items-center justify-between gap-1 text-[9.5px] text-slate-400">
                       <span>
@@ -826,112 +912,6 @@ export function LineupsTab({
                 );
               })
             )}
-          </div>
-        </details>
-      )}
-
-      {/* Collapsible Boosting & Captain Optimization Guide */}
-      <details className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
-        <summary className="flex w-full items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
-          <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
-            <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-amber-400" />
-            <Flame className="h-3.5 w-3.5 text-amber-400" />
-            Best Boosting, Captain &amp; Multiplier Guide
-          </span>
-          <span className="text-[10px] text-slate-400">
-            {BOOSTING_GUIDE_RULES.length} rules
-          </span>
-        </summary>
-        <div className="space-y-1.5 border-t border-white/8 bg-[#0b101b] p-3 text-[11px]">
-          {BOOSTING_GUIDE_RULES.map((rule) => (
-            <div
-              key={rule.id}
-              className="rounded-xl border border-white/8 bg-[#111726] p-2"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-semibold text-amber-200">
-                  {rule.title}
-                </span>
-                <span className="rounded bg-amber-400/15 px-1.5 py-0.5 text-[9px] font-semibold text-amber-300">
-                  {rule.tag}
-                </span>
-              </div>
-              <p className="mt-0.5 text-[10px] leading-relaxed text-slate-400">
-                {rule.detail}
-              </p>
-            </div>
-          ))}
-        </div>
-      </details>
-
-      {/* Collapsible 4-Day Gameweek Schedule & Matchup Difficulty Grid */}
-      {arenaMode === "pro" && sortedSchedule.length > 0 && (
-        <details className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
-          <summary className="flex w-full items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
-            <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
-              <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-emerald-400" />
-              <Calendar className="h-3.5 w-3.5 text-emerald-400" />
-              4-Day Gameweek Schedule &amp; Matchups
-            </span>
-            <span className="text-[10px] text-slate-400">
-              {sortedSchedule.length} teams
-            </span>
-          </summary>
-          <div className="grid grid-cols-1 gap-1.5 border-t border-white/8 bg-[#0b101b] p-3 sm:grid-cols-2">
-            {sortedSchedule.map((tm) => (
-              <div
-                key={tm.teamSlug}
-                className="flex items-center justify-between gap-2 rounded-xl border border-white/6 bg-[#111726] px-2.5 py-1.5 text-[10px]"
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-slate-100">{tm.abbr}</span>
-                    <span
-                      className={`rounded px-1 text-[9px] font-bold ${
-                        tm.games >= 3
-                          ? "bg-emerald-500/20 text-emerald-300"
-                          : tm.games === 2
-                            ? "bg-sky-500/15 text-sky-300"
-                            : "bg-white/8 text-slate-300"
-                      }`}
-                    >
-                      {tm.games}G
-                    </span>
-                    {tm.hasBackToBack && (
-                      <span className="rounded bg-amber-400/15 px-1 text-[8.5px] font-semibold text-amber-300">
-                        B2B
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-0.5 truncate text-[9.5px] text-slate-400">
-                    {tm.matchups.join(" • ")}
-                  </div>
-                  {tm.dvpByPos && (
-                    <div className="mt-1 flex flex-wrap gap-1 text-[8.5px]">
-                      {(["G", "F", "C"] as const).map((pos) => (
-                        <span
-                          key={pos}
-                          className={`rounded border px-1 font-semibold ${dvpTagClass(tm.dvpByPos![pos])}`}
-                        >
-                          vs {pos}: {tm.dvpByPos![pos]}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <span
-                  className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold ${
-                    tm.difficultyTag === "EASY"
-                      ? "border border-emerald-400/35 bg-emerald-500/15 text-emerald-300"
-                      : tm.difficultyTag === "TOUGH"
-                        ? "border border-rose-400/35 bg-rose-500/15 text-rose-300"
-                        : "border border-white/10 bg-white/5 text-slate-300"
-                  }`}
-                >
-                  {tm.difficultyTag}
-                </span>
-              </div>
-            ))}
           </div>
         </details>
       )}
@@ -1220,7 +1200,7 @@ export function LineupsTab({
       {arenaMode === "pro" && (
         <>
           <div className="space-y-2 rounded-2xl border border-white/8 bg-[#111726] p-3">
-        <div className="grid grid-cols-4 gap-1">
+        <div className="grid grid-cols-3 gap-1 sm:grid-cols-5">
           {FORMAT_OPTIONS.map((opt) => {
             const active = format === opt.id;
             return (
@@ -1228,7 +1208,7 @@ export function LineupsTab({
                 key={opt.id}
                 type="button"
                 onClick={() => setFormat(opt.id)}
-                className={`rounded-xl border px-1.5 py-1.5 text-center transition ${
+                className={`cursor-pointer rounded-xl border px-1.5 py-1.5 text-center transition ${
                   active
                     ? "border-amber-400/50 bg-amber-400/15 text-amber-200"
                     : "border-white/8 bg-[#0b101b] text-slate-400 hover:text-slate-200"
@@ -1241,6 +1221,33 @@ export function LineupsTab({
               </button>
             );
           })}
+        </div>
+
+        {/* Arena Sub-Room Age Eligibility Filter */}
+        <div className="flex flex-wrap items-center justify-between gap-1.5 rounded-xl border border-white/8 bg-[#0b101b] px-2 py-1 text-[10px]">
+          <span className="font-medium text-slate-400">Arena Sub-Room:</span>
+          <div className="flex items-center gap-1">
+            {(
+              [
+                { id: "all", label: "All Ages" },
+                { id: "u23", label: "U23 (<=23)" },
+                { id: "veterans", label: "Veterans (30+)" },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => setAgeFilter(opt.id)}
+                className={`cursor-pointer rounded-md px-2 py-0.5 font-semibold transition ${
+                  ageFilter === opt.id
+                    ? "bg-sky-500/25 text-sky-200"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="grid grid-cols-12 gap-1.5 text-xs">
@@ -1428,12 +1435,32 @@ export function LineupsTab({
 
         <button
           type="button"
-          onClick={() => setBuildSeed((s) => s + 1)}
-          className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-b from-amber-300 to-amber-500 py-2 text-xs font-semibold text-slate-950 shadow-sm hover:from-amber-200 hover:to-amber-400"
+          onClick={() => {
+            setBuildSeed((s) => s + 1);
+            const fmtName =
+              FORMAT_OPTIONS.find((f) => f.id === format)?.label ?? format;
+            const count = built?.lineups.length ?? 0;
+            setRebuildNotice(
+              count > 0
+                ? `Rebuilt top ${count} ${fmtName} lineup${count > 1 ? "s" : ""} below`
+                : `Checked ${fmtName} pool - adjust filters above`,
+            );
+            lineupsResultRef.current?.scrollIntoView({
+              behavior: "smooth",
+              block: "nearest",
+            });
+            window.setTimeout(() => setRebuildNotice(null), 2600);
+          }}
+          className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-gradient-to-b from-amber-300 to-amber-500 py-2 text-xs font-semibold text-slate-950 shadow-sm transition hover:from-amber-200 hover:to-amber-400 active:scale-[0.99]"
         >
           <Wand2 className="h-3.5 w-3.5" />
           Auto-Build Best Pro Lineups
         </button>
+        {rebuildNotice && (
+          <div className="rounded-lg border border-emerald-400/35 bg-emerald-500/15 px-2.5 py-1 text-center text-[10.5px] font-semibold text-emerald-200">
+            {rebuildNotice}
+          </div>
+        )}
       </div>
 
       {/* 2-Player Head-to-Head Compare Matrix */}
@@ -1449,6 +1476,7 @@ export function LineupsTab({
       />
 
       {/* Suggested Top Pro Lineups */}
+      <div ref={lineupsResultRef} className="space-y-3">
       {built && built.lineups.length === 0 ? (
         <div className="rounded-xl border border-white/8 bg-[#111726] p-4 text-center text-xs text-slate-400">
           Not enough eligible cards ({built.evaluatedPool.length} available) to
@@ -1535,28 +1563,32 @@ export function LineupsTab({
 
               {/* Estimated Win Odds Strip */}
               <div className="mb-2.5 grid grid-cols-3 gap-1.5 text-center text-[10px]">
-                <div className="rounded-lg border border-white/6 bg-[#0b101b] py-1">
-                  <div className="text-slate-400">
-                    Essence (≥{lineup.odds.essenceTarget})
+                <div className="rounded-lg border border-white/6 bg-[#0b101b] px-1 py-1">
+                  <div className="truncate text-slate-400">
+                    {lineup.odds.paidLabel ?? "Essence"} (≥{lineup.odds.essenceTarget})
                   </div>
                   <div className="font-semibold text-emerald-300">
                     {lineup.odds.essencePct}%
                   </div>
                 </div>
-                <div className="rounded-lg border border-white/6 bg-[#0b101b] py-1">
-                  <div className="text-slate-400">
-                    Tier 1 (≥{lineup.odds.tier1Target})
+                <div className="rounded-lg border border-white/6 bg-[#0b101b] px-1 py-1">
+                  <div className="truncate text-slate-400">
+                    {lineup.odds.tierLabel ?? "Tier 1"} (≥{lineup.odds.tier1Target})
                   </div>
                   <div className="font-semibold text-sky-300">
                     {lineup.odds.tier1Pct}%
                   </div>
                 </div>
-                <div className="rounded-lg border border-white/6 bg-[#0b101b] py-1">
-                  <div className="text-slate-400">
-                    Podium (≥{lineup.odds.podiumTarget})
+                <div className="rounded-lg border border-white/6 bg-[#0b101b] px-1 py-1">
+                  <div className="truncate text-slate-400">
+                    {lineup.odds.estRank && lineup.odds.totalEntries
+                      ? `Est. Rank (${lineup.odds.benchmarkFixture ?? "Last GW"})`
+                      : `Podium (≥${lineup.odds.podiumTarget})`}
                   </div>
                   <div className="font-semibold text-amber-300">
-                    {lineup.odds.podiumPct}%
+                    {lineup.odds.estRank && lineup.odds.totalEntries
+                      ? `#${lineup.odds.estRank.toLocaleString()}/${lineup.odds.totalEntries.toLocaleString()} (Top ${lineup.odds.topPercentilePct}%)`
+                      : `${lineup.odds.podiumPct}%`}
                   </div>
                 </div>
               </div>
@@ -1752,6 +1784,7 @@ export function LineupsTab({
           );
         })
       )}
+      </div>
 
       {/* Dual Lineup Market Buy Advisor (Out-of-Season 1-Slot Classic vs. In-Season) */}
       <details
@@ -1812,21 +1845,26 @@ export function LineupsTab({
                   type="button"
                   disabled={isMarketLoading}
                   onClick={onScanMarketForBudget}
-                  className="rounded-lg border border-sky-400/40 bg-sky-500/20 px-2.5 py-1 text-[10px] font-semibold text-sky-200 hover:bg-sky-500/30 disabled:opacity-50"
+                  className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-gradient-to-r from-emerald-400 to-sky-400 px-3 py-1.5 text-[10.5px] font-bold text-slate-950 shadow-sm transition hover:from-emerald-300 hover:to-sky-300 disabled:opacity-50"
                 >
-                  {isMarketLoading ? "Scanning..." : "Scan Buys"}
+                  {isMarketLoading ? "Scanning Market..." : "Scan Market Buys"}
                 </button>
               )}
             </div>
           </div>
 
-          {!dualBuyAdvisor || dualBuyAdvisor.topOverallBuys.length === 0 ? (
-            <div className="rounded-xl border border-white/6 bg-[#111726] p-3 text-center text-[11px] text-slate-400">
-              {effectiveMarketListings.length === 0
-                ? "Click Scan Buys to find the best Out-of-Season (1 Classic slot) and In-Season cards for your #1 lineup."
-                : "No market upgrades beat your #1 lineup under current cap, season rule, and price filter."}
-            </div>
-          ) : (
+          {(!dualBuyAdvisor || dualBuyAdvisor.topOverallBuys.length === 0) &&
+            comboSwaps.length === 0 && (
+              <div className="rounded-xl border border-white/6 bg-[#111726] p-3 text-center text-[11px] text-slate-400">
+                {effectiveMarketListings.length === 0
+                  ? "Click Scan Market Buys above to scan live Sorare NBA Instant Buys (best value + lowest price) for 1-for-1 and 2-Card upgrades."
+                  : `Checked ${effectiveMarketListings.length} live market listings - no 1-for-1 or 2-Card market upgrades beat your #1 lineup under current cap (${
+                      FORMAT_OPTIONS.find((f) => f.id === format)?.sub ?? format
+                    }), season rule, and price filter. Try clearing Max € or switching Buy Rank Mode.`}
+              </div>
+            )}
+
+          {dualBuyAdvisor && dualBuyAdvisor.topOverallBuys.length > 0 && (
             <>
               <div className="grid grid-cols-3 gap-1 rounded-xl border border-white/8 bg-[#111726] p-0.5 text-[10px]">
                 <button
@@ -1953,8 +1991,10 @@ export function LineupsTab({
                   )}
                 </div>
               ))}
+            </>
+          )}
 
-              {comboSwaps.length > 0 && (
+          {comboSwaps.length > 0 && (
                 <div className="mt-2 space-y-1.5 border-t border-white/8 pt-2">
                   <div className="text-[10px] font-semibold text-amber-300">
                     2-Card Cap Re-Allocator Combos (Downgrade 1 + Buy Star)
@@ -2000,8 +2040,6 @@ export function LineupsTab({
                   ))}
                 </div>
               )}
-            </>
-          )}
         </div>
       </details>
       {/* Multi-Competition Portfolio Optimizer (Joint 3-Lineup Slate) */}
@@ -2295,6 +2333,159 @@ export function LineupsTab({
       </details>
         </>
       )}
+
+      {/* 4-Day Gameweek Schedule & Matchups */}
+      {arenaMode === "pro" && sortedSchedule.length > 0 && (
+        <details className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
+          <summary className="flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
+            <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
+              <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-emerald-400" />
+              <Calendar className="h-3.5 w-3.5 text-emerald-400" />
+              4-Day Gameweek Schedule &amp; Matchups
+            </span>
+            <span className="text-[10px] text-slate-400">
+              {sortedSchedule.length} teams
+            </span>
+          </summary>
+          <div className="grid grid-cols-1 gap-1.5 border-t border-white/8 bg-[#0b101b] p-3 sm:grid-cols-2">
+            {sortedSchedule.map((tm) => (
+              <div
+                key={tm.teamSlug}
+                className="flex items-center justify-between gap-2 rounded-xl border border-white/6 bg-[#111726] px-2.5 py-1.5 text-[10px]"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-bold text-slate-100">{tm.abbr}</span>
+                    <span
+                      className={`rounded px-1 text-[9px] font-bold ${
+                        tm.games >= 3
+                          ? "bg-emerald-500/20 text-emerald-300"
+                          : tm.games === 2
+                            ? "bg-sky-500/15 text-sky-300"
+                            : "bg-white/8 text-slate-300"
+                      }`}
+                    >
+                      {tm.games}G
+                    </span>
+                    {tm.hasBackToBack && (
+                      <span className="rounded bg-amber-400/15 px-1 text-[8.5px] font-semibold text-amber-300">
+                        B2B
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-0.5 truncate text-[9.5px] text-slate-400">
+                    {tm.matchups.join(" • ")}
+                  </div>
+                  {tm.dvpByPos && (
+                    <div className="mt-1 flex flex-wrap gap-1 text-[8.5px]">
+                      {(["G", "F", "C"] as const).map((pos) => (
+                        <span
+                          key={pos}
+                          className={`rounded border px-1 font-semibold ${dvpTagClass(tm.dvpByPos![pos])}`}
+                        >
+                          vs {pos}: {tm.dvpByPos![pos]}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <span
+                  className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold ${
+                    tm.difficultyTag === "EASY"
+                      ? "border border-emerald-400/35 bg-emerald-500/15 text-emerald-300"
+                      : tm.difficultyTag === "TOUGH"
+                        ? "border border-rose-400/35 bg-rose-500/15 text-rose-300"
+                        : "border border-white/10 bg-white/5 text-slate-300"
+                  }`}
+                >
+                  {tm.difficultyTag}
+                </span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
+      {/* Collapsible Boosting & Multiplier Guide (2026-27 Verified Rules) */}
+      <details className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
+        <summary className="flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
+          <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
+            <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-amber-400" />
+            <Flame className="h-3.5 w-3.5 text-amber-400" />
+            Best Boosting, Stars &amp; Multiplier Guide
+          </span>
+          <span className="text-[10px] text-slate-400">
+            {BOOSTING_GUIDE_RULES.length} rules
+          </span>
+        </summary>
+        <div className="space-y-1.5 border-t border-white/8 bg-[#0b101b] p-3 text-[11px]">
+          {BOOSTING_GUIDE_RULES.map((rule) => (
+            <div
+              key={rule.id}
+              className="rounded-xl border border-white/8 bg-[#111726] p-2"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold text-amber-200">
+                  {rule.title}
+                </span>
+                <span className="rounded bg-amber-400/15 px-1.5 py-0.5 text-[9px] font-semibold text-amber-300">
+                  {rule.tag}
+                </span>
+              </div>
+              <p className="mt-0.5 text-[10px] leading-relaxed text-slate-400">
+                {rule.detail}
+              </p>
+            </div>
+          ))}
+        </div>
+      </details>
+
+      {/* Live Competition Rooms & Sub-Rooms Directory (Pro, Arena & Set) */}
+      <details className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
+        <summary className="flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
+          <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
+            <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-emerald-400" />
+            <Trophy className="h-3.5 w-3.5 text-emerald-400" />
+            Live Competition Rooms &amp; Sub-Rooms (2026-27)
+          </span>
+          <span className="text-[10px] text-slate-400">
+            {NBA_COMPETITION_DIRECTORY.length} rooms
+          </span>
+        </summary>
+        <div className="space-y-1.5 border-t border-white/8 bg-[#0b101b] p-3 text-[11px]">
+          {NBA_COMPETITION_DIRECTORY.map((room) => (
+            <div
+              key={room.id}
+              className="flex items-center justify-between gap-2 rounded-xl border border-white/8 bg-[#111726] p-2"
+            >
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="rounded bg-white/8 px-1.5 py-0.5 text-[9px] font-semibold text-slate-300">
+                    {room.group}
+                  </span>
+                  <span className="font-semibold text-slate-100">
+                    {room.name}
+                  </span>
+                  <span className="rounded bg-amber-400/15 px-1 text-[9px] font-semibold text-amber-300">
+                    {room.capLabel}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[10px] text-slate-400">
+                  {room.eligibility}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void openInActiveTab(room.playUrl)}
+                className="inline-flex shrink-0 cursor-pointer items-center gap-0.5 rounded-lg border border-white/10 bg-[#0b101b] px-2 py-1 text-[10px] font-semibold text-sky-300 hover:border-sky-400/40"
+              >
+                Open
+                <ExternalLink className="h-2.5 w-2.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      </details>
     </div>
   );
 }

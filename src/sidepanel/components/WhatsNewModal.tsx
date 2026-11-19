@@ -20,6 +20,24 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.6.6",
+    title: "Live GW Cutoffs, Arena Open Lineup Sync & Market Buy Upgrades",
+    items: [
+      "Calibrated Pro & Arena lineup odds and Est. Rank against the latest closed Sorare Game Week cutoffs and field win rates (comparing e.g. In-Season 55% paid vs Classic 11% paid vs 50% Arena pods).",
+      "Added Safe-Mode openedSo5Lineups querying plus automatic live Sorare Arena / Play DOM sync so submitted lineups populate Current Open Lineups & Upgrade Swaps immediately with a 1-click Open Sorare Arena CTA.",
+      "Fixed Lineup Buy Advisor Safe-Mode market scans with best_value DESC starter discovery, unlocked 2-Card Cap Re-Allocator Combos even when 1-for-1 swaps are capped, upgraded Scan Market Buys CTA, and prioritized builder controls over reference drawers.",
+    ],
+  },
+  {
+    version: "2.6.5",
+    title: "Live 2026-27 Pro/Arena Rooms, Accurate Boosting & Spinner Fix",
+    items: [
+      "Replaced retired Pro Daily Pickup (120 + MVP) with live 2026-27 Pro & Arena Star-Cap modes (Champion 16★, Contender 11★, Arena Champ 15★, Arena Contender 12★, Uncapped) plus U23 / Veterans sub-room filters.",
+      "Updated the Best Boosting Guide to match verified 2026-27 rules (flat +5% In-Season, up to +5% Team Collection, Card XP halved on sale, Scarcity mix & Vault boosts, no Captain in Pro) and added a Live Competition Rooms directory.",
+      "Added rebuild toast feedback on Auto-Build Best Pro Lineups and fixed Team Collections batch buttons so only the clicked button (Top 3, Load 26-27, or Load All) shows the loading spinner.",
+    ],
+  },
+  {
     version: "2.6.4",
     title: "Real Essence Quests Only + Any-Year Team Hunter",
     items: [
