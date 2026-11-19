@@ -59,6 +59,15 @@ detect them **live** (Sorare GraphQL `so5Fixture.so5Leaderboards` + rules/reward
 background worker) instead of hard-coding. Still open: Classic entry limits per rarity; whether one card
 can sit in two lineups in the same GW (editor's "Used in another lineup" filter suggests not).
 
+## Lineup editor (live screenshot 2026-11-19, Classic Limited Contender, GW 21-23 Nov)
+
+| Fact | Value | Status |
+|---|---|---|
+| Star ratings | Shown as a badge under each card; Dillon Brooks = 2★ while the extension's L10 tiers say 2.5★. A lineup we count as 12.5★ was accepted in an 11★ competition | LIVE-VERIFIED: `computeStarCost(l10)` is OUTDATED, read live ratings in M3 |
+| Games per GW | Each card lists both of its GW fixtures (e.g. PHX vs ... / @ UTA): most players have 2 games in a 3-day GW | LIVE-VERIFIED; how multiple games score (best / sum) still to verify |
+| Power bonus | Shown per card (+0% / +6% / +9%) | LIVE-VERIFIED |
+| Time to lock | Header badge (e.g. "1d 19h") | LIVE-VERIFIED |
+
 ## Vault / Sealing (NBA)
 
 | Fact | Value | Status / Source |
@@ -66,7 +75,7 @@ can sit in two lineups in the same GW (editor's "Used in another lineup" filter 
 | Sealed card | Locked: cannot be sold, traded or played; still counts for Collection score | OFFICIAL (Sorare NBA 26 blog; MLB/Football help match) |
 | Lineups | Sealing a card in an upcoming or live lineup cancels that lineup (warning before confirm) | OFFICIAL help (MLB article; same system) |
 | Unseal | 1 card per scarcity every 2 weeks (14 days); removes its Sealing Points | OFFICIAL (NBA 26 blog + help) |
-| Sealing Points | 1 / 2 / 5 / 20 / 50 / 200 by a card quality tier Sorare decides; shown before sealing. No first-owner/loyalty bonus since 2026 | OFFICIAL help. Extension **estimates** the tier from scarcity + L10 |
+| Sealing Points | 1 / 2 / 5 / 20 / 50 / 200 by a card quality tier Sorare decides; shown before sealing. No first-owner/loyalty bonus since 2026 | OFFICIAL help. Extension **estimates** the tier from scarcity + L10: user reports the estimates are wrong, fetch live in M3 |
 | Vault Levels | 1-20 = +1%..+20% rewards, one Vault per scarcity (no Common Vault); mixed lineups use the card-weighted average | OFFICIAL help |
 | Boost scope | In-Season and Classic only; not Arena Rooms, Hot Streaks, Missions, Special Events | OFFICIAL (NBA 26 blog) |
 | Listed card | Sealed cards cannot be sold, so a live listing is removed | INFERRED from "cannot be sold"; verify in the seal dialog |
