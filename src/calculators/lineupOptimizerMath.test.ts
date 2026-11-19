@@ -12,6 +12,8 @@ import {
   recommendBestFormat,
   recommendLineupMarketBuys,
   recommendTwoCardComboSwaps,
+  explainLineupSwaps,
+  type EvaluatedLineupCard,
 } from "./lineupOptimizerMath";
 import type {
   BargainListing,
@@ -644,17 +646,17 @@ describe("lineupOptimizerMath", () => {
     expect(combos[0].totalCostCents).toBe(390);
   });
 
-  it("supports Arena 15-star / 12-star caps and U23 / Veterans age filters", () => {
+  it("supports live Arena Room caps (Champion 16★ / Contender 11★) and U23 / Veterans age filters", () => {
     expect(getFormatStarCap("champion_16")).toBe(16);
-    expect(getFormatStarCap("arena_champion_15")).toBe(15);
-    expect(getFormatStarCap("arena_contender_12")).toBe(12);
+    expect(getFormatStarCap("arena_champion_15")).toBe(16);
+    expect(getFormatStarCap("arena_contender_12")).toBe(11);
     expect(getFormatStarCap("contender_11")).toBe(11);
     expect(getFormatStarCap("uncapped")).toBeNull();
 
     const mixedRoster: GalleryCard[] = [
-      makeCard("y1", "Young One", 34, 38, { playerAge: 20 }),
+      makeCard("y1", "Young One", 30, 38, { playerAge: 20 }),
       makeCard("y2", "Young Two", 28, 32, { playerAge: 21 }),
-      makeCard("y3", "Young Three", 24, 28, { playerAge: 22 }),
+      makeCard("y3", "Young Three", 20, 28, { playerAge: 22 }),
       makeCard("y4", "Young Four", 20, 24, { playerAge: 23 }),
       makeCard("y5", "Young Five", 10, 14, { playerAge: 19 }),
       makeCard("v1", "Vet One", 44, 48, { playerAge: 32 }),
@@ -680,7 +682,7 @@ describe("lineupOptimizerMath", () => {
       maxLineups: 1,
     });
     expect(u23Res.lineups).toHaveLength(1);
-    expect(u23Res.lineups[0].capLimit).toBe(12);
+    expect(u23Res.lineups[0].capLimit).toBe(11);
     expect(u23Res.lineups[0].slots.every((s) => (s.evaluated.card.playerAge ?? 99) <= 23)).toBe(true);
 
     const vetRes = generateTopLineups(mixedRoster, {
@@ -699,7 +701,7 @@ describe("lineupOptimizerMath", () => {
       maxLineups: 1,
     });
     expect(vetRes.lineups).toHaveLength(1);
-    expect(vetRes.lineups[0].capLimit).toBe(15);
+    expect(vetRes.lineups[0].capLimit).toBe(16);
     expect(vetRes.lineups[0].slots.every((s) => (s.evaluated.card.playerAge ?? 0) >= 30)).toBe(true);
   });
 
@@ -804,7 +806,9 @@ describe("lineupOptimizerMath", () => {
       benchmarks,
       benchmarkSeasonScope: "classic",
     });
-    expect(rec.recommendedFormat).toBe("arena_contender_12");
+    // EV ranking (live caps): In-Season Contender pays 54.6% of the field vs Classic 11%.
+    expect(rec.recommendedFormat).toBe("contender_11");
+    expect(rec.recommendedScope).toBe("in_season");
     expect(rec.inSeasonVsClassicTip).toContain("54.6%");
     expect(rec.inSeasonVsClassicTip).toContain("11%");
 
@@ -847,5 +851,49 @@ describe("lineupOptimizerMath", () => {
     expect(cmps[0].currentProjected).toBeGreaterThan(100);
     expect(cmps[0].paidCutoffScore).toBe(159.1);
     expect(cmps[0].swaps.some((s) => s.inPlayer === "Jalen Johnson")).toBe(true);
+  });
+});
+
+describe("explainLineupSwaps", () => {
+  const ev = (playerName: string, score: number, stars: number): EvaluatedLineupCard =>
+    ({
+      card: { slug: playerName.toLowerCase().replace(/\s+/g, "-"), playerName, starCost: stars } as GalleryCard,
+      baseProjection: score,
+      injuryAdjustedBase: score,
+      effectiveScore: score,
+      injury: null,
+      injuryStatus: "ACTIVE",
+      gamesInSlate: 1,
+      allSources: { sorareProjected: score, l10: score, l5: score, custom: null, blended: score },
+    }) satisfies EvaluatedLineupCard;
+
+  it("keeps upgrades with a reason and drops downgrades when under the cap", () => {
+    const swaps = explainLineupSwaps(
+      [
+        { out: ev("Morez Johnson Jr.", 17.2, 2), in: ev("DeMar DeRozan", 19.1, 2) },
+        { out: ev("Dillon Brooks", 21.7, 2.5), in: ev("Christian Anderson", 14.3, 1) },
+      ],
+      { currentStars: 10.5, starCap: 11, usedElsewhere: new Set(["demar derozan"]) },
+    );
+    expect(swaps).toHaveLength(1);
+    expect(swaps[0]).toMatchObject({
+      inPlayer: "DeMar DeRozan",
+      deltaPts: 1.9,
+      kind: "upgrade",
+      usedInOtherLineup: true,
+    });
+    expect(swaps[0].reason).toContain("projects 19.1 pts");
+    expect(swaps[0].reason).toContain("another of your lineups");
+  });
+
+  it("labels a downgrade as a cap fix only when the lineup is over the cap", () => {
+    const swaps = explainLineupSwaps(
+      [{ out: ev("Dillon Brooks", 21.7, 2.5), in: ev("Christian Anderson", 14.3, 1) }],
+      { currentStars: 12, starCap: 11, usedElsewhere: new Set() },
+    );
+    expect(swaps).toHaveLength(1);
+    expect(swaps[0].kind).toBe("cap_fix");
+    expect(swaps[0].deltaPts).toBe(-7.4);
+    expect(swaps[0].reason).toContain("over the 11★ cap");
   });
 });

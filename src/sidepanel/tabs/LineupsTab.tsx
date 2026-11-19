@@ -11,6 +11,7 @@ import {
   FileSpreadsheet,
   Flame,
   HeartPulse,
+  Info,
   Layers,
   Lock,
   Send,
@@ -885,27 +886,51 @@ export function LineupsTab({
                       {cmp.swaps.map((sw, idx) => (
                         <div
                           key={idx}
-                          className="flex items-center justify-between gap-2 rounded-lg bg-[#0b101b] px-2 py-1 text-[10px]"
+                          title={sw.reason}
+                          className={`flex items-center justify-between gap-2 rounded-lg px-2 py-1 text-[10px] ${
+                            sw.kind === "cap_fix"
+                              ? "border border-amber-400/25 bg-amber-500/5"
+                              : "bg-[#0b101b]"
+                          }`}
                         >
-                          <span className="flex items-center gap-1 text-slate-300">
-                            <span className="text-rose-300">{sw.outPlayer}</span>
-                            <ArrowRight className="h-2.5 w-2.5 text-slate-500" />
-                            <span className="text-emerald-300">{sw.inPlayer}</span>
+                          <span className="flex min-w-0 items-center gap-1 text-slate-300">
+                            {sw.kind === "cap_fix" && (
+                              <span className="shrink-0 rounded bg-amber-500/20 px-1 text-[9px] font-semibold text-amber-300">
+                                Cap fix
+                              </span>
+                            )}
+                            <span className="truncate text-rose-300">{sw.outPlayer}</span>
+                            <ArrowRight className="h-2.5 w-2.5 shrink-0 text-slate-500" />
+                            <span className="truncate text-emerald-300">{sw.inPlayer}</span>
+                            {sw.usedInOtherLineup && (
+                              <span className="shrink-0 rounded bg-sky-500/15 px-1 text-[9px] text-sky-300">
+                                in other lineup
+                              </span>
+                            )}
                           </span>
-                          <span
-                            className={`font-semibold ${
-                              sw.deltaPts >= 0 ? "text-emerald-300" : "text-slate-400"
-                            }`}
-                          >
-                            {sw.deltaPts >= 0 ? "+" : ""}
-                            {sw.deltaPts.toFixed(1)} pts
+                          <span className="flex shrink-0 items-center gap-1">
+                            <span
+                              className={`font-semibold ${
+                                sw.deltaPts >= 0 ? "text-emerald-300" : "text-amber-300"
+                              }`}
+                            >
+                              {sw.deltaPts >= 0 ? "+" : ""}
+                              {sw.deltaPts.toFixed(1)} pts
+                            </span>
+                            <Info
+                              className="h-3 w-3 cursor-help text-slate-500 hover:text-slate-300"
+                              aria-label={sw.reason}
+                            />
                           </span>
                         </div>
                       ))}
                     </div>
                   ) : (
                     <div className="mt-1 text-[10px] text-emerald-300">
-                      Matches optimal core ({cmp.currentStars}★).
+                      {cmp.optimalProjected !== null &&
+                      cmp.optimalProjected < cmp.currentProjected
+                        ? `Your lineup already beats the calculated optimum (${cmp.currentStars}★${cmp.starCap ? ` / ${cmp.starCap}★` : ""}).`
+                        : `Matches optimal core (${cmp.currentStars}★${cmp.starCap ? ` / ${cmp.starCap}★` : ""}).`}
                     </div>
                   )}
                   {cmp.betterCaptainName && (

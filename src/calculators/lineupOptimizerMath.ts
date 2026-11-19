@@ -1,4 +1,10 @@
 import { LINEUP_FORMAT_TARGETS } from "../shared/constants";
+import {
+  MIN_VIABLE_CASH_PCT,
+  buildContestThresholds,
+  evaluateContestEv,
+  lineupStdDev,
+} from "./entryEvMath";
 import type {
   BargainListing,
   CardRarity,
@@ -14,15 +20,17 @@ import type {
 
 /**
  * Returns the Pro / Arena maximum total ★ star cap for capped formats, or null if uncapped / L10-capped.
+ *
+ * Live-verified 2026-11-19 (docs/SORARE_FACTS.md): Arena Rooms use the same caps as Pro,
+ * Champion 16★ and Contender 11★. The legacy ids `arena_champion_15` / `arena_contender_12`
+ * are kept as stable identifiers for the Arena Room formats; their caps are 16★ / 11★.
  */
 export function getFormatStarCap(format: LineupFormat): number | null {
   switch (format) {
     case "champion_16":
-      return 16;
     case "arena_champion_15":
-      return 15;
+      return 16;
     case "arena_contender_12":
-      return 12;
     case "contender_11":
       return 11;
     default:
@@ -804,175 +812,192 @@ export function generateTopLineups(
   return { lineups, evaluatedPool };
 }
 
+export type ContestScope = "in_season" | "classic" | "arena";
+
+export interface FormatRecommendationCandidate {
+  format: LineupFormat;
+  seasonScope: ContestScope;
+  /** Short display label, e.g. "In-Season Contender 11★". */
+  label: string;
+  topScore: number | null;
+  /** Probability (%) of clearing the field's reward cutoff. */
+  cashProb: number;
+  /** Probability (%) of clearing the top-20% line. */
+  top20Prob: number;
+  /** Probability (%) of clearing the podium line. */
+  podiumProb: number;
+  /** Payout-curve weighted EV (see entryEvMath.ts); higher is better. */
+  expectedValueScore: number;
+  /** cashProb >= MIN_VIABLE_CASH_PCT and a legal 5-card lineup exists. */
+  viable: boolean;
+  /** Legacy aliases kept for existing UI. */
+  essencePct: number;
+  tier1Pct: number;
+  podiumPct: number;
+  compositeScore: number;
+  fieldPaidPct?: number;
+  paidCutoffScore?: number | null;
+  estRank?: number;
+  totalEntries?: number;
+}
+
 export interface FormatRecommendation {
   recommendedFormat: LineupFormat;
   reason: string;
   eliteCardCount: number;
   activePoolCount: number;
-  recommendedScope?: "in_season" | "classic" | "arena";
+  recommendedScope?: ContestScope;
   fieldPaidPct?: number;
   paidCutoffScore?: number | null;
   totalEntries?: number;
   inSeasonVsClassicTip?: string | null;
-  candidates: Array<{
-    format: LineupFormat;
-    topScore: number | null;
-    essencePct: number;
-    tier1Pct: number;
-    podiumPct: number;
-    compositeScore: number;
-    fieldPaidPct?: number;
-    paidCutoffScore?: number | null;
-    estRank?: number;
-    totalEntries?: number;
-  }>;
+  cashProb: number;
+  top20Prob: number;
+  podiumProb: number;
+  expectedValueScore: number;
+  viable: boolean;
+  /** Ranked best-first: viable contests by EV, then the rest. */
+  candidates: FormatRecommendationCandidate[];
 }
 
+/** Live Sorare NBA contests evaluated side by side (Daily Pickup 120+MVP was retired in Sorare 26). */
+const RECOMMENDATION_CONTESTS: Array<{
+  format: LineupFormat;
+  scope: ContestScope;
+  label: string;
+  minInSeasonCards: number;
+}> = [
+  { format: "contender_11", scope: "in_season", label: "In-Season Contender 11★", minInSeasonCards: 4 },
+  { format: "champion_16", scope: "in_season", label: "In-Season Champion 16★", minInSeasonCards: 4 },
+  { format: "contender_11", scope: "classic", label: "Classic Contender 11★", minInSeasonCards: 0 },
+  { format: "champion_16", scope: "classic", label: "Classic Champion 16★", minInSeasonCards: 0 },
+  { format: "arena_contender_12", scope: "arena", label: "Arena Room Contender 11★", minInSeasonCards: 0 },
+  { format: "arena_champion_15", scope: "arena", label: "Arena Room Champion 16★", minInSeasonCards: 0 },
+];
+
 /**
- * Recommends which Sorare NBA competition format gives the highest chance of placing
- * given the user's available card pool and live closed-GW leaderboard benchmarks.
+ * Recommends the Sorare NBA contest with the best field-calibrated expected value for the
+ * user's card pool, using live closed-GW leaderboard benchmarks. Contests whose cash odds
+ * are below MIN_VIABLE_CASH_PCT are never recommended over a viable one.
  */
 export function recommendBestFormat(
   cards: GalleryCard[],
   options: Omit<AutoBuildOptions, "format" | "maxLineups">,
 ): FormatRecommendation {
-  const formats: LineupFormat[] = [
-    "contender_11",
-    "arena_contender_12",
-    "arena_champion_15",
-    "champion_16",
-  ];
   let eliteCardCount = 0;
   let activePoolCount = 0;
 
-  const candidates = formats.map((fmt) => {
+  const candidates: FormatRecommendationCandidate[] = RECOMMENDATION_CONTESTS.map((contest) => {
     const res = generateTopLineups(cards, {
       ...options,
-      format: fmt,
+      format: contest.format,
       maxLineups: 1,
+      inSeasonOnly: contest.scope === "in_season" ? options.inSeasonOnly : false,
+      minInSeasonCards: contest.minInSeasonCards,
+      benchmarkSeasonScope: contest.scope,
     });
-    if (fmt === "contender_11") {
+    if (contest.format === "contender_11" && contest.scope === "classic") {
       activePoolCount = res.evaluatedPool.length;
-      eliteCardCount = res.evaluatedPool.filter(
-        (ev) => ev.card.starCost >= 4,
-      ).length;
+      eliteCardCount = res.evaluatedPool.filter((ev) => ev.card.starCost >= 4).length;
     }
     const top = res.lineups[0] ?? null;
-    const essencePct = top?.odds.essencePct ?? 0;
-    const tier1Pct = top?.odds.tier1Pct ?? 0;
-    const podiumPct = top?.odds.podiumPct ?? 0;
-    const fieldPaidPct = top?.odds.fieldPaidPct;
-    const compositeScore =
-      essencePct * 0.52 +
-      tier1Pct * 0.25 +
-      podiumPct * 0.1 +
-      (fieldPaidPct ?? 25) * 0.2;
-
+    const bm = findBenchmarkForFormat(
+      options.benchmarks,
+      contest.format,
+      contest.scope,
+      options.ageFilter ?? "all",
+    );
+    const targets = LINEUP_FORMAT_TARGETS[contest.format];
+    const thresholds = buildContestThresholds({
+      paidCutoffScore: bm?.paidCutoffScore,
+      top20Score: bm?.top20Score,
+      podiumScore: bm?.podiumScore,
+      top1Score: bm?.top1Score,
+      fallbackCash: targets.essenceTarget,
+      fallbackTop20: targets.tier1Target,
+      fallbackPodium: targets.podiumTarget,
+    });
+    const sd = top
+      ? lineupStdDev(
+          top.slots.map((s) => ({
+            projectedScore: s.slotScore,
+            teamSlug: s.evaluated.card.teamSlug,
+          })),
+        )
+      : 0;
+    const ev = evaluateContestEv(top ? top.totalScore : null, sd, thresholds);
+    const viable = ev.viable && top !== null && top.slots.length === 5;
     return {
-      format: fmt,
+      format: contest.format,
+      seasonScope: contest.scope,
+      label: contest.label,
       topScore: top?.totalScore ?? null,
-      essencePct,
-      tier1Pct,
-      podiumPct,
-      compositeScore,
-      fieldPaidPct,
-      paidCutoffScore: top ? top.odds.essenceTarget : null,
+      cashProb: ev.cashProb,
+      top20Prob: ev.top20Prob,
+      podiumProb: ev.podiumProb,
+      expectedValueScore: ev.expectedValueScore,
+      viable,
+      essencePct: ev.cashProb,
+      tier1Pct: ev.top20Prob,
+      podiumPct: ev.podiumProb,
+      compositeScore: ev.expectedValueScore,
+      fieldPaidPct: bm?.rewardWinRatePct ?? top?.odds.fieldPaidPct,
+      paidCutoffScore: thresholds.cashScore,
       estRank: top?.odds.estRank,
-      totalEntries: top?.odds.totalEntries,
+      totalEntries: bm?.podSize ?? bm?.totalEntries ?? top?.odds.totalEntries,
     };
   });
 
-  const sorted = [...candidates].sort((a, b) => {
-    if (b.compositeScore !== a.compositeScore) {
-      return b.compositeScore - a.compositeScore;
+  const ranked = [...candidates].sort((a, b) => {
+    if (a.viable !== b.viable) return a.viable ? -1 : 1;
+    if (b.expectedValueScore !== a.expectedValueScore) {
+      return b.expectedValueScore - a.expectedValueScore;
     }
-    if (a.format === "contender_11") return -1;
-    if (b.format === "contender_11") return 1;
-    return 0;
+    // Tie-break toward the lower cap (cheaper cards, softer field).
+    return (getFormatStarCap(a.format) ?? 99) - (getFormatStarCap(b.format) ?? 99);
   });
-
-  const best = sorted[0] ?? candidates[0];
-  const bestScope =
-    best.format === "arena_contender_12" || best.format === "arena_champion_15"
-      ? "arena"
-      : options.benchmarkSeasonScope ??
-        (options.inSeasonOnly || options.minInSeasonCards >= 4
-          ? "in_season"
-          : "classic");
-
-  const bm = findBenchmarkForFormat(
-    options.benchmarks,
-    best.format,
-    bestScope,
-    options.ageFilter ?? "all",
-  );
-  const bmTag = bm
-    ? bm.podSize
-      ? `${bm.rewardWinRatePct}% pod cash • cut ${Math.round(bm.paidCutoffScore ?? best.paidCutoffScore ?? 0)} pts`
-      : `${bm.rewardWinRatePct}% paid (${bm.paidPlaces.toLocaleString()}/${bm.totalEntries.toLocaleString()}) • ${bm.fixtureName} cut ${Math.round(bm.paidCutoffScore ?? best.paidCutoffScore ?? 0)} pts`
-    : null;
+  const best = ranked[0];
 
   let inSeasonVsClassicTip: string | null = null;
+  const inSeasonContender = candidates.find(
+    (c) => c.format === "contender_11" && c.seasonScope === "in_season",
+  );
+  const classicContender = candidates.find(
+    (c) => c.format === "contender_11" && c.seasonScope === "classic",
+  );
   if (
-    options.benchmarks &&
-    options.minInSeasonCards < 4 &&
-    !options.inSeasonOnly
+    inSeasonContender &&
+    classicContender &&
+    inSeasonContender.viable &&
+    inSeasonContender.cashProb > classicContender.cashProb + 10
   ) {
-    const activeInSeasonCards = cards.filter(
-      (c) => c.inSeasonEligible && (options.rarityFilter === "ALL" || c.rarity === options.rarityFilter),
-    ).length;
-    if (activeInSeasonCards >= 4) {
-      const tipFormat: LineupFormat =
-        best.format === "champion_16" || best.format === "arena_champion_15"
-          ? "champion_16"
-          : "contender_11";
-      const inSeasonBm = findBenchmarkForFormat(options.benchmarks, tipFormat, "in_season");
-      const classicBm = findBenchmarkForFormat(options.benchmarks, tipFormat, "classic");
-      if (
-        inSeasonBm &&
-        classicBm &&
-        inSeasonBm.rewardWinRatePct > classicBm.rewardWinRatePct + 10
-      ) {
-        inSeasonVsClassicTip = `Field Tip: You own ${activeInSeasonCards} In-Season cards - ${tipFormat === "champion_16" ? "In-Season Champion" : "In-Season Contender"} paid ${inSeasonBm.rewardWinRatePct}% (cut ${Math.round(inSeasonBm.paidCutoffScore ?? 0)}) vs Classic ${classicBm.rewardWinRatePct}% (cut ${Math.round(classicBm.paidCutoffScore ?? 0)}).`;
-      }
-    }
+    inSeasonVsClassicTip = `Field Tip: In-Season Contender pays ${inSeasonContender.fieldPaidPct ?? "?"}% of the field (cut ~${Math.round(inSeasonContender.paidCutoffScore ?? 0)}) vs Classic ${classicContender.fieldPaidPct ?? "?"}% (cut ~${Math.round(classicContender.paidCutoffScore ?? 0)}): ${inSeasonContender.cashProb}% vs ${classicContender.cashProb}% cash odds for your best lineup.`;
   }
 
-  let reason = "";
-
-  if (best.format === "contender_11") {
-    reason = bmTag
-      ? `Contender 11★ projects ${best.topScore?.toFixed(1) ?? "--"} pts (${best.essencePct}% cash odds • ${bmTag}).`
-      : eliteCardCount < 2
-        ? `Thin elite depth (${eliteCardCount} cards ≥ 4★ across ${activePoolCount} active cards) makes Pro Contender 11★ your strongest entry (${best.essencePct}% target hit) without facing 16★ Superteams.`
-        : `Balanced ${activePoolCount}-card pool projects strongest in Pro Contender 11★ (${best.topScore?.toFixed(1) ?? "--"} pts • ${best.essencePct}% Essence / ${best.tier1Pct}% Tier 1).`;
-  } else if (best.format === "arena_contender_12") {
-    reason = bmTag
-      ? `Arena Contender 12★ projects ${best.topScore?.toFixed(1) ?? "--"} pts (${best.essencePct}% pod cash odds • ${bmTag}).`
-      : `Your mid-star core pushes cleanly into the 12★ ceiling in Arena Contender (${best.topScore?.toFixed(1) ?? "--"} pts • ${best.essencePct}% target hit).`;
-  } else if (best.format === "arena_champion_15") {
-    reason = bmTag
-      ? `Arena Champion 15★ projects ${best.topScore?.toFixed(1) ?? "--"} pts (${best.essencePct}% pod cash odds • ${bmTag}).`
-      : `With ${eliteCardCount} strong anchors across ${activePoolCount} cards, Arena Champion 15★ balances high scoring without full 16★ Pro rosters (${best.topScore?.toFixed(1) ?? "--"} pts).`;
-  } else if (best.format === "daily_120_mvp") {
-    reason = `Your best single anchor + low-L10 pieces fit Cap 120 + MVP strongest (${best.topScore?.toFixed(1) ?? "--"} pts).`;
-  } else {
-    reason = bmTag
-      ? `Champion 16★ projects ${best.topScore?.toFixed(1) ?? "--"} pts (${best.essencePct}% cash odds • ${bmTag}).`
-      : `With ${eliteCardCount} elite cards (≥ 4★), Pro Champion 16★ maximizes ceiling (${best.topScore?.toFixed(1) ?? "--"} pts • ${best.tier1Pct}% Tier 1 odds).`;
-  }
+  const alternatives = ranked
+    .slice(1, 3)
+    .map((c) => `${c.label} ${c.cashProb}% cash`)
+    .join(" • ");
+  const reason = best.viable
+    ? `${best.label} projects ${best.topScore?.toFixed(1) ?? "--"} pts: ${best.cashProb}% cash odds (cut ~${Math.round(best.paidCutoffScore ?? 0)}), ${best.top20Prob}% top-20%, ${best.podiumProb}% podium. Next: ${alternatives}.`
+    : `No contest gives at least ${MIN_VIABLE_CASH_PCT}% cash odds with your current cards. Closest: ${best.label} (${best.cashProb}% cash, ${best.topScore?.toFixed(1) ?? "--"} pts).`;
 
   return {
     recommendedFormat: best.format,
     reason,
     eliteCardCount,
     activePoolCount,
-    recommendedScope: bestScope,
-    fieldPaidPct: bm?.rewardWinRatePct ?? best.fieldPaidPct,
-    paidCutoffScore: bm?.paidCutoffScore ?? best.paidCutoffScore,
-    totalEntries: bm?.podSize ?? bm?.totalEntries ?? best.totalEntries,
+    recommendedScope: best.seasonScope,
+    fieldPaidPct: best.fieldPaidPct,
+    paidCutoffScore: best.paidCutoffScore,
+    totalEntries: best.totalEntries,
     inSeasonVsClassicTip,
-    candidates,
+    cashProb: best.cashProb,
+    top20Prob: best.top20Prob,
+    podiumProb: best.podiumProb,
+    expectedValueScore: best.expectedValueScore,
+    viable: best.viable,
+    candidates: ranked,
   };
 }
 
@@ -980,6 +1005,85 @@ export interface LineupSwapSuggestion {
   outPlayer: string;
   inPlayer: string;
   deltaPts: number;
+  /** "upgrade" gains points within the cap; "cap_fix" gives up points to get under the star cap. */
+  kind: "upgrade" | "cap_fix";
+  /** Plain-language explanation shown in the swap's info tooltip. */
+  reason: string;
+  /** The incoming player already sits in another synced lineup this Game Week. */
+  usedInOtherLineup: boolean;
+}
+
+function formatPts(n: number): string {
+  return (Math.round(n * 10) / 10).toFixed(1);
+}
+
+function formatStars(n: number): string {
+  return `${Math.round(n * 10) / 10}★`;
+}
+
+/**
+ * Turns raw "current vs optimal" card differences into explained suggestions.
+ * Downgrades are only kept when the lineup is over the star cap (by this extension's
+ * star ratings), and are labelled as cap fixes; otherwise only real upgrades remain.
+ */
+export function explainLineupSwaps(
+  pairs: Array<{ out: EvaluatedLineupCard; in: EvaluatedLineupCard }>,
+  context: {
+    currentStars: number;
+    starCap: number | null;
+    usedElsewhere: Set<string>;
+  },
+): LineupSwapSuggestion[] {
+  const overCap =
+    context.starCap !== null && context.currentStars > context.starCap + 1e-9;
+  const result: LineupSwapSuggestion[] = [];
+  let runningStars = context.currentStars;
+  for (const pair of pairs) {
+    const delta = Math.round((pair.in.effectiveScore - pair.out.effectiveScore) * 10) / 10;
+    const starChange = pair.in.card.starCost - pair.out.card.starCost;
+    const usedInOtherLineup = context.usedElsewhere.has(
+      normalizePlayerNameKey(pair.in.card.playerName),
+    );
+    const usedNote = usedInOtherLineup
+      ? ` Note: ${pair.in.card.playerName} is already in another of your lineups this Game Week.`
+      : "";
+    const projection = `${pair.in.card.playerName} projects ${formatPts(pair.in.effectiveScore)} pts (${formatStars(pair.in.card.starCost)}) vs ${pair.out.card.playerName} ${formatPts(pair.out.effectiveScore)} pts (${formatStars(pair.out.card.starCost)}).`;
+    if (delta > 0) {
+      runningStars += starChange;
+      const capNote =
+        context.starCap !== null
+          ? ` Lineup stays at ${formatStars(runningStars)} of the ${context.starCap}★ cap.`
+          : "";
+      result.push({
+        outPlayer: pair.out.card.playerName,
+        inPlayer: pair.in.card.playerName,
+        deltaPts: delta,
+        kind: "upgrade",
+        reason: `Upgrade: ${projection}${capNote}${usedNote}`,
+        usedInOtherLineup,
+      });
+    } else if (overCap && starChange < 0) {
+      runningStars += starChange;
+      result.push({
+        outPlayer: pair.out.card.playerName,
+        inPlayer: pair.in.card.playerName,
+        deltaPts: delta,
+        kind: "cap_fix",
+        reason: `Cap fix: by this extension's star ratings your lineup is ${formatStars(context.currentStars)}, over the ${context.starCap}★ cap. This swap frees ${formatStars(-starChange)} for ${formatPts(-delta)} fewer projected pts. ${projection} If Sorare accepted your lineup, its live star ratings differ from ours and you can ignore this.${usedNote}`,
+        usedInOtherLineup,
+      });
+    }
+  }
+  return result;
+}
+
+function normalizePlayerNameKey(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 export interface CurrentLineupComparison {
@@ -989,6 +1093,10 @@ export interface CurrentLineupComparison {
   currentStars: number;
   optimalProjected: number | null;
   potentialGain: number;
+  /** Star cap of the inferred format (null = uncapped). */
+  starCap?: number | null;
+  /** Current lineup exceeds the cap by this extension's star ratings. */
+  currentOverCap?: boolean;
   swaps: LineupSwapSuggestion[];
   betterCaptainName: string | null;
   resolvedCardSlugs?: string[];
@@ -1192,16 +1300,22 @@ export function compareCurrentVsOptimalLineups(
       .filter((ev) => !currentSlugSet.has(ev.card.slug))
       .sort((a, b) => b.effectiveScore - a.effectiveScore);
 
-    const swaps: LineupSwapSuggestion[] = [];
     const pairCount = Math.min(toRemove.length, toAdd.length);
+    const pairs: Array<{ out: EvaluatedLineupCard; in: EvaluatedLineupCard }> = [];
     for (let i = 0; i < pairCount; i += 1) {
-      swaps.push({
-        outPlayer: toRemove[i].card.playerName,
-        inPlayer: toAdd[i].card.playerName,
-        deltaPts:
-          Math.round((toAdd[i].effectiveScore - toRemove[i].effectiveScore) * 10) / 10,
-      });
+      pairs.push({ out: toRemove[i], in: toAdd[i] });
     }
+    const usedElsewhere = new Set<string>();
+    for (const other of currentLineups) {
+      if (other === entry) continue;
+      for (const n of other.playerNames ?? []) usedElsewhere.add(normalizePlayerNameKey(n));
+    }
+    const starCap = getFormatStarCap(inferredFormat);
+    const swaps = explainLineupSwaps(pairs, {
+      currentStars,
+      starCap,
+      usedElsewhere,
+    });
 
     return {
       entry,
@@ -1212,6 +1326,8 @@ export function compareCurrentVsOptimalLineups(
       potentialGain:
         Math.round(Math.max(0, optimal.totalScore - currentProjected) * 10) / 10,
       swaps,
+      starCap,
+      currentOverCap: starCap !== null && currentStars > starCap + 1e-9,
       betterCaptainName,
       resolvedCardSlugs: Array.from(matchedSlugs),
       paidCutoffScore: entryBm?.paidCutoffScore ?? null,
