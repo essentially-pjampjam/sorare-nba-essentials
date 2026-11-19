@@ -545,8 +545,10 @@ export interface CompetitionRoomInfo {
 export const COMPETITION_ENTRY_LIMITS = {
   proInSeasonMaxEntries: 5,
   arenaCashMaxEntries: 5,
+  // Live 2026-11-19: Classic Limited boards show "0 SET / 3" (docs/SORARE_FACTS.md).
+  // Rare / Super Rare / Unique values are from the handoff spec, not yet live-verified.
   proClassicMaxEntriesByRarity: {
-    limited: 4,
+    limited: 3,
     rare: 4,
     super_rare: 2,
     unique: 2,

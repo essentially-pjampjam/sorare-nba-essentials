@@ -1638,8 +1638,9 @@ describe("Feature 5: Multi-Lineup Builder Limits & Slot Expansion (0 SET / 5)", 
     const limits = constants.COMPETITION_ENTRY_LIMITS;
     expect(limits.proInSeasonMaxEntries).toBe(5);
     expect(limits.arenaCashMaxEntries).toBe(5);
+    // Live 2026-11-19: Classic Limited = 3 entries ("0 SET / 3"), docs/SORARE_FACTS.md.
     expect(limits.proClassicMaxEntriesByRarity).toEqual({
-      limited: 4,
+      limited: 3,
       rare: 4,
       super_rare: 2,
       unique: 2,
@@ -1777,7 +1778,7 @@ describe("Feature 5: Multi-Lineup Builder Limits & Slot Expansion (0 SET / 5)", 
 
     expect(invoke("arena_contender_12", "limited", "arena")).toBe(5);
     expect(invoke("champion_16", "limited", "in_season")).toBe(5);
-    expect(invoke("contender_11", "limited", "classic")).toBe(4);
+    expect(invoke("contender_11", "limited", "classic")).toBe(3); // live "0 SET / 3"
     expect(invoke("contender_11", "rare", "classic")).toBe(4);
     expect(invoke("contender_11", "super_rare", "classic")).toBe(2);
     expect(invoke("contender_11", "unique", "classic")).toBe(2);

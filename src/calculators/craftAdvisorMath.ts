@@ -188,13 +188,28 @@ export function evaluateCraftPool(
   let expectedValueCents: number | null = null;
   let pricedWeight = 0;
   if (priced.length > 0) {
+    // Selection-bias fix: unpriced players are mostly illiquid low-tier cards. Averaging only
+    // the priced ones over-states EV, so each unpriced player is imputed at the cheapest
+    // floor seen for its own or a lower quality tier, or 0 when no such market evidence exists.
+    const imputeFor = (tierRank: number): number => {
+      const floors = priced
+        .filter((c) => QUALITY_TIER_META[c.player.qualityTier].rank >= tierRank)
+        .map((c) => c.player.floorCents ?? 0);
+      return floors.length > 0 ? Math.min(...floors) : 0;
+    };
     let weightedSum = 0;
-    for (const c of priced) {
+    let totalWeight = 0;
+    for (const c of candidates) {
       const w = playerWeight(c.player);
-      weightedSum += (c.player.floorCents ?? 0) * w;
-      pricedWeight += w;
+      totalWeight += w;
+      if (c.player.floorCents !== null) {
+        weightedSum += c.player.floorCents * w;
+        pricedWeight += w;
+      } else {
+        weightedSum += imputeFor(QUALITY_TIER_META[c.player.qualityTier].rank) * w;
+      }
     }
-    expectedValueCents = pricedWeight > 0 ? Math.round(weightedSum / pricedWeight) : null;
+    expectedValueCents = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : null;
   }
   const pricedSupplyCoveragePct =
     filteredSupply > 0 ? Math.round((pricedWeight / filteredSupply) * 1000) / 10 : 0;

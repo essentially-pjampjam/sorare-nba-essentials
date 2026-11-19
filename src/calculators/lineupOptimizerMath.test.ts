@@ -865,6 +865,15 @@ describe("explainLineupSwaps", () => {
       injury: null,
       injuryStatus: "ACTIVE",
       gamesInSlate: 1,
+      p10Floor: score * 0.6,
+      p50Median: score * 0.94,
+      p90Ceiling: score * 1.5,
+      cv: 0.35,
+      vorp: score - 12,
+      starSurplus: 0,
+      riskTags: [],
+      upsideTags: [],
+      boostSummary: { powerMultiplier: 1, slateMultiplier: 1, vegasMultiplier: 1, restMultiplier: 1 },
       allSources: { sorareProjected: score, l10: score, l5: score, custom: null, blended: score },
     }) satisfies EvaluatedLineupCard;
 

@@ -59,11 +59,31 @@ detect them **live** (Sorare GraphQL `so5Fixture.so5Leaderboards` + rules/reward
 background worker) instead of hard-coding. Still open: Classic entry limits per rarity; whether one card
 can sit in two lineups in the same GW (editor's "Used in another lineup" filter suggests not).
 
+## Vault / Sealing (NBA)
+
+| Fact | Value | Status / Source |
+|---|---|---|
+| Sealed card | Locked: cannot be sold, traded or played; still counts for Collection score | OFFICIAL (Sorare NBA 26 blog; MLB/Football help match) |
+| Lineups | Sealing a card in an upcoming or live lineup cancels that lineup (warning before confirm) | OFFICIAL help (MLB article; same system) |
+| Unseal | 1 card per scarcity every 2 weeks (14 days); removes its Sealing Points | OFFICIAL (NBA 26 blog + help) |
+| Sealing Points | 1 / 2 / 5 / 20 / 50 / 200 by a card quality tier Sorare decides; shown before sealing. No first-owner/loyalty bonus since 2026 | OFFICIAL help. Extension **estimates** the tier from scarcity + L10 |
+| Vault Levels | 1-20 = +1%..+20% rewards, one Vault per scarcity (no Common Vault); mixed lineups use the card-weighted average | OFFICIAL help |
+| Boost scope | In-Season and Classic only; not Arena Rooms, Hot Streaks, Missions, Special Events | OFFICIAL (NBA 26 blog) |
+| Listed card | Sealed cards cannot be sold, so a live listing is removed | INFERRED from "cannot be sold"; verify in the seal dialog |
+
+## Timers
+
+| Fact | Value | Status / Source |
+|---|---|---|
+| Daily reset | Code uses **07:00 UTC** (handoff spec). Sorare Football missions reset 9 AM CET (= 08:00 UTC in winter) | `UNVERIFIED` for NBA: confirm from the in-app daily timer |
+| GW cutoff | `so5Fixture.cutOffDate` of the opened fixture | API |
+
 ## Set / Common
 
 | Fact | Value | Status / Source |
 |---|---|---|
 | Daily Picker mission | Player must beat L10 by **7** pts and score **≥ 20** | LIVE-VERIFIED (Squad page mission text) |
+| Squad cap | Code uses a **120** non-MVP L10 cap (`SET_ARCADE_RULES.squadSalaryCap`) | `UNVERIFIED`: with 6 Commons at L10 32-43 no lineup fits; read live in M3 |
 | Set lives | Start each level with **4 Lives**; lose a life when a lineup misses target; restart from level 1 at 0 lives | OFFICIAL DOC ("What is Sorare Set (NBA)?") |
 | Collection Bonus | Up to **+5%** for owning multiple players of the same team | OFFICIAL DOC |
 | Set cards get no XP / In-Season bonus | Only Collection Bonus applies | OFFICIAL DOC (Set launch blog) |

@@ -598,7 +598,7 @@ describe("Tier 4 — Real-World End-to-End Scenarios (1–9)", () => {
 
     expect(limits.proInSeasonMaxEntries).toBe(5);
     expect(limits.arenaCashMaxEntries).toBe(5);
-    expect(limits.proClassicMaxEntriesByRarity.limited).toBe(4);
+    expect(limits.proClassicMaxEntriesByRarity.limited).toBe(3); // live "0 SET / 3"
     expect(limits.hotStreakMaxEntries).toBe(3);
 
     const portfolio = generateTopLineups(PJAMPJAM_GALLERY_CARDS, {

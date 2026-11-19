@@ -1,4 +1,5 @@
-import { LINEUP_FORMAT_TARGETS } from "../shared/constants";
+import { COMPETITION_ENTRY_LIMITS, LINEUP_FORMAT_TARGETS } from "../shared/constants";
+import { estimateSealingPoints } from "./sealingPoints";
 import {
   MIN_VIABLE_CASH_PCT,
   buildContestThresholds,
@@ -17,6 +18,7 @@ import type {
   LineupAgeFilter,
   LineupFormat,
   ProjectionSource,
+  TeamSlateSchedule,
 } from "../shared/types";
 
 /**
@@ -58,6 +60,25 @@ export interface EvaluatedLineupCard {
   injury: InjuryReportEntry | null;
   injuryStatus: InjuryStatus;
   gamesInSlate: number;
+  /** Skewed (log-normal) score distribution for this slate; all 0 when the player can't score. */
+  p10Floor: number;
+  p50Median: number;
+  p90Ceiling: number;
+  /** Coefficient of variation used for the distribution. */
+  cv: number;
+  /** Points over a freely available replacement-level card (REPLACEMENT_LEVEL_PTS). */
+  vorp: number;
+  /** Points over what the card's star cost typically scores (value per star). */
+  starSurplus: number;
+  riskTags: string[];
+  upsideTags: string[];
+  /** Multipliers applied on top of the base projection. */
+  boostSummary: {
+    powerMultiplier: number;
+    slateMultiplier: number;
+    vegasMultiplier: number;
+    restMultiplier: number;
+  };
   allSources: {
     sorareProjected: number | null;
     l10: number | null;
@@ -84,6 +105,9 @@ export interface SuggestedLineup {
   capLimit: number | null;
   inSeasonCount: number;
   hasInjuryRisk: boolean;
+  /** Correlation-aware lineup score spread (see computeLineupVariance). */
+  stdDev?: number;
+  variance?: number;
   /** Estimated win probabilities (%) against target thresholds */
   odds: {
     essenceTarget: number;
@@ -121,6 +145,10 @@ export interface AutoBuildOptions {
   captainBonusPct?: number;
   benchmarks?: LeaderboardBenchmark[];
   benchmarkSeasonScope?: "in_season" | "classic" | "arena";
+  /** Per-team slate schedule (games, B2B) for edit-focus notes. */
+  scheduleByTeam?: Record<string, TeamSlateSchedule>;
+  /** Live Instant Buy / auction listings for buy-target notes. */
+  marketListings?: BargainListing[];
   targets?: {
     essenceTarget: number;
     tier1Target: number;
@@ -248,12 +276,181 @@ function slatePeakMultiplier(gamesInSlate: number): number {
   return 1.24;
 }
 
+/** League-average implied team total (2025-26 NBA scoring environment, ~114-115 ppg). */
+export const LEAGUE_AVG_TEAM_TOTAL = 114.5;
+/** Fantasy points move ~half as much as team points (usage share stays flat). */
+const ITT_ELASTICITY = 0.5;
+/** Back-to-back: rest/minutes risk on the second night. */
+const B2B_MULTIPLIER = 0.96;
+/** Heavy favourite / underdog: starters can sit the 4th quarter. */
+const BLOWOUT_MULTIPLIER = 0.97;
+export const BLOWOUT_SPREAD = 12;
+/** Score of a freely available bench card (about a 1-1.5 star L10). */
+export const REPLACEMENT_LEVEL_PTS = 12;
+const BASE_PLAYER_CV = 0.35;
+const Z90 = 1.2816;
+
+interface SlateContext {
+  vegasMultiplier: number;
+  restMultiplier: number;
+  backToBack: boolean;
+  blowout: boolean;
+  impliedTeamTotal: number | null;
+}
+
+function slateContextAdjustments(sched: TeamSlateSchedule | undefined): SlateContext {
+  if (!sched) {
+    return { vegasMultiplier: 1, restMultiplier: 1, backToBack: false, blowout: false, impliedTeamTotal: null };
+  }
+  const itt =
+    typeof sched.impliedTeamTotal === "number" && Number.isFinite(sched.impliedTeamTotal)
+      ? sched.impliedTeamTotal
+      : null;
+  const vegasRaw =
+    itt !== null ? 1 + ((itt - LEAGUE_AVG_TEAM_TOTAL) / LEAGUE_AVG_TEAM_TOTAL) * ITT_ELASTICITY : 1;
+  const vegasMultiplier = Math.min(1.1, Math.max(0.9, vegasRaw));
+  const blowout =
+    sched.blowoutRisk === true ||
+    (typeof sched.spread === "number" && Math.abs(sched.spread) >= BLOWOUT_SPREAD);
+  const backToBack = sched.hasBackToBack === true;
+  const restMultiplier = (backToBack ? B2B_MULTIPLIER : 1) * (blowout ? BLOWOUT_MULTIPLIER : 1);
+  return { vegasMultiplier, restMultiplier, backToBack, blowout, impliedTeamTotal: itt };
+}
+
+/** Typical L10 for a card at this star cost (mid-point of the extension's star tiers). */
+export function expectedScoreForStars(starCost: number): number {
+  const table: Array<[number, number]> = [
+    [1.0, 8],
+    [1.5, 13.5],
+    [2.0, 18.5],
+    [2.5, 23.5],
+    [3.0, 29],
+    [3.5, 35],
+    [4.0, 41],
+    [4.5, 47],
+    [5.0, 52],
+  ];
+  let best = table[0];
+  for (const row of table) if (Math.abs(row[0] - starCost) < Math.abs(best[0] - starCost)) best = row;
+  return best[1];
+}
+
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
+}
+
+function buildCardAnalytics(args: {
+  card: GalleryCard;
+  effectiveScore: number;
+  injuryStatus: InjuryStatus;
+  gamesInSlate: number;
+  noGame: boolean;
+  context: SlateContext;
+  l5: number | null;
+  l10: number | null;
+}): Pick<
+  EvaluatedLineupCard,
+  "p10Floor" | "p50Median" | "p90Ceiling" | "cv" | "vorp" | "starSurplus" | "riskTags" | "upsideTags"
+> {
+  const { card, effectiveScore, injuryStatus, gamesInSlate, noGame, context, l5, l10 } = args;
+  const riskTags: string[] = [];
+  const upsideTags: string[] = [];
+  if (noGame) riskTags.push("0G: no game this slate");
+  if (injuryStatus === "OUT") riskTags.push("OUT (injury)");
+  else if (injuryStatus !== "ACTIVE") {
+    riskTags.push(`${injuryStatus.replace(/_/g, "-").toLowerCase()} (injury)`);
+  }
+  if (context.backToBack) riskTags.push("B2B: back-to-back rest risk");
+  if (context.blowout) riskTags.push("Blowout risk (big spread)");
+  if (context.impliedTeamTotal !== null && context.impliedTeamTotal < LEAGUE_AVG_TEAM_TOTAL - 6) {
+    riskTags.push(`Low implied team total (${context.impliedTeamTotal.toFixed(1)})`);
+  }
+  if (gamesInSlate >= 2) upsideTags.push(`${gamesInSlate}G slate`);
+  if (context.impliedTeamTotal !== null && context.impliedTeamTotal > LEAGUE_AVG_TEAM_TOTAL + 6) {
+    upsideTags.push(`High implied team total (${context.impliedTeamTotal.toFixed(1)})`);
+  }
+  if (l5 !== null && l10 !== null && l10 > 0 && l5 >= l10 * 1.15) upsideTags.push("Hot form (L5 > L10)");
+
+  // Bench / low-minute players and uncertain situations swing more.
+  let cv = BASE_PLAYER_CV;
+  if ((l10 ?? 0) < 15) cv += 0.1;
+  if (injuryStatus === "DAY_TO_DAY" || injuryStatus === "QUESTIONABLE") cv += 0.1;
+  if (context.backToBack) cv += 0.05;
+  if (context.blowout) cv += 0.05;
+  cv = Math.round(cv * 100) / 100;
+
+  let p10Floor = 0;
+  let p50Median = 0;
+  let p90Ceiling = 0;
+  if (effectiveScore > 0) {
+    // Log-normal with mean = effectiveScore: right-skewed like real box-score outcomes.
+    const sigma = Math.sqrt(Math.log(1 + cv * cv));
+    const median = effectiveScore / Math.sqrt(1 + cv * cv);
+    p10Floor = round1(median * Math.exp(-Z90 * sigma));
+    p50Median = round1(median);
+    p90Ceiling = round1(median * Math.exp(Z90 * sigma));
+  }
+  return {
+    p10Floor,
+    p50Median,
+    p90Ceiling,
+    cv,
+    vorp: round1(effectiveScore - REPLACEMENT_LEVEL_PTS),
+    starSurplus: round1(effectiveScore - expectedScoreForStars(card.starCost)),
+    riskTags,
+    upsideTags,
+  };
+}
+
+
+/** Same-team score correlation (shared pace / usage). */
+const TEAMMATE_RHO = 0.15;
+/** Opponents in the same game: shootouts lift both sides. */
+const SAME_GAME_RHO = 0.08;
+
+function playsAgainst(
+  a: TeamSlateSchedule | undefined,
+  b: TeamSlateSchedule | undefined,
+): boolean {
+  if (!a || !b || !a.abbr || !b.abbr) return false;
+  const tokens = (m: string) => m.toUpperCase().replace(/[^A-Z ]/g, " ").split(/\s+/);
+  return (
+    a.matchups.some((m) => tokens(m).includes(b.abbr.toUpperCase())) ||
+    b.matchups.some((m) => tokens(m).includes(a.abbr.toUpperCase()))
+  );
+}
+
+/**
+ * Lineup score variance with per-player spread from each card's cv (floor 4 pts) plus
+ * pairwise correlation for teammates and for opponents in the same game.
+ */
+export function computeLineupVariance(
+  slots: Array<{ slotScore: number; evaluated: EvaluatedLineupCard }>,
+  scheduleByTeam?: Record<string, TeamSlateSchedule>,
+): number {
+  const sigmas = slots.map((s) => Math.max(4, s.slotScore * (s.evaluated.cv || 0.35)));
+  let variance = 0;
+  for (let i = 0; i < slots.length; i += 1) {
+    variance += sigmas[i] * sigmas[i];
+    for (let j = i + 1; j < slots.length; j += 1) {
+      const ta = slots[i].evaluated.card.teamSlug;
+      const tb = slots[j].evaluated.card.teamSlug;
+      let rho = 0;
+      if (ta && tb && ta === tb) rho = TEAMMATE_RHO;
+      else if (ta && tb && playsAgainst(scheduleByTeam?.[ta], scheduleByTeam?.[tb])) rho = SAME_GAME_RHO;
+      variance += 2 * rho * sigmas[i] * sigmas[j];
+    }
+  }
+  return variance;
+}
+
 export function evaluateCardForLineup(
   card: GalleryCard,
   projectionSource: ProjectionSource,
   customMap: Map<string, number>,
   injuriesByName: Record<string, InjuryReportEntry>,
   gamesPerTeam: Record<string, number>,
+  scheduleByTeam?: Record<string, TeamSlateSchedule>,
 ): EvaluatedLineupCard {
   const normName = normalizePlayerName(card.playerName);
   const injury = injuriesByName[normName] ?? null;
@@ -317,9 +514,23 @@ export function evaluateCardForLineup(
         ? 0
         : 1;
 
-  const injuryAdjustedBase =
-    baseProjection * mult * (hasSchedule && gamesInSlate === 0 ? 0.25 : 1);
-  const effectiveScore = injuryAdjustedBase * card.powerMultiplier;
+  // A player whose team has no game in the slate cannot score.
+  const noGame = hasSchedule && gamesInSlate === 0;
+  const sched = card.teamSlug ? scheduleByTeam?.[card.teamSlug] : undefined;
+  const context = slateContextAdjustments(sched);
+  const injuryAdjustedBase = noGame ? 0 : baseProjection * mult;
+  const effectiveScore =
+    injuryAdjustedBase * card.powerMultiplier * context.vegasMultiplier * context.restMultiplier;
+  const analytics = buildCardAnalytics({
+    card,
+    effectiveScore,
+    injuryStatus,
+    gamesInSlate,
+    noGame,
+    context,
+    l5,
+    l10,
+  });
 
   return {
     card,
@@ -329,6 +540,13 @@ export function evaluateCardForLineup(
     injury,
     injuryStatus,
     gamesInSlate,
+    ...analytics,
+    boostSummary: {
+      powerMultiplier: card.powerMultiplier,
+      slateMultiplier: hasSchedule ? slatePeakMultiplier(gamesInSlate) : 1,
+      vegasMultiplier: context.vegasMultiplier,
+      restMultiplier: context.restMultiplier,
+    },
     allSources: {
       sorareProjected: sorareProj,
       l10,
@@ -549,6 +767,8 @@ export function generateTopLineups(
   const excludedSet = new Set(options.excludedCardSlugs ?? []);
   const evaluatedPool = cards
     .filter((card) => {
+      // Sealed (Vault) cards cannot be played on Sorare.
+      if (card.sealed) return false;
       if (options.rarityFilter !== "ALL" && card.rarity !== options.rarityFilter) {
         return false;
       }
@@ -573,9 +793,12 @@ export function generateTopLineups(
         customMap,
         options.injuriesByName,
         options.gamesPerTeam,
+        options.scheduleByTeam,
       ),
     )
     .filter((ev) => {
+      // No game in the slate = 0 points: never draft it.
+      if (ev.gamesInSlate === 0 && ev.effectiveScore <= 0) return false;
       if (options.excludeOut && ev.injuryStatus === "OUT") return false;
       if (
         options.excludeQuestionable &&
@@ -620,6 +843,24 @@ export function generateTopLineups(
       : pool;
 
     if (available.length < 5) break;
+
+    // Multi-entry with an In-Season quota: don't let one lineup burn In-Season cards the
+    // later lineups need, so the slate fits as many legal entries as the pool allows.
+    let inSeasonCapThisPass = 5;
+    if (options.disjointAcrossLineups && options.minInSeasonCards > 0) {
+      const remainingInSeason = available.filter((ev) => ev.card.inSeasonEligible).length;
+      const feasibleLineups = Math.min(
+        maxToFind - pass,
+        Math.floor(remainingInSeason / options.minInSeasonCards),
+        Math.floor(available.length / 5),
+      );
+      if (feasibleLineups > 1) {
+        inSeasonCapThisPass = Math.max(
+          options.minInSeasonCards,
+          remainingInSeason - options.minInSeasonCards * (feasibleLineups - 1),
+        );
+      }
+    }
 
     let bestScore = -1;
     let bestCombo: EvaluatedLineupCard[] | null = null;
@@ -706,6 +947,7 @@ export function generateTopLineups(
         if (nextInSeason + (remainingNeed - 1) < options.minInSeasonCards) {
           continue;
         }
+        if (nextInSeason > inSeasonCapThisPass) continue;
 
         chosen.push(candidate);
         chosenPlayers.add(candidate.card.playerSlug);
@@ -732,11 +974,8 @@ export function generateTopLineups(
       captainBonusPct,
     );
 
-    // Lineup score stdDev (~22% per-player game variance summed in quadrature)
-    const variance = assigned.slots.reduce((sum, slot) => {
-      const sigma = Math.max(5, slot.slotScore * 0.22);
-      return sum + sigma * sigma;
-    }, 0);
+    // Correlation-aware spread: teammates and same-game opponents move together.
+    const variance = computeLineupVariance(assigned.slots, options.scheduleByTeam);
     const stdDev = Math.sqrt(variance);
 
     const hasInjuryRisk = assigned.slots.some(
@@ -759,6 +998,8 @@ export function generateTopLineups(
         (s) => s.evaluated.card.inSeasonEligible,
       ).length,
       hasInjuryRisk,
+      stdDev: Math.round(stdDev * 100) / 100,
+      variance: Math.round(variance * 100) / 100,
       odds: {
         essenceTarget: targets.essenceTarget,
         essencePct: Math.round(
@@ -1105,6 +1346,13 @@ export interface CurrentLineupComparison {
   estRank?: number;
   estTotalEntries?: number;
   rewardWinRatePct?: number;
+  /** Cards of the synced lineup matched to the gallery (0-5). */
+  resolvedCardCount?: number;
+  expectedCardCount?: number;
+  /** Why fewer than 5 cards resolved; undefined when all 5 matched. */
+  unresolvedReason?: string;
+  editFocusPoints?: EditFocusPoint[];
+  overlaySummary?: LineupOverlaySummary;
 }
 
 const SUFFIX_TOKENS = new Set(["jr", "sr", "ii", "iii", "iv"]);
@@ -1189,10 +1437,13 @@ export function compareCurrentVsOptimalLineups(
       customMap,
       options.injuriesByName,
       options.gamesPerTeam,
+      options.scheduleByTeam,
     );
     evalBySlug.set(c.slug, ev);
     evalList.push(ev);
   }
+
+  const ownedPlayerSlugs = new Set(cards.map((c) => c.playerSlug));
 
   return currentLineups.map((entry) => {
     const inferredFormat = inferFormatFromLeaderboard(
@@ -1267,6 +1518,27 @@ export function compareCurrentVsOptimalLineups(
       maxLineups: 1,
     }).lineups[0];
 
+    const unresolvedReason = buildUnresolvedReason(entry, currentEvaluated.length);
+    const roundedForOverlay = Math.round(currentProjected * 10) / 10;
+    const overlaySummary = buildLineupOverlay(currentEvaluated, roundedForOverlay, options.scheduleByTeam);
+    const syncFields = {
+      resolvedCardCount: currentEvaluated.length,
+      expectedCardCount: LINEUP_SIZE,
+      unresolvedReason,
+      overlaySummary,
+    };
+    const focusFor = (swaps: LineupSwapSuggestion[]): EditFocusPoint[] =>
+      buildEditFocusPoints({
+        evaluated: currentEvaluated,
+        swaps,
+        unresolvedReason,
+        currentStars,
+        starCap: getFormatStarCap(inferredFormat),
+        scheduleByTeam: options.scheduleByTeam,
+        marketListings: options.marketListings,
+        ownedPlayerSlugs,
+      });
+
     const roundedCurrent = Math.round(currentProjected * 10) / 10;
     const standing = entryBm
       ? estimateBenchmarkStanding(roundedCurrent, entryBm)
@@ -1287,6 +1559,8 @@ export function compareCurrentVsOptimalLineups(
         estRank: standing?.estRank,
         estTotalEntries: standing?.totalEntries,
         rewardWinRatePct: entryBm?.rewardWinRatePct,
+        ...syncFields,
+        editFocusPoints: focusFor([]),
       };
     }
 
@@ -1335,6 +1609,8 @@ export function compareCurrentVsOptimalLineups(
       estRank: standing?.estRank,
       estTotalEntries: standing?.totalEntries,
       rewardWinRatePct: entryBm?.rewardWinRatePct,
+      ...syncFields,
+      editFocusPoints: focusFor(swaps),
     };
   });
 }
@@ -1392,6 +1668,7 @@ export function buildBudgetLineups(
         continue;
       }
       if (minInSeason >= 5 && !c.inSeasonEligible) continue;
+      if (c.sealed) continue;
       if (seenPlayerCost.has(c.playerSlug)) continue;
       seenPlayerCost.set(c.playerSlug, 0);
       slotCostBySlug[c.slug] = {
@@ -1663,18 +1940,17 @@ export interface VaultVsSellAdvice {
  * to advise sealing vs. selling on the market.
  */
 export function evaluateVaultVsSellRoi(card: GalleryCard): VaultVsSellAdvice {
-  const rarityMult =
-    card.rarity === "unique"
-      ? 25
-      : card.rarity === "super_rare"
-        ? 10
-        : card.rarity === "rare"
-          ? 4
-          : 1;
-  const vaultPoints = Math.max(
-    10,
-    Math.round((card.l10 ?? 12) * rarityMult * (card.isFirstOwner ? 1.2 : 1)),
-  );
+  // Sealing Points tier estimate (1/2/5/20/50/200); Sorare shows the exact value before sealing.
+  const vaultPoints = estimateSealingPoints(card).sealingPoints;
+
+  if (card.sealed) {
+    return {
+      action: "HOLD_DEPTH",
+      vaultPoints,
+      label: "🔒 Sealed",
+      reason: "Already sealed in your Vault: not sellable or playable until unsealed (max 1 unseal per scarcity / 14 days).",
+    };
+  }
 
   if (card.inSeasonEligible || (card.openedLineupIds?.length ?? 0) > 0) {
     return {
@@ -2112,6 +2388,7 @@ export function recommendTwoCardComboSwaps(
 
   for (const c of ownedCards) {
     if (baseCardSlugs.has(c.slug) || basePlayerSlugs.has(c.playerSlug)) continue;
+    if (c.sealed) continue;
     if (options.rarityFilter !== "ALL" && c.rarity !== options.rarityFilter) continue;
     if (options.seasonRule === "5_in_season" && !c.inSeasonEligible) continue;
     const ev = evaluateCardForLineup(
@@ -2673,4 +2950,205 @@ export function analyzeFocusStrength(
     uncappedDreamLineup,
     summary,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Synced-lineup edit focus & overlay (Feature #6)
+// ---------------------------------------------------------------------------
+
+export type EditFocusKind = "swap" | "buy" | "injury" | "schedule" | "boost" | "note";
+
+export interface EditFocusPoint {
+  kind: EditFocusKind;
+  playerName: string | null;
+  text: string;
+}
+
+export interface LineupOverlaySummary {
+  /** Average power bonus (%) across the resolved cards. */
+  totalBoostPct: number;
+  /** 10th-percentile lineup score (normal model, see entryEvMath.ts). */
+  p10Floor: number;
+  /** 90th-percentile lineup score. */
+  p90Ceiling: number;
+  riskFlags: string[];
+  upsideFlags: string[];
+}
+
+const P10_Z = 1.2816;
+export const LINEUP_SIZE = 5;
+
+function describeInjury(status: InjuryStatus): string {
+  switch (status) {
+    case "OUT":
+      return "OUT";
+    case "DOUBTFUL":
+      return "Doubtful";
+    case "QUESTIONABLE":
+      return "Questionable";
+    case "DAY_TO_DAY":
+      return "GTD (day-to-day)";
+    default:
+      return "Active";
+  }
+}
+
+export function buildUnresolvedReason(
+  entry: CurrentLineupEntry,
+  resolvedCount: number,
+): string | undefined {
+  if (resolvedCount >= LINEUP_SIZE) return undefined;
+  const listed = new Set(entry.cardSlugs).size;
+  const named = (entry.playerNames ?? []).length;
+  if (listed === 0 && named === 0) {
+    return "Synced lineup has no cards (empty or not yet filled on Sorare).";
+  }
+  const duplicates = entry.cardSlugs.length - listed;
+  const missing = LINEUP_SIZE - resolvedCount;
+  const dupNote = duplicates > 0 ? ` ${duplicates} duplicate card id(s) were ignored.` : "";
+  return `${missing} of ${LINEUP_SIZE} cards not found in your gallery (sold, not owned, or name mismatch); showing ${resolvedCount}/${LINEUP_SIZE}.${dupNote}`;
+}
+
+export function buildLineupOverlay(
+  evaluated: EvaluatedLineupCard[],
+  projected: number,
+  scheduleByTeam: Record<string, TeamSlateSchedule> | undefined,
+): LineupOverlaySummary {
+  const boosts = evaluated.map((ev) => ((ev.card.powerMultiplier ?? 1) - 1) * 100);
+  const totalBoostPct =
+    boosts.length > 0 ? Math.round((boosts.reduce((a, b) => a + b, 0) / boosts.length) * 10) / 10 : 0;
+  const sd = lineupStdDev(
+    evaluated.map((ev) => ({ projectedScore: ev.effectiveScore, teamSlug: ev.card.teamSlug })),
+  );
+  const riskFlags: string[] = [];
+  const upsideFlags: string[] = [];
+  for (const ev of evaluated) {
+    const name = ev.card.playerName;
+    const sched = scheduleByTeam?.[ev.card.teamSlug ?? ""];
+    if (ev.injuryStatus !== "ACTIVE") {
+      riskFlags.push(`${name}: ${describeInjury(ev.injuryStatus)}`);
+    }
+    if (ev.gamesInSlate === 0) riskFlags.push(`${name}: 0G (no game this slate)`);
+    if (sched?.hasBackToBack) riskFlags.push(`${name}: B2B (rest risk)`);
+    if (ev.gamesInSlate >= 2) upsideFlags.push(`${name}: ${ev.gamesInSlate}G slate`);
+    const { l5, l10 } = ev.allSources;
+    if (l5 !== null && l10 !== null && l10 > 0 && l5 >= l10 * 1.15) {
+      upsideFlags.push(`${name}: hot form (L5 ${l5.toFixed(1)} vs L10 ${l10.toFixed(1)})`);
+    }
+  }
+  return {
+    totalBoostPct,
+    p10Floor: Math.round(Math.max(0, projected - P10_Z * sd) * 10) / 10,
+    p90Ceiling: Math.round((projected + P10_Z * sd) * 10) / 10,
+    riskFlags,
+    upsideFlags,
+  };
+}
+
+export function buildEditFocusPoints(args: {
+  evaluated: EvaluatedLineupCard[];
+  swaps: LineupSwapSuggestion[];
+  unresolvedReason: string | undefined;
+  currentStars: number;
+  starCap: number | null;
+  scheduleByTeam: Record<string, TeamSlateSchedule> | undefined;
+  marketListings: BargainListing[] | undefined;
+  ownedPlayerSlugs: Set<string>;
+}): EditFocusPoint[] {
+  const points: EditFocusPoint[] = [];
+  if (args.unresolvedReason) {
+    points.push({ kind: "note", playerName: null, text: args.unresolvedReason });
+  }
+  for (const s of args.swaps) {
+    points.push({
+      kind: "swap",
+      playerName: s.outPlayer,
+      text: `Swap ${s.outPlayer} → ${s.inPlayer} (${s.deltaPts >= 0 ? "+" : ""}${s.deltaPts.toFixed(1)} pts): ${s.reason}`,
+    });
+  }
+  for (const ev of args.evaluated) {
+    const name = ev.card.playerName;
+    if (ev.injuryStatus !== "ACTIVE") {
+      const comment = ev.injury?.comment ? ` ${ev.injury.comment}` : "";
+      points.push({
+        kind: "injury",
+        playerName: name,
+        text:
+          ev.injuryStatus === "OUT"
+            ? `${name} is OUT: replace before lock.${comment}`
+            : `${name} is ${describeInjury(ev.injuryStatus)}: check status before lock.${comment}`,
+      });
+    }
+    if (ev.gamesInSlate === 0) {
+      points.push({ kind: "schedule", playerName: name, text: `${name} has no game (0G) this slate: replace.` });
+    }
+    const sched = args.scheduleByTeam?.[ev.card.teamSlug ?? ""];
+    if (sched?.hasBackToBack) {
+      points.push({
+        kind: "schedule",
+        playerName: name,
+        text: `${name}: ${sched.abbr} on a B2B (${ev.gamesInSlate}G); watch rest notes.`,
+      });
+    } else if (ev.gamesInSlate >= 2) {
+      points.push({ kind: "schedule", playerName: name, text: `${name}: ${ev.gamesInSlate}G slate boost.` });
+    }
+    if ((ev.card.powerMultiplier ?? 1) > 1.0001) {
+      points.push({
+        kind: "boost",
+        playerName: name,
+        text: `${name}: +${(((ev.card.powerMultiplier ?? 1) - 1) * 100).toFixed(0)}% card power bonus.`,
+      });
+    }
+  }
+  // One buy idea: the best Instant Buy listing that beats the weakest card within the cap.
+  const weakest = [...args.evaluated].sort((a, b) => a.effectiveScore - b.effectiveScore)[0];
+  if (weakest && args.marketListings && args.marketListings.length > 0) {
+    const pick = args.marketListings
+      .filter(
+        (l) =>
+          l.saleType === "instant_buy" &&
+          !args.ownedPlayerSlugs.has(l.playerSlug) &&
+          l.positions.some((p) => weakest.card.positions.includes(p)) &&
+          (args.starCap === null ||
+            args.currentStars - weakest.card.starCost + l.starCost <= args.starCap + 1e-9),
+      )
+      .map((l) => ({ l, gain: (l.projected ?? l.l5 ?? l.l10) - weakest.effectiveScore }))
+      .filter((x) => x.gain > 0.5)
+      .sort((a, b) => b.gain - a.gain)[0];
+    if (pick) {
+      const price = pick.l.priceCents !== null ? ` for €${(pick.l.priceCents / 100).toFixed(2)}` : "";
+      points.push({
+        kind: "buy",
+        playerName: pick.l.playerName,
+        text: `Buy target: ${pick.l.playerName}${price} (Instant Buy) to replace ${weakest.card.playerName} (+${pick.gain.toFixed(1)} pts, ${pick.l.starCost}★).`,
+      });
+    }
+  }
+  if (points.length === 0) {
+    points.push({ kind: "note", playerName: null, text: "No edits needed: this lineup is at or near your best." });
+  }
+  return points;
+}
+
+// ---------------------------------------------------------------------------
+// Competition entry limits (Feature #5)
+// ---------------------------------------------------------------------------
+
+export interface CompetitionEntryLimitQuery {
+  format: LineupFormat;
+  rarity: CardRarity;
+  seasonScope: "in_season" | "classic" | "arena";
+}
+
+/**
+ * Max lineups the manager can enter in one competition, from COMPETITION_ENTRY_LIMITS:
+ * Arena Rooms and In-Season 5, Classic by rarity (Limited 3 live-verified), Daily 1.
+ * M3 replaces these constants with Sorare's live per-leaderboard caps.
+ */
+export function getCompetitionEntryLimit(query: CompetitionEntryLimitQuery): number {
+  if (query.format === "daily_120_mvp") return 1;
+  if (query.seasonScope === "arena") return COMPETITION_ENTRY_LIMITS.arenaCashMaxEntries;
+  if (query.seasonScope === "in_season") return COMPETITION_ENTRY_LIMITS.proInSeasonMaxEntries;
+  const byRarity: Partial<Record<CardRarity, number>> = COMPETITION_ENTRY_LIMITS.proClassicMaxEntriesByRarity;
+  return byRarity[query.rarity] ?? 1;
 }

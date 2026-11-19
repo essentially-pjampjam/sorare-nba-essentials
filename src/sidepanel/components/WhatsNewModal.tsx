@@ -20,6 +20,18 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.6.8-exp.M2",
+    title: "Experimental M2: Smarter Lineup Math",
+    items: [
+      "Swap suggestions explain themselves: hover the info icon to see why. A points-losing swap only appears when your lineup is over the star cap.",
+      "Recommended Entry compares In-Season, Classic and Arena side by side by cash odds and payout EV, and never recommends a contest you have under 5% cash odds in.",
+      "Cards already in another synced lineup are locked out of new builds. A player with no game this slate is never drafted (counts 0, not 25%).",
+      "Projections now carry floor/ceiling ranges and Vegas, back-to-back and blowout adjustments (fed live in M3).",
+      "Vault points use Sorare's real 1/2/5/20/50/200 sealing tiers (estimated); sealed cards are never suggested for lineups.",
+      "Classic Limited entry limit corrected to 3 (live). Craft EV no longer overstates pools with unpriced cards.",
+    ],
+  },
+  {
     version: "2.6.7-exp.M1.1",
     title: "Experimental M1.1: Lineup Sync Keeps Up With Your Edits",
     items: [

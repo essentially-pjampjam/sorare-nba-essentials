@@ -8,6 +8,20 @@ Then reload any open sorare.com tabs so the new content script runs.
 
 ---
 
+## 2.6.8-exp.M2 — Smarter lineup math
+
+| # | Do this | Expect |
+|---|---|---|
+| 1 | Open the side panel | Badge is **red** on one line: `v2.6.8·M2`; What's New shows "Experimental M2" |
+| 2 | Lineups tab → Current Open Lineups (synced) → look at a swap row | Each swap has an **info icon**; hovering shows the reason (pts gained, stars before/after cap). No negative swap unless the row says **cap fix** |
+| 3 | Same box, a lineup already equal to the optimum | Shows "already beats/matches the calculated optimum", no swaps, real ★ total (not 0★) |
+| 4 | Build lineups with your synced lineups present | Cards from your synced lineups are not reused (no "in other lineup" card in a new build unless marked) |
+| 5 | Recommended Entry line | Names a contest like **In-Season Contender 11★** with cash %, top-20% and podium odds plus the next two alternatives; never a contest under 5% cash while another is viable |
+| 6 | Gallery tab → Vault/Seal advice | VP values are 1, 2, 5, 20, 50 or 200 per card (estimate) |
+
+**Not visible yet (math only, UI in M4):** edit-focus notes, floor/ceiling overlay, seal candidate list,
+countdown timers, alert tracker, side-by-side contest table, Classic 3-entry slot count.
+
 ## 2.6.7-exp.M1.1 — Lineup sync keeps up with edits
 
 | # | Do this | Expect |

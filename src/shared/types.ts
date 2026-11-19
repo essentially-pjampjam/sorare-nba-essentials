@@ -290,6 +290,9 @@ export interface GalleryCard {
     scarcity: number;
   };
   openedLineupIds?: string[];
+  /** Card is sealed in the manager's Vault (locked: not sellable, tradeable or playable). */
+  sealed?: boolean;
+  sealedAt?: string | null;
   teamName: string | null;
   teamSlug: string | null;
   playerSlug: string;
@@ -364,6 +367,14 @@ export interface TeamSlateSchedule {
   };
   liveGames?: number;
   completedGames?: number;
+  /** Vegas game total (ESPN odds[0].overUnder); null when no line is posted. */
+  overUnder?: number | null;
+  /** Spread from this team's side (negative = favourite). */
+  spread?: number | null;
+  /** (overUnder - spread) / 2 for this team. */
+  impliedTeamTotal?: number | null;
+  /** |spread| large enough that starters risk reduced 4th-quarter minutes. */
+  blowoutRisk?: boolean;
   upcomingGames?: number;
   liveClockLabel?: string | null;
 }
@@ -505,6 +516,12 @@ export interface UserSettings {
   projectionSource: ProjectionSource;
   customProjectionsRaw: string;
   milestoneRulesByRarity: Record<Rarity, EssenceMilestoneRule[]>;
+  /** Local GW-cutoff reminder (chrome.alarms + notification). */
+  cutoffReminderEnabled?: boolean;
+  cutoffReminderMinutesBefore?: number;
+  /** Master switch for the alert & price tracker. */
+  alertsEnabled?: boolean;
+  alertPreferences?: AlertPreferences;
 }
 
 export type BackgroundRequest =
@@ -625,3 +642,85 @@ export type BackgroundRequest =
 export type BackgroundResponse<T = unknown> =
   | { ok: true; data: T }
   | { ok: false; error: string };
+
+// ---------------------------------------------------------------------------
+// Countdowns & alert tracker (Features #12, #16)
+// ---------------------------------------------------------------------------
+
+export interface CountdownSnapshot {
+  /** Cutoff of the next opened Game Week, or null when none is open / parseable. */
+  gwCutoffIso: string | null;
+  gwRemainingMs: number | null;
+  gwFixtureSlug: string | null;
+  dailyResetIso: string;
+  dailyRemainingMs: number;
+}
+
+export type AlertEventKind =
+  | "price_surge"
+  | "injury_risk"
+  | "bargain_match"
+  | "gw_cutoff"
+  | "daily_reset";
+
+export interface AlertPreferences {
+  priceSurgeEnabled: boolean;
+  /** Minimum floor rise (%) over the stored baseline that counts as a surge. */
+  priceSurgePctThreshold: number;
+  injuryRiskEnabled: boolean;
+  bargainAlertEnabled: boolean;
+  cutoffAlertEnabled: boolean;
+  dailyResetAlertEnabled: boolean;
+  browserNotificationsEnabled: boolean;
+  /** Same event (dedupeKey) is not re-emitted within this window. */
+  cooldownMinutes: number;
+}
+
+export interface AlertTrackerConfig {
+  alertsEnabled: boolean;
+  alertPreferences: AlertPreferences;
+  cutoffReminderEnabled?: boolean;
+  cutoffReminderMinutesBefore?: number;
+}
+
+export interface PriceBaselineRecord {
+  cardSlug: string;
+  playerSlug: string;
+  playerName: string;
+  currency: Currency;
+  baselineFloorCents: number;
+  recordedAtMs: number;
+  updatedAtMs: number;
+}
+
+export interface TrackedAlertEvent {
+  id: string;
+  dedupeKey: string;
+  kind: AlertEventKind;
+  title: string;
+  message: string;
+  cardSlug?: string;
+  playerSlug?: string;
+  playerName?: string;
+  lineupIds?: string[];
+  pctChange?: number;
+  baselineCents?: number;
+  currentCents?: number;
+  previousStatus?: InjuryStatus;
+  currentStatus?: InjuryStatus;
+  targetUrl?: string;
+  createdAtMs: number;
+  notifyBrowser: boolean;
+}
+
+export interface AlertEvaluationInputs {
+  cards: GalleryCard[];
+  currentLineups: CurrentLineupEntry[];
+  previousInjuriesByName: Record<string, InjuryReportEntry>;
+  currentInjuriesByName: Record<string, InjuryReportEntry>;
+  bargainListings: BargainListing[];
+  watchlist: WatchlistEntry[];
+  fixtures: So5FixtureSummary[];
+  /** dedupeKey -> last emitted time (ms). */
+  lastAlertAtByKey: Record<string, number>;
+}

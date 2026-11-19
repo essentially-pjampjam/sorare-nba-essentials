@@ -1881,6 +1881,8 @@ describe("Feature 11: Card Sealing & Vault (Card.sealed, Candidates, Cooldown Wa
           seasonYear: 2025,
           openedLineupIds: idx < 3 ? ["ln-1"] : [],
           lowestAskCents: idx >= 3 ? 350 : null,
+          // Listed = the floor offer is this very card (lowestAskCents alone is the player floor).
+          lowestAskCardSlug: idx >= 3 ? c.slug : null,
         }),
       );
       const unlockedDupControl = makeSyntheticCard({
