@@ -8,6 +8,26 @@ Then reload any open sorare.com tabs so the new content script runs.
 
 ---
 
+## 2.6.10-exp.M4 - New side panel tools
+
+Reload the extension, then **Refresh Gallery**.
+
+| # | Do this | Expect |
+|---|---|---|
+| 1 | Open the side panel | Badge red, one line: `v2.6.10·M4`; What's New shows "Experimental M4" |
+| 2 | Lineups tab, top bar | "GW Cutoff" and "Daily Reset (07:00 UTC)" countdowns tick; Cutoff reminder switch saves |
+| 3 | Settings → Alert & Price Tracker → turn on, then **Send test notification** | A Windows/Chrome notification appears; "Check now" reports alerts; Recent alerts lists them |
+| 4 | Lineups → Current Open Lineups | Each lineup shows Floor/Ceiling and notes; a "Page-synced Xm ago" line; after 2h it turns amber with "Open Sorare Lineups to refresh" |
+| 5 | On sorare.com open a lineup's triple-dot menu | No empty 3rd lineup appears in the panel |
+| 6 | Edit a lineup on Sorare with the panel closed, then reopen the panel | Old lineup is not shown as current (or the sync line says it's stale) |
+| 7 | Recommended Entry box | Table of contests with Top / Cash / Top 20% / Podium |
+| 8 | "Focus strength grade" (click to open) | Grade letter, best vs cut, weak spots and up to 3 upgrades |
+| 9 | Click **Go** next to Apply / Pin (Pro, Set Solo, Set Squad, Daily Picker) | Opens the matching Sorare page in the current tab |
+| 10 | Arena or In-Season builder | "Showing N / 5 lineups"; Classic shows "/ 3" |
+| 11 | Gallery → "Vault & Sealing guide" | Live/est. points, sealed count, 14-day cooldown, delist and lineup-cancel warnings; Lopez / Quenton-type lineup players are **not** seal candidates |
+| 12 | Gallery star badges | A small "est." only on cards without Sorare's live star rating |
+| 13 | Lineups → Set | Solo allows up to 4 teams, Squad 1; rooms list only Solo (incl. Hot Streak) and Squad |
+
 ## 2.6.9-exp.M3 — Live Sorare data
 
 Reload the extension (it now also asks for the **notifications** permission), then **Refresh Gallery**.

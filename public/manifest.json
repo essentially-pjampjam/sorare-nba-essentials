@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "pjampjam's Sorare NBA Essentials",
   "short_name": "Sorare NBA",
-  "version": "2.6.9",
-  "version_name": "2.6.9-exp.M3",
+  "version": "2.6.10",
+  "version_name": "2.6.10-exp.M4",
   "description": "Sorare NBA Collect Helper, Craft Reveal & Probability EV Advisor, and Essence Optimizer by pjampjam.",
   "icons": {
     "16": "icons/icon16.png",

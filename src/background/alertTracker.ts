@@ -13,6 +13,8 @@ import type {
 
 /** Alarm that runs the alert & price tracker (cutoff / daily reset reminders, surges, injuries). */
 export const ALERT_TRACKER_ALARM_NAME = "jamassist-alert-tracker";
+/** Used instead of the tracker alarm when only the GW cutoff reminder is on. */
+export const CUTOFF_REMINDER_ALARM_NAME = "jamassist-cutoff-reminder";
 const ALERT_TRACKER_PERIOD_MINUTES = 15;
 const STATE_KEY = "jamassist_alert_tracker_state_v1";
 const SNAPSHOT_KEY = "jamassist_alert_tracker_snapshot_v1";
@@ -126,10 +128,18 @@ export function buildTrackerConfig(settings: UserSettings): AlertTrackerConfig {
 export function syncAlertTrackerAlarm(settings: UserSettings): void {
   if (!chrome.alarms) return;
   try {
-    if (buildTrackerConfig(settings).alertsEnabled) {
-      chrome.alarms.create(ALERT_TRACKER_ALARM_NAME, { periodInMinutes: ALERT_TRACKER_PERIOD_MINUTES });
-    } else {
-      void chrome.alarms.clear(ALERT_TRACKER_ALARM_NAME);
+    // One periodic alarm: the full tracker when Alerts are on, else a cutoff-reminder-only alarm.
+    const active = !buildTrackerConfig(settings).alertsEnabled
+      ? null
+      : settings.alertsEnabled === true
+        ? ALERT_TRACKER_ALARM_NAME
+        : CUTOFF_REMINDER_ALARM_NAME;
+    for (const name of [ALERT_TRACKER_ALARM_NAME, CUTOFF_REMINDER_ALARM_NAME]) {
+      if (name === active) {
+        chrome.alarms.create(name, { periodInMinutes: ALERT_TRACKER_PERIOD_MINUTES });
+      } else {
+        void chrome.alarms.clear(name);
+      }
     }
   } catch {
     // alarms unavailable

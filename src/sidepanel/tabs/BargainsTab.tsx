@@ -353,7 +353,7 @@ export function BargainsTab({
             <button
               type="button"
               onClick={() => onScanBargains(mode, false)}
-              className="rounded-xl bg-gradient-to-b from-amber-300 to-amber-500 px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-sm hover:from-amber-200 hover:to-amber-400"
+              className="rounded-xl bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-sm hover:from-emerald-300 hover:to-sky-300"
             >
               Scan Live Market Deals
             </button>

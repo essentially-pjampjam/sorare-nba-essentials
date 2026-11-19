@@ -949,7 +949,7 @@ export function App() {
                     !(settings.username || usernameDraft).trim())
                 }
                 onClick={handleRefreshActiveTab}
-                className="inline-flex items-center gap-1 rounded-lg bg-gradient-to-b from-amber-300 to-amber-500 px-2.5 py-1 text-[11px] font-semibold text-slate-950 shadow-xs transition hover:from-amber-200 hover:to-amber-400 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 px-2.5 py-1 text-[11px] font-semibold text-slate-950 shadow-xs transition hover:from-emerald-300 hover:to-sky-300 disabled:cursor-not-allowed disabled:opacity-50"
                 title="Fetch fresh live data"
               >
                 <RefreshCw
@@ -1430,6 +1430,10 @@ export function App() {
               hasUsername={Boolean((settings.username || usernameDraft).trim())}
               isLoading={isGalleryLoading}
               isMarketLoading={isBargainsLoading}
+              cutoffReminderEnabled={settings.cutoffReminderEnabled === true}
+              onToggleCutoffReminder={(enabled) =>
+                void updateSettings({ cutoffReminderEnabled: enabled })
+              }
               onScanMarketForBudget={() =>
                 void loadBargains(
                   activeRarity,

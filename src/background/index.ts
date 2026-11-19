@@ -3,6 +3,7 @@ import { evaluateStarTierShift } from "../calculators/lineupOptimizerMath";
 import { selectOpenGameWeek } from "../calculators/countdownMath";
 import {
   ALERT_TRACKER_ALARM_NAME,
+  CUTOFF_REMINDER_ALARM_NAME,
   getAlertFeed,
   runAlertTracker,
   saveAlertSnapshot,
@@ -222,7 +223,7 @@ if (chrome.alarms?.onAlarm) {
       void runWatchlistCheck();
       return undefined;
     }
-    if (alarm.name === ALERT_TRACKER_ALARM_NAME) {
+    if (alarm.name === ALERT_TRACKER_ALARM_NAME || alarm.name === CUTOFF_REMINDER_ALARM_NAME) {
       return runAlertTrackerFromStorage().then(() => undefined);
     }
     return undefined;

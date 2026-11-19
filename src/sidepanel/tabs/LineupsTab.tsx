@@ -26,6 +26,7 @@ import {
   Wand2,
   Zap,
 } from "lucide-react";
+import { CountdownTimers } from "../components/CountdownTimers";
 import { useMemo, useRef, useState } from "react";
 import {
   buildSetTeams,
@@ -36,6 +37,8 @@ import {
   buildBudgetLineups,
   compareCurrentVsOptimalLineups,
   generateTopLineups,
+  analyzeFocusStrength,
+  getCompetitionEntryLimit,
   optimizeMultiCompetitionPortfolio,
   recommendBestFormat,
   resolveSyncedLineupCardSlugs,
@@ -52,7 +55,7 @@ import {
   NBA_COMPETITION_DIRECTORY,
   NBA_POSITION_LABELS,
 } from "../../shared/constants";
-import { buildArenaLineupsUrl, buildProPlayUrl } from "../../shared/routes";
+import { buildArenaLineupsUrl, buildProPlayUrl, buildSetPlayUrl } from "../../shared/routes";
 import type {
   BargainListing,
   BargainsResult,
@@ -87,6 +90,11 @@ interface LineupsTabProps {
   onSaveCustomProjections: (raw: string) => void;
   onLoadGallery: (forceRefresh?: boolean) => void;
   onScanMarketForBudget?: () => void;
+  cutoffReminderEnabled?: boolean;
+  /** Starting view (tests, deep links). */
+  initialArenaMode?: "pro" | "set_common";
+  initialFormat?: LineupFormat;
+  onToggleCutoffReminder?: (enabled: boolean) => void;
 }
 
 const FORMAT_OPTIONS: Array<{ id: LineupFormat; label: string; sub: string }> = [
@@ -164,6 +172,20 @@ function primaryPosKey(positions: readonly string[]): "G" | "F" | "C" {
   return "G";
 }
 
+/** Small "Go" jump: opens the matching Sorare page in the active tab (next to Apply / Pin). */
+function GoButton({ url, title }: { url: string; title: string }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={() => void openInActiveTab(url)}
+      className="inline-flex shrink-0 items-center rounded-lg border border-sky-400/50 bg-gradient-to-r from-emerald-500/20 to-sky-500/20 px-2 py-0.5 text-[10px] font-bold text-sky-100 hover:border-sky-300"
+    >
+      Go
+    </button>
+  );
+}
+
 export function LineupsTab({
   gallery,
   bargains,
@@ -181,9 +203,13 @@ export function LineupsTab({
   onSaveCustomProjections,
   onLoadGallery,
   onScanMarketForBudget,
+  cutoffReminderEnabled = false,
+  initialArenaMode = "pro",
+  initialFormat = "contender_11",
+  onToggleCutoffReminder,
 }: LineupsTabProps) {
-  const [arenaMode, setArenaMode] = useState<"pro" | "set_common">("pro");
-  const [format, setFormat] = useState<LineupFormat>("contender_11");
+  const [arenaMode, setArenaMode] = useState<"pro" | "set_common">(initialArenaMode);
+  const [format, setFormat] = useState<LineupFormat>(initialFormat);
   const [ageFilter, setAgeFilter] = useState<LineupAgeFilter>("all");
   const [rarityScope, setRarityScope] = useState<Rarity | "ALL">(activeRarity);
   const [excludeOut, setExcludeOut] = useState(true);
@@ -203,6 +229,9 @@ export function LineupsTab({
   const [expandedSlotSlug, setExpandedSlotSlug] = useState<string | null>(null);
   const [setBuildMode, setSetBuildMode] = useState<SetBuildMode>("solo");
   const [setTeamCount, setSetTeamCount] = useState<number>(4);
+  // Live Set rules: Solo up to 4 teams, Squad 1 team per manager.
+  const setMaxTeams = setBuildMode === "solo" ? 4 : 1;
+  const effectiveSetTeams = Math.min(setTeamCount, setMaxTeams);
   const [showCustomEditor, setShowCustomEditor] = useState(false);
   const [customDraft, setCustomDraft] = useState(customProjectionsRaw);
   const [copiedRank, setCopiedRank] = useState<number | null>(null);
@@ -213,6 +242,16 @@ export function LineupsTab({
   const [includeOwnedInBudget, setIncludeOwnedInBudget] = useState<boolean>(true);
 
   const strictInSeasonOnly = seasonRule === "5_in_season";
+  // Live entry caps: Arena / In-Season up to 5, Classic 3 (Limited) per competition.
+  const entryLimit = getCompetitionEntryLimit({
+    format,
+    rarity: rarityScope === "ALL" ? "limited" : rarityScope,
+    seasonScope: format.startsWith("arena")
+      ? "arena"
+      : seasonRule === "any_season"
+        ? "classic"
+        : "in_season",
+  });
   const minInSeasonCards =
     seasonRule === "5_in_season" ? 5 : seasonRule === "4_in_1_classic" ? 4 : 0;
 
@@ -282,7 +321,11 @@ export function LineupsTab({
 
   const currentLineupComparisons = useMemo(() => {
     if (!gallery || !gallery.currentLineups?.length) return [];
-    return compareCurrentVsOptimalLineups(gallery.currentLineups, gallery.cards, {
+    const nonEmpty = gallery.currentLineups.filter(
+      (l) => l.cardSlugs.length > 0 || (l.playerNames?.length ?? 0) > 0,
+    );
+    if (nonEmpty.length === 0) return [];
+    return compareCurrentVsOptimalLineups(nonEmpty, gallery.cards, {
       rarityFilter: rarityScope,
       projectionSource,
       customProjectionsRaw,
@@ -327,7 +370,7 @@ export function LineupsTab({
     void buildSeed;
     return buildSetTeams(commonPool, {
       mode: setBuildMode,
-      teamCount: setTeamCount,
+      teamCount: effectiveSetTeams,
       projectionSource,
       customProjectionsRaw,
       injuriesByName: gallery.injuriesByName,
@@ -344,7 +387,7 @@ export function LineupsTab({
     gallery,
     projectionSource,
     setBuildMode,
-    setTeamCount,
+    effectiveSetTeams,
   ]);
 
   // Skip Locked also covers lineups synced from sorare.com pages (names only, no card ids).
@@ -374,7 +417,7 @@ export function LineupsTab({
       ageFilter,
       excludeSubmittedCards,
       excludedCardSlugs: effectiveExcludedCardSlugs,
-      maxLineups: 3,
+      maxLineups: entryLimit,
       captainBonusPct: 0,
       benchmarks: gallery.leaderboardBenchmarks,
       benchmarkSeasonScope,
@@ -388,6 +431,7 @@ export function LineupsTab({
     excludeOut,
     excludeQuestionable,
     effectiveExcludedCardSlugs,
+    entryLimit,
     excludeSubmittedCards,
     format,
     gallery,
@@ -404,6 +448,53 @@ export function LineupsTab({
         : (bargains?.listings ?? []),
     [allScannedBargains, bargains],
   );
+
+  // Focus grade (computed only while its panel is open: it scans market listings).
+  const [focusOpen, setFocusOpen] = useState(false);
+  const focusAnalysis = useMemo(() => {
+    if (!focusOpen || !gallery) return null;
+    return analyzeFocusStrength(
+      gallery.cards,
+      {
+        format,
+        rarityFilter: rarityScope,
+        projectionSource,
+        customProjectionsRaw,
+        injuriesByName: gallery.injuriesByName,
+        gamesPerTeam: gallery.gamesPerTeam,
+        scheduleByTeam: gallery.scheduleByTeam,
+        excludeOut,
+        excludeQuestionable,
+        inSeasonOnly: strictInSeasonOnly,
+        minInSeasonCards,
+        disjointAcrossLineups: false,
+        ageFilter,
+        excludeSubmittedCards,
+        excludedCardSlugs: effectiveExcludedCardSlugs,
+        captainBonusPct: 0,
+        benchmarks: gallery.leaderboardBenchmarks,
+        benchmarkSeasonScope,
+      },
+      effectiveMarketListings,
+      gallery.currentLineups ?? [],
+    );
+  }, [
+    ageFilter,
+    benchmarkSeasonScope,
+    customProjectionsRaw,
+    effectiveExcludedCardSlugs,
+    effectiveMarketListings,
+    excludeOut,
+    excludeQuestionable,
+    excludeSubmittedCards,
+    focusOpen,
+    format,
+    gallery,
+    minInSeasonCards,
+    projectionSource,
+    rarityScope,
+    strictInSeasonOnly,
+  ]);
 
   const budgetLineups = useMemo(() => {
     if (!gallery || effectiveMarketListings.length === 0) return [];
@@ -591,7 +682,7 @@ export function LineupsTab({
           type="button"
           disabled={!hasUsername}
           onClick={() => onLoadGallery(false)}
-          className="mt-3.5 rounded-xl bg-gradient-to-b from-amber-300 to-amber-500 px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-sm hover:from-amber-200 hover:to-amber-400 disabled:opacity-50"
+          className="mt-3.5 rounded-xl bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-sm hover:from-emerald-300 hover:to-sky-300 disabled:opacity-50"
         >
           {hasUsername ? "Load Gallery & Injuries" : "Enter Username First"}
         </button>
@@ -599,8 +690,17 @@ export function LineupsTab({
     );
   }
 
+  const proGoUrl = format.startsWith("arena")
+    ? buildArenaLineupsUrl(openFixture?.aasmState === "opened" ? openFixture.slug : null)
+    : buildProPlayUrl();
+
   return (
     <div className="space-y-3">
+      <CountdownTimers
+        fixtures={gallery?.fixtures ?? null}
+        reminderEnabled={cutoffReminderEnabled}
+        onToggleReminder={onToggleCutoffReminder}
+      />
       {/* Upcoming Game Week & Live External Injury Bar */}
       {gallery && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/8 bg-[#111726] px-3 py-2 text-[11px]">
@@ -697,6 +797,35 @@ export function LineupsTab({
               </button>
             )}
           </div>
+          {formatRec.candidates.length > 1 && (
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full text-[10px] tabular-nums text-slate-300">
+                <thead>
+                  <tr className="text-left text-slate-500">
+                    <th className="font-medium">Contest</th>
+                    <th className="text-right font-medium">Top</th>
+                    <th className="text-right font-medium">Cash</th>
+                    <th className="text-right font-medium">Top 20%</th>
+                    <th className="text-right font-medium">Podium</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {formatRec.candidates.slice(0, 5).map((c, i) => (
+                    <tr
+                      key={`${c.format}-${c.seasonScope}`}
+                      className={i === 0 ? "text-sky-200" : c.viable ? "" : "text-slate-500"}
+                    >
+                      <td className="truncate pr-1">{c.label}</td>
+                      <td className="text-right">{c.topScore !== null ? c.topScore.toFixed(0) : "--"}</td>
+                      <td className="text-right">{c.cashProb.toFixed(0)}%</td>
+                      <td className="text-right">{c.top20Prob.toFixed(0)}%</td>
+                      <td className="text-right">{c.podiumProb.toFixed(0)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -734,7 +863,7 @@ export function LineupsTab({
                         ),
                       )
                     }
-                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-gradient-to-r from-sky-400 to-emerald-400 px-2.5 py-1.5 text-[10px] font-bold text-slate-950 shadow-sm hover:from-sky-300 hover:to-emerald-300"
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 px-2.5 py-1.5 text-[10px] font-bold text-slate-950 shadow-sm hover:from-emerald-300 hover:to-sky-300"
                   >
                     Open Sorare Arena to Sync
                     <ExternalLink className="h-3 w-3" />
@@ -752,7 +881,42 @@ export function LineupsTab({
                 </div>
               </div>
             ) : (
-              currentLineupComparisons.map((cmp) => {
+              <>
+              {(() => {
+                const captured = currentLineupComparisons
+                  .map((c) => c.entry.detectedAt)
+                  .filter((t): t is number => typeof t === "number");
+                if (captured.length === 0) return null;
+                const ageMin = Math.max(0, Math.round((Date.now() - Math.min(...captured)) / 60_000));
+                const stale = ageMin >= 120;
+                const ageText = ageMin < 60 ? `${ageMin}m` : `${Math.round(ageMin / 60)}h`;
+                return (
+                  <div
+                    className={`flex flex-wrap items-center justify-between gap-1 rounded-lg px-2 py-1 text-[10px] ${
+                      stale ? "border border-amber-400/30 bg-amber-500/10 text-amber-200" : "text-slate-400"
+                    }`}
+                  >
+                    <span>
+                      Page-synced {ageText} ago
+                      {stale ? ": edits made on Sorare since then are not shown." : "."}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void openInActiveTab(
+                          buildArenaLineupsUrl(
+                            openFixture?.aasmState === "opened" ? openFixture.slug : null,
+                          ),
+                        )
+                      }
+                      className="rounded-md border border-sky-400/40 bg-gradient-to-r from-emerald-500/15 to-sky-500/15 px-1.5 py-0.5 font-semibold text-sky-100"
+                    >
+                      Open Sorare Lineups to refresh
+                    </button>
+                  </div>
+                );
+              })()}
+              {currentLineupComparisons.map((cmp) => {
                 const lowerName = cmp.entry.leaderboardName.toLowerCase();
                 const fallbackTarget = lowerName.includes("contender")
                   ? 145
@@ -877,6 +1041,44 @@ export function LineupsTab({
                       {submittedCards.map((sc) => sc.playerName).join(" • ")}
                     </div>
                   )}
+                  {cmp.overlaySummary && submittedCards.length > 0 && (
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9.5px] text-slate-400">
+                      <span title="10th to 90th percentile of the lineup score (variance model)">
+                        Floor/Ceiling:{" "}
+                        <strong className="text-slate-200">
+                          {cmp.overlaySummary.p10Floor.toFixed(0)} / {cmp.overlaySummary.p90Ceiling.toFixed(0)}
+                        </strong>
+                      </span>
+                      {cmp.overlaySummary.totalBoostPct !== 0 && (
+                        <span>Avg boost +{cmp.overlaySummary.totalBoostPct}%</span>
+                      )}
+                      {cmp.overlaySummary.riskFlags.slice(0, 2).map((f) => (
+                        <span key={f} className="text-rose-300">
+                          {f}
+                        </span>
+                      ))}
+                      {cmp.overlaySummary.upsideFlags.slice(0, 2).map((f) => (
+                        <span key={f} className="text-emerald-300">
+                          {f}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {(cmp.editFocusPoints ?? []).filter((p) => p.kind !== "swap").length > 0 && (
+                    <ul className="mt-1 space-y-0.5 text-[9.5px] text-slate-300">
+                      {(cmp.editFocusPoints ?? [])
+                        .filter((p) => p.kind !== "swap")
+                        .slice(0, 4)
+                        .map((p, i) => (
+                          <li key={`${p.kind}-${i}`} className="flex gap-1">
+                            <span className="shrink-0 rounded bg-white/5 px-1 text-[8.5px] uppercase text-slate-400">
+                              {p.kind}
+                            </span>
+                            <span>{p.text}</span>
+                          </li>
+                        ))}
+                    </ul>
+                  )}
                   {totalSlateGames > 0 && (
                     <div className="mt-1 flex flex-wrap items-center justify-between gap-1 text-[9.5px] text-slate-400">
                       <span>
@@ -953,7 +1155,8 @@ export function LineupsTab({
                   )}
                 </div>
                 );
-              })
+              })}
+              </>
             )}
           </div>
         </details>
@@ -1005,9 +1208,12 @@ export function LineupsTab({
                   Daily Picker Best Odds (L10 + 7 &amp; ≥ 20)
                 </span>
               </div>
+              <span className="flex items-center gap-1">
               <span className="inline-flex items-center gap-1 rounded border border-sky-400/35 bg-sky-500/15 px-1.5 py-0.5 text-[9px] font-bold text-sky-200">
                 <SlidersHorizontal className="h-2.5 w-2.5" />
                 Odds
+              </span>
+                <GoButton url={buildSetPlayUrl("arcade")} title="Open Sorare Daily Picker / Set play" />
               </span>
             </div>
 
@@ -1047,6 +1253,7 @@ export function LineupsTab({
                       </span>
                     }
                     actionRight={
+<span className="flex items-center gap-1">
                       <button
                         type="button"
                         onClick={() =>
@@ -1070,6 +1277,8 @@ export function LineupsTab({
                       >
                         Pin
                       </button>
+<GoButton url={buildSetPlayUrl("arcade")} title="Open Sorare Daily Picker / Set play" />
+</span>
                     }
                   />
                 ))}
@@ -1104,17 +1313,22 @@ export function LineupsTab({
                   Squad Mode
                 </button>
               </div>
+              <GoButton
+                url={buildSetPlayUrl(setBuildMode === "squad" ? "squad" : "arcade")}
+                title={setBuildMode === "squad" ? "Open Set Squad on Sorare" : "Open Set Solo play on Sorare"}
+              />
 
               <label className="inline-flex items-center gap-1.5 rounded-xl border border-white/8 bg-[#0b101b] px-2.5 py-1 text-[11px] text-slate-300">
                 Teams:
                 <input
                   type="number"
                   min={1}
-                  max={8}
-                  value={setTeamCount}
+                  max={setMaxTeams}
+                  value={effectiveSetTeams}
+                  aria-label="Number of Set teams"
                   onChange={(e) =>
                     setSetTeamCount(
-                      Math.max(1, Math.min(8, Number(e.target.value) || 1)),
+                      Math.max(1, Math.min(setMaxTeams, Number(e.target.value) || 1)),
                     )
                   }
                   className="w-8 bg-transparent text-center font-semibold text-amber-300 focus:outline-none"
@@ -1125,10 +1339,10 @@ export function LineupsTab({
             <button
               type="button"
               onClick={() => setBuildSeed((s) => s + 1)}
-              className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-b from-emerald-300 to-emerald-500 py-2 text-xs font-semibold text-slate-950 shadow-sm hover:from-emerald-200 hover:to-emerald-400"
+              className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 py-2 text-xs font-semibold text-slate-950 shadow-sm hover:from-emerald-300 hover:to-sky-300"
             >
               <Wand2 className="h-3.5 w-3.5" />
-              Auto-Build {setTeamCount}{" "}
+              Auto-Build {effectiveSetTeams}{" "}
               {setBuildMode === "solo" ? "Solo Anchor Picks" : "Squad Teams"}
             </button>
 
@@ -1160,6 +1374,7 @@ export function LineupsTab({
                     }
                     subRight={<span>Proj</span>}
                     actionRight={
+<span className="flex items-center gap-1">
                       <button
                         type="button"
                         onClick={() =>
@@ -1184,6 +1399,8 @@ export function LineupsTab({
                         <Send className="h-2.5 w-2.5" />
                         Apply
                       </button>
+<GoButton url={buildSetPlayUrl("arcade")} title="Open Set Solo play on Sorare" />
+</span>
                     }
                   />
                 ))}
@@ -1226,6 +1443,7 @@ export function LineupsTab({
                           <Send className="h-2.5 w-2.5" />
                           Apply
                         </button>
+                        <GoButton url={buildSetPlayUrl("squad")} title="Open Set Squad on Sorare" />
                       </div>
                       <div className="text-[11px] text-slate-300">
                         {names.join(" • ")}
@@ -1494,7 +1712,7 @@ export function LineupsTab({
             });
             window.setTimeout(() => setRebuildNotice(null), 2600);
           }}
-          className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-gradient-to-b from-amber-300 to-amber-500 py-2 text-xs font-semibold text-slate-950 shadow-sm transition hover:from-amber-200 hover:to-amber-400 active:scale-[0.99]"
+          className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 py-2 text-xs font-semibold text-slate-950 shadow-sm transition hover:from-emerald-300 hover:to-sky-300 active:scale-[0.99]"
         >
           <Wand2 className="h-3.5 w-3.5" />
           Auto-Build Best Pro Lineups
@@ -1520,6 +1738,55 @@ export function LineupsTab({
 
       {/* Suggested Top Pro Lineups */}
       <div ref={lineupsResultRef} className="space-y-3">
+      {built && built.lineups.length > 0 && (
+        <div className="px-1 text-[10px] text-slate-400">
+          Showing {built.lineups.length} / {entryLimit} lineups (up to {entryLimit} entries for this
+          competition).
+        </div>
+      )}
+      {arenaMode === "pro" && gallery && (
+        <details
+          className="rounded-xl border border-white/8 bg-[#111726] px-3 py-2 text-[11px]"
+          onToggle={(e) => setFocusOpen((e.currentTarget as HTMLDetailsElement).open)}
+        >
+          <summary className="cursor-pointer font-semibold text-slate-200">
+            Focus strength grade ({FORMAT_OPTIONS.find((f) => f.id === format)?.label ?? format})
+          </summary>
+          {focusAnalysis && (
+            <div className="mt-1.5 space-y-1 text-[10px] text-slate-300">
+              <div className="flex items-center gap-2">
+                <span className="rounded-md border border-sky-400/40 bg-sky-500/15 px-1.5 py-0.5 text-sm font-bold text-sky-100">
+                  {focusAnalysis.grade}
+                </span>
+                <span>
+                  Best {focusAnalysis.bestOwnedScore.toFixed(0)} vs cut {focusAnalysis.cutScore.toFixed(0)}
+                </span>
+              </div>
+              <p>{focusAnalysis.summary}</p>
+              {[...focusAnalysis.missingPositions, ...focusAnalysis.weakPositions].slice(0, 3).map((n) => (
+                <div key={`${n.position}-${n.reason}`} className="text-amber-200">
+                  {n.label}: {n.reason}
+                </div>
+              ))}
+              {focusAnalysis.topReplacements.slice(0, 3).map((r) => (
+                <div key={r.cardSlug} className="flex justify-between gap-2">
+                  <span className="truncate">
+                    {r.outPlayer ? `${r.outPlayer} → ` : ""}
+                    {r.inPlayer} (+{r.gainPts.toFixed(1)})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void openInActiveTab(r.marketUrl)}
+                    className="shrink-0 rounded border border-sky-400/40 px-1 text-sky-200"
+                  >
+                    Market
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </details>
+      )}
       {built && built.lineups.length === 0 ? (
         <div className="rounded-xl border border-white/8 bg-[#111726] p-4 text-center text-xs text-slate-400">
           Not enough eligible cards ({built.evaluatedPool.length} available) to
@@ -1571,6 +1838,7 @@ export function LineupsTab({
                     }}
                     className="rounded-lg border border-white/10 bg-[#0b101b] p-1.5 text-slate-300 hover:border-amber-400/40"
                     title="Copy 5 players"
+                    aria-label="Copy 5 players"
                   >
                     {copiedRank === lineup.rank ? (
                       <Check className="h-3.5 w-3.5 text-emerald-400" />
@@ -1601,6 +1869,7 @@ export function LineupsTab({
                     <Send className="h-3 w-3" />
                     Apply
                   </button>
+                  <GoButton url={proGoUrl} title="Open the Sorare lineup page" />
                 </div>
               </div>
 
@@ -1888,7 +2157,7 @@ export function LineupsTab({
                   type="button"
                   disabled={isMarketLoading}
                   onClick={onScanMarketForBudget}
-                  className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-gradient-to-r from-emerald-400 to-sky-400 px-3 py-1.5 text-[10.5px] font-bold text-slate-950 shadow-sm transition hover:from-emerald-300 hover:to-sky-300 disabled:opacity-50"
+                  className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 px-3 py-1.5 text-[10.5px] font-bold text-slate-950 shadow-sm transition hover:from-emerald-300 hover:to-sky-300 disabled:opacity-50"
                 >
                   {isMarketLoading ? "Scanning Market..." : "Scan Market Buys"}
                 </button>
@@ -2158,6 +2427,7 @@ export function LineupsTab({
                         <Send className="h-2.5 w-2.5" />
                         Apply
                       </button>
+                      <GoButton url={proGoUrl} title="Open the Sorare lineup page" />
                     </div>
                   </div>
                   <div className="mt-1 text-[10px] text-slate-300">

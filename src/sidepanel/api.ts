@@ -2,6 +2,7 @@ import type {
   BackgroundRequest,
   BackgroundResponse,
   BargainMode,
+  TrackedAlertEvent,
   BargainsResult,
   CraftPoolResult,
   Currency,
@@ -337,4 +338,16 @@ export function connectProgressPort(
       activePort = null;
     }
   };
+}
+
+export function runAlertCheck(): Promise<TrackedAlertEvent[]> {
+  return sendBackground<TrackedAlertEvent[]>({ type: "RUN_ALERT_CHECK" });
+}
+
+export function sendTestAlertNotification(): Promise<boolean> {
+  return sendBackground<boolean>({ type: "SEND_TEST_ALERT_NOTIFICATION" });
+}
+
+export function getAlertFeed(): Promise<TrackedAlertEvent[]> {
+  return sendBackground<TrackedAlertEvent[]>({ type: "GET_ALERT_FEED" });
 }

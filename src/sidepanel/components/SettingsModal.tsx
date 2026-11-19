@@ -14,6 +14,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { APP_THEMES } from "../../shared/constants";
 import type { UserSettings } from "../../shared/types";
+import { AlertSettingsSection } from "./AlertSettingsSection";
 
 interface SettingsModalProps {
   version: string;
@@ -251,7 +252,7 @@ export function SettingsModal({
           <button
             type="button"
             onClick={handleSaveApiKey}
-            className="rounded-lg bg-amber-400 px-2.5 py-1.5 text-xs font-semibold text-slate-950 hover:bg-amber-300"
+            className="rounded-lg border border-sky-200/60 bg-gradient-to-r from-emerald-400 to-sky-400 px-2.5 py-1.5 text-xs font-semibold text-slate-950 hover:from-emerald-300 hover:to-sky-300"
           >
             {savedToast ? "Saved" : "Save"}
           </button>
@@ -401,6 +402,8 @@ export function SettingsModal({
         </button>
       </div>
 
+      <AlertSettingsSection settings={settings} onUpdateSettings={onUpdateSettings} />
+
       {/* Backup & Restore Setup JSON */}
       <div className="mt-3 rounded-xl border border-white/8 bg-[#0b101b] p-2.5 text-[11px]">
         <div className="mb-1.5 flex items-center justify-between gap-2">
@@ -471,7 +474,7 @@ export function SettingsModal({
         <button
           type="button"
           onClick={onReloadExtension}
-          className="inline-flex items-center gap-1 rounded-lg bg-gradient-to-b from-amber-300 to-amber-500 px-3 py-1.5 text-[11px] font-semibold text-slate-950 shadow-sm hover:from-amber-200 hover:to-amber-400"
+          className="inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 px-3 py-1.5 text-[11px] font-semibold text-slate-950 shadow-sm hover:from-emerald-300 hover:to-sky-300"
         >
           <RefreshCw className="h-3.5 w-3.5" />
           Sync / Reload Extension

@@ -15,6 +15,7 @@ import {
   TrendingUp,
   Wallet,
 } from "lucide-react";
+import { VaultGuide } from "../components/VaultGuide";
 import { useMemo, useState } from "react";
 import {
   evaluateStarTierShift,
@@ -368,7 +369,7 @@ export function GalleryTab({
           <button
             type="button"
             onClick={onRefreshGallery}
-            className="mt-3.5 rounded-xl bg-gradient-to-b from-amber-300 to-amber-500 px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-sm hover:from-amber-200 hover:to-amber-400"
+            className="mt-3.5 rounded-xl bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-sm hover:from-emerald-300 hover:to-sky-300"
           >
             Load My Gallery
           </button>
@@ -515,7 +516,7 @@ export function GalleryTab({
                 type="button"
                 disabled={isPricingGallery || sourceCards.length === 0}
                 onClick={onPriceGallery}
-                className="inline-flex items-center gap-1 rounded-xl border border-amber-400/35 bg-amber-400/15 px-2.5 py-1 text-[11px] font-semibold text-amber-200 hover:bg-amber-400/25 disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-xl border border-sky-200/60 bg-gradient-to-r from-emerald-400 to-sky-400 px-2.5 py-1 text-[11px] font-semibold text-slate-950 hover:from-emerald-300 hover:to-sky-300 disabled:opacity-50"
               >
                 {isPricingGallery ? (
                   <Loader2 className="h-3 w-3 animate-spin" />
@@ -675,6 +676,13 @@ export function GalleryTab({
         </div>
       </div>
 
+      {gallery && (
+        <VaultGuide
+          cards={gallery.cards}
+          candidates={gallery.cards.filter((c) => !c.sealed && isSealCandidate(c, vaultContext(c)))}
+        />
+      )}
+
       {/* Vault vs. Sell ROI Summary Banner */}
       {formFilter === "seal" && (
         <div className="rounded-2xl border border-violet-400/30 bg-[#111726] px-3 py-2 text-[11px]">
@@ -744,8 +752,18 @@ export function GalleryTab({
               rarity={c.rarity}
               pictureUrl={c.pictureUrl}
               leftBadge={
-                <span className="rounded bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-bold text-amber-200">
+                <span
+                  className="rounded bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-bold text-amber-200"
+                  title={
+                    c.starSource === "live"
+                      ? "Live star rating from Sorare"
+                      : "Estimated from L10 (Sorare rating not loaded)"
+                  }
+                >
                   {c.starCost}★
+                  {c.starSource !== "live" && (
+                    <span className="ml-0.5 text-[8px] font-normal text-amber-200/60">est.</span>
+                  )}
                 </span>
               }
               statusBadge={

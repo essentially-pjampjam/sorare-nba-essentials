@@ -183,7 +183,7 @@ export function TierEditorModal({
               onSave(draft);
               dialogRef.current?.close();
             }}
-            className="rounded-lg bg-gradient-to-b from-amber-300 to-amber-500 px-3 py-1 text-xs font-semibold text-slate-950 hover:from-amber-200 hover:to-amber-400"
+            className="rounded-lg bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 px-3 py-1 text-xs font-semibold text-slate-950 hover:from-emerald-300 hover:to-sky-300"
           >
             Save Tiers
           </button>

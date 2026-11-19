@@ -20,6 +20,19 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.6.10-exp.M4",
+    title: "Experimental M4: New Side Panel Tools",
+    items: [
+      "Live timers on the Lineups tab: Game Week cutoff and Daily Reset (07:00 UTC), plus a cutoff reminder switch.",
+      "Settings has an Alert & Price Tracker: price surge (sell opportunity) threshold, injury, watchlist, cutoff and daily reset alerts, browser notifications, a test button and a recent alerts feed.",
+      "Synced lineups show floor/ceiling, boosts, risk and edit notes, how old the page sync is, and a button to refresh it from Sorare. Empty ghost lineups are hidden.",
+      "Recommended Entry shows the contests side by side; a Focus strength grade panel rates your cards for the chosen format.",
+      "Go buttons next to Apply and Pin open the right Sorare page (Pro, Arena, Set Solo, Set Squad). Builders show up to 5 lineups where the contest allows it.",
+      "Gallery: Vault & Sealing guide (live points, sealed cards, 14-day unseal cooldown, delist and lineup-cancel warnings). Seal advice keeps lineup players. Stars marked est. when Sorare's rating isn't loaded.",
+      "Set: only Solo (incl. Hot Streak, up to 4 teams) and Squad (1 team). Buttons restyled green-to-blue with outlines.",
+    ],
+  },
+  {
     version: "2.6.9-exp.M3",
     title: "Experimental M3: Live Sorare Data",
     items: [
