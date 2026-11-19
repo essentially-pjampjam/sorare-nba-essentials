@@ -7,6 +7,7 @@ import {
 } from "./entryEvMath";
 import type {
   BargainListing,
+  NbaPosition,
   CardRarity,
   CurrentLineupEntry,
   GalleryCard,
@@ -2307,4 +2308,369 @@ export function recommendTwoCardComboSwaps(
   }
 
   return uniqueCombos;
+}
+
+const LEADERBOARD_RARITY_KEYS: Array<[string, CardRarity]> = [
+  ["super_rare", "super_rare"],
+  ["limited", "limited"],
+  ["unique", "unique"],
+  ["common", "common"],
+  ["rare", "rare"],
+];
+
+function rarityFromLeaderboardSlug(slug: string): CardRarity | null {
+  const s = slug.toLowerCase();
+  for (const [key, rarity] of LEADERBOARD_RARITY_KEYS) {
+    if (s.includes(`_${key}_`) || s.endsWith(`_${key}`)) return rarity;
+  }
+  return null;
+}
+
+/**
+ * Card slugs committed to the manager's synced (DOM or API) lineups this Game Week.
+ * DOM-synced lineups often carry player names only, so names are matched to owned cards,
+ * preferring the rarity of the lineup's competition (from Sorare's leaderboard slug) and
+ * never assigning one card to two lineups.
+ */
+export function resolveSyncedLineupCardSlugs(
+  currentLineups: CurrentLineupEntry[],
+  cards: GalleryCard[],
+): string[] {
+  const owned = new Set(cards.map((c) => c.slug));
+  const locked = new Set<string>();
+  for (const entry of currentLineups) {
+    for (const slug of entry.cardSlugs) {
+      if (owned.has(slug)) locked.add(slug);
+    }
+  }
+  for (const entry of currentLineups) {
+    const rarity = rarityFromLeaderboardSlug(entry.leaderboardSlug);
+    const alreadyBySlug = new Set(
+      entry.cardSlugs
+        .filter((s) => owned.has(s))
+        .map((s) => normalizePlayerNameKey(cards.find((c) => c.slug === s)?.playerName ?? "")),
+    );
+    for (const name of entry.playerNames ?? []) {
+      const key = normalizePlayerNameKey(name);
+      if (!key || alreadyBySlug.has(key)) continue;
+      const matches = cards
+        .filter((c) => normalizePlayerNameKey(c.playerName) === key && !locked.has(c.slug))
+        .sort((a, b) => {
+          const ra = rarity && a.rarity === rarity ? 0 : 1;
+          const rb = rarity && b.rarity === rarity ? 0 : 1;
+          if (ra !== rb) return ra - rb;
+          return (b.seasonYear ?? 0) - (a.seasonYear ?? 0);
+        });
+      if (matches[0]) locked.add(matches[0].slug);
+    }
+  }
+  return Array.from(locked);
+}
+
+// ---------------------------------------------------------------------------
+// Focus strength grading (Feature #9)
+// ---------------------------------------------------------------------------
+
+export type FocusGrade = "A+" | "A" | "B+" | "B" | "C" | "D" | "F";
+export type FocusPositionKey = "G" | "F" | "C";
+
+export interface FocusPositionNote {
+  position: FocusPositionKey;
+  label: "Guard" | "Forward" | "Center";
+  bestOwnedPlayer: string | null;
+  bestOwnedScore: number;
+  reason: string;
+}
+
+export interface FocusBargainTarget {
+  playerName: string;
+  cardSlug: string;
+  position: FocusPositionKey;
+  projected: number;
+  starCost: number;
+  priceCents: number | null;
+  ptsPerEuro: number | null;
+  marketUrl: string;
+}
+
+export interface FocusReplacement {
+  outPlayer: string | null;
+  inPlayer: string;
+  cardSlug: string;
+  position: FocusPositionKey;
+  gainPts: number;
+  starCost: number;
+  priceCents: number | null;
+  reason: string;
+  marketUrl: string;
+}
+
+export interface FocusStrengthAnalysis {
+  format: LineupFormat;
+  grade: FocusGrade;
+  /** Tailwind-friendly tone name for the grade badge. */
+  colorTone: "emerald" | "green" | "lime" | "amber" | "orange" | "rose" | "red";
+  /** Best owned lineup score divided by the field's reward cutoff. */
+  scoreRatioToCut: number;
+  bestOwnedScore: number;
+  cutScore: number;
+  missingPositions: FocusPositionNote[];
+  weakPositions: FocusPositionNote[];
+  bargainTargetsByPosition: Record<FocusPositionKey, FocusBargainTarget[]>;
+  topReplacements: FocusReplacement[];
+  /** Best legal lineup from owned + all listed cards, ignoring price ("budget is no issue"). */
+  uncappedDreamLineup: {
+    totalScore: number;
+    totalStars: number;
+    totalCostCents: number;
+    slots: Array<{ playerName: string; cardSlug: string; owned: boolean; projected: number }>;
+  } | null;
+  summary: string;
+}
+
+const FOCUS_POSITIONS: Array<{ key: FocusPositionKey; label: FocusPositionNote["label"]; nba: NbaPosition }> = [
+  { key: "G", label: "Guard", nba: "basketball_guard" },
+  { key: "F", label: "Forward", nba: "basketball_forward" },
+  { key: "C", label: "Center", nba: "basketball_center" },
+];
+
+const GRADE_STEPS: Array<{ min: number; grade: FocusGrade; tone: FocusStrengthAnalysis["colorTone"] }> = [
+  { min: 1.25, grade: "A+", tone: "emerald" },
+  { min: 1.15, grade: "A", tone: "green" },
+  { min: 1.05, grade: "B+", tone: "lime" },
+  { min: 0.95, grade: "B", tone: "amber" },
+  { min: 0.85, grade: "C", tone: "orange" },
+  { min: 0.7, grade: "D", tone: "rose" },
+  { min: -Infinity, grade: "F", tone: "red" },
+];
+
+function gradeForRatio(ratio: number): { grade: FocusGrade; tone: FocusStrengthAnalysis["colorTone"] } {
+  const step = GRADE_STEPS.find((s) => ratio >= s.min) ?? GRADE_STEPS[GRADE_STEPS.length - 1];
+  return { grade: step.grade, tone: step.tone };
+}
+
+function scopeForFormat(
+  format: LineupFormat,
+  options: { benchmarkSeasonScope?: ContestScope; minInSeasonCards: number; inSeasonOnly: boolean },
+): ContestScope {
+  if (format === "arena_champion_15" || format === "arena_contender_12" || format === "uncapped") {
+    return "arena";
+  }
+  return (
+    options.benchmarkSeasonScope ??
+    (options.inSeasonOnly || options.minInSeasonCards >= 4 ? "in_season" : "classic")
+  );
+}
+
+/**
+ * Rates how strong the manager's cards are for one lineup focus (format) against the
+ * field's reward cutoff, and lists what would make it stronger. Stays short when the
+ * focus is already strong (grade A / A+: no weak spots, at most 3 replacements).
+ */
+export function analyzeFocusStrength(
+  cards: GalleryCard[],
+  options: Omit<AutoBuildOptions, "format" | "maxLineups"> & { format?: LineupFormat },
+  marketListings: BargainListing[] = [],
+  currentLineups: CurrentLineupEntry[] = [],
+): FocusStrengthAnalysis {
+  const format = options.format ?? "contender_11";
+  const starCap = getFormatStarCap(format);
+  const lockedSlugs = options.excludeSubmittedCards
+    ? resolveSyncedLineupCardSlugs(currentLineups, cards)
+    : [];
+  const buildOptions: AutoBuildOptions = {
+    ...options,
+    format,
+    maxLineups: 1,
+    excludedCardSlugs: [...(options.excludedCardSlugs ?? []), ...lockedSlugs],
+  };
+  const built = generateTopLineups(cards, buildOptions);
+  const best = built.lineups[0] ?? null;
+  const pool = built.evaluatedPool;
+
+  // Without an explicit scope, grade against the best contest this lineup can enter:
+  // In-Season (softer field) when it holds >= 4 In-Season cards, otherwise Classic.
+  const scope: ContestScope = options.benchmarkSeasonScope
+    ? options.benchmarkSeasonScope
+    : scopeForFormat(format, options) === "arena"
+      ? "arena"
+      : best && best.inSeasonCount >= 4
+        ? "in_season"
+        : "classic";
+
+  const bm = findBenchmarkForFormat(options.benchmarks, format, scope, options.ageFilter ?? "all");
+  const cutCandidate = bm?.paidCutoffScore;
+  const cutScore =
+    typeof cutCandidate === "number" && Number.isFinite(cutCandidate) && cutCandidate > 0
+      ? cutCandidate
+      : LINEUP_FORMAT_TARGETS[format].essenceTarget;
+  const bestOwnedScore = best?.totalScore ?? 0;
+  const scoreRatioToCut = Math.round((bestOwnedScore / cutScore) * 1000) / 1000;
+  const { grade, tone } = gradeForRatio(scoreRatioToCut);
+  const strong = grade === "A+" || grade === "A";
+
+  // Positions: missing = no eligible card; weak = best card far below a cut-level slot.
+  const slotTarget = cutScore / 5;
+  const missingPositions: FocusPositionNote[] = [];
+  const weakPositions: FocusPositionNote[] = [];
+  for (const pos of FOCUS_POSITIONS) {
+    const atPos = pool
+      .filter((ev) => ev.card.positions.includes(pos.nba))
+      .sort((a, b) => b.effectiveScore - a.effectiveScore);
+    const top = atPos[0] ?? null;
+    if (!top) {
+      missingPositions.push({
+        position: pos.key,
+        label: pos.label,
+        bestOwnedPlayer: null,
+        bestOwnedScore: 0,
+        reason: `No eligible ${pos.label} card for ${format}.`,
+      });
+    } else if (!strong && top.effectiveScore < slotTarget * 0.5) {
+      weakPositions.push({
+        position: pos.key,
+        label: pos.label,
+        bestOwnedPlayer: top.card.playerName,
+        bestOwnedScore: Math.round(top.effectiveScore * 10) / 10,
+        reason: `Best ${pos.label} (${top.card.playerName}) projects ${top.effectiveScore.toFixed(1)} pts vs ~${slotTarget.toFixed(0)} needed per slot to reach the cut.`,
+      });
+    }
+  }
+
+  // Market targets the manager does not already own, filtered to the focus rules.
+  const ownedPlayers = new Set(cards.map((c) => c.playerSlug));
+  const eligibleListings = marketListings.filter(
+    (l) =>
+      !ownedPlayers.has(l.playerSlug) &&
+      (options.rarityFilter === "ALL" || l.rarity === options.rarityFilter) &&
+      (!options.inSeasonOnly || l.inSeasonEligible) &&
+      (starCap === null || l.starCost <= starCap),
+  );
+  const listingProjection = (l: BargainListing) => l.projected ?? l.l5 ?? l.l10;
+  const bargainTargetsByPosition: Record<FocusPositionKey, FocusBargainTarget[]> = { G: [], F: [], C: [] };
+  for (const pos of FOCUS_POSITIONS) {
+    bargainTargetsByPosition[pos.key] = eligibleListings
+      .filter((l) => l.positions.includes(pos.nba))
+      .map((l) => {
+        const projected = listingProjection(l);
+        const euros = l.priceCents !== null && l.priceCents > 0 ? l.priceCents / 100 : null;
+        return {
+          playerName: l.playerName,
+          cardSlug: l.cardSlug,
+          position: pos.key,
+          projected: Math.round(projected * 10) / 10,
+          starCost: l.starCost,
+          priceCents: l.priceCents,
+          ptsPerEuro: euros ? Math.round((projected / euros) * 10) / 10 : null,
+          marketUrl: l.marketUrl,
+        };
+      })
+      .sort((a, b) => (b.ptsPerEuro ?? 0) - (a.ptsPerEuro ?? 0) || b.projected - a.projected)
+      .slice(0, 3);
+  }
+
+  // Replacements: market cards that beat a current slot (or fill a missing position) within the cap.
+  const replacements: FocusReplacement[] = [];
+  if (best) {
+    for (const slot of best.slots) {
+      const slotPositions = slot.evaluated.card.positions;
+      for (const l of eligibleListings) {
+        if (!l.positions.some((p) => slotPositions.includes(p))) continue;
+        const newStars = best.totalStars - slot.evaluated.card.starCost + l.starCost;
+        if (starCap !== null && newStars > starCap + 1e-9) continue;
+        const gain = listingProjection(l) - slot.slotScore;
+        if (gain <= 0.5) continue;
+        const pos = FOCUS_POSITIONS.find((p) => l.positions.includes(p.nba))?.key ?? "F";
+        replacements.push({
+          outPlayer: slot.evaluated.card.playerName,
+          inPlayer: l.playerName,
+          cardSlug: l.cardSlug,
+          position: pos,
+          gainPts: Math.round(gain * 10) / 10,
+          starCost: l.starCost,
+          priceCents: l.priceCents,
+          reason: `${l.playerName} projects ${listingProjection(l).toFixed(1)} vs ${slot.evaluated.card.playerName} ${slot.slotScore.toFixed(1)} (+${gain.toFixed(1)}), lineup ${newStars}${starCap !== null ? `/${starCap}` : ""}★.`,
+          marketUrl: l.marketUrl,
+        });
+      }
+    }
+  }
+  for (const missing of missingPositions) {
+    for (const t of bargainTargetsByPosition[missing.position]) {
+      replacements.push({
+        outPlayer: null,
+        inPlayer: t.playerName,
+        cardSlug: t.cardSlug,
+        position: missing.position,
+        gainPts: t.projected,
+        starCost: t.starCost,
+        priceCents: t.priceCents,
+        reason: `Fills your missing ${missing.label} slot (${t.projected.toFixed(1)} pts projected).`,
+        marketUrl: t.marketUrl,
+      });
+    }
+  }
+  const seenIn = new Set<string>();
+  const topReplacements = replacements
+    .sort((a, b) => b.gainPts - a.gainPts)
+    .filter((r) => {
+      if (seenIn.has(r.cardSlug)) return false;
+      seenIn.add(r.cardSlug);
+      return true;
+    })
+    .slice(0, strong ? 3 : 5);
+
+  // Dream lineup: owned + every listing at any price, still within the star cap.
+  const ageFilter = options.ageFilter ?? "all";
+  const dreamCards = cards.filter((c) => matchesAgeFilter(c.playerAge, ageFilter));
+  const dreamListings =
+    ageFilter === "all"
+      ? marketListings
+      : marketListings.filter((l) =>
+          matchesAgeFilter((l as BargainListing & { playerAge?: number | null }).playerAge, ageFilter),
+        );
+  const dream = buildBudgetLineups(dreamCards, dreamListings, {
+    format,
+    rarityFilter: options.rarityFilter,
+    projectionSource: options.projectionSource,
+    customProjectionsRaw: options.customProjectionsRaw,
+    injuriesByName: options.injuriesByName,
+    gamesPerTeam: options.gamesPerTeam,
+    budgetCents: Number.MAX_SAFE_INTEGER,
+    includeOwned: true,
+    inSeasonOnly: options.inSeasonOnly,
+    minInSeasonCards: options.minInSeasonCards,
+  })[0];
+  const uncappedDreamLineup = dream
+    ? {
+        totalScore: dream.totalScore,
+        totalStars: dream.totalStars,
+        totalCostCents: dream.totalCostCents,
+        slots: dream.slots.map((s) => ({
+          playerName: s.evaluated.card.playerName,
+          cardSlug: s.evaluated.card.slug,
+          owned: dream.slotCostBySlug[s.evaluated.card.slug]?.isOwned ?? false,
+          projected: Math.round(s.slotScore * 10) / 10,
+        })),
+      }
+    : null;
+
+  const summary = best
+    ? `${grade}: best lineup ${bestOwnedScore.toFixed(1)} pts vs ~${Math.round(cutScore)} cut (${Math.round(scoreRatioToCut * 100)}%).`
+    : `${grade}: no legal 5-card lineup for ${format} yet.`;
+
+  return {
+    format,
+    grade,
+    colorTone: tone,
+    scoreRatioToCut,
+    bestOwnedScore,
+    cutScore,
+    missingPositions,
+    weakPositions,
+    bargainTargetsByPosition,
+    topReplacements,
+    uncappedDreamLineup,
+    summary,
+  };
 }

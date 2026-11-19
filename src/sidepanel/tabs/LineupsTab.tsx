@@ -38,6 +38,7 @@ import {
   generateTopLineups,
   optimizeMultiCompetitionPortfolio,
   recommendBestFormat,
+  resolveSyncedLineupCardSlugs,
   recommendLineupMarketBuys,
   recommendTwoCardComboSwaps,
   type BuyAdvisorRankMode,
@@ -344,6 +345,13 @@ export function LineupsTab({
     setTeamCount,
   ]);
 
+  // Skip Locked also covers lineups synced from sorare.com pages (names only, no card ids).
+  const effectiveExcludedCardSlugs = useMemo(() => {
+    if (!gallery || !excludeSubmittedCards) return excludedCardSlugs;
+    const synced = resolveSyncedLineupCardSlugs(gallery.currentLineups ?? [], gallery.cards);
+    return Array.from(new Set([...excludedCardSlugs, ...synced]));
+  }, [excludeSubmittedCards, excludedCardSlugs, gallery]);
+
   const built = useMemo(() => {
     if (!gallery) return null;
     // Reference buildSeed so clicking Auto-Build triggers explicit recomputation feedback
@@ -362,7 +370,7 @@ export function LineupsTab({
       disjointAcrossLineups: disjointLineups,
       ageFilter,
       excludeSubmittedCards,
-      excludedCardSlugs,
+      excludedCardSlugs: effectiveExcludedCardSlugs,
       maxLineups: 3,
       captainBonusPct: 0,
       benchmarks: gallery.leaderboardBenchmarks,
@@ -376,8 +384,8 @@ export function LineupsTab({
     disjointLineups,
     excludeOut,
     excludeQuestionable,
+    effectiveExcludedCardSlugs,
     excludeSubmittedCards,
-    excludedCardSlugs,
     format,
     gallery,
     minInSeasonCards,
@@ -436,7 +444,7 @@ export function LineupsTab({
       inSeasonOnly: strictInSeasonOnly,
       minInSeasonCards,
       excludeSubmittedCards,
-      excludedCardSlugs,
+      excludedCardSlugs: effectiveExcludedCardSlugs,
       captainBonusPct: 0,
       benchmarks: gallery.leaderboardBenchmarks,
       benchmarkSeasonScope,
@@ -448,8 +456,8 @@ export function LineupsTab({
     customProjectionsRaw,
     excludeOut,
     excludeQuestionable,
+    effectiveExcludedCardSlugs,
     excludeSubmittedCards,
-    excludedCardSlugs,
     gallery,
     minInSeasonCards,
     projectionSource,

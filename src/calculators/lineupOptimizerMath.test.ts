@@ -14,6 +14,7 @@ import {
   recommendTwoCardComboSwaps,
   explainLineupSwaps,
   type EvaluatedLineupCard,
+  resolveSyncedLineupCardSlugs,
 } from "./lineupOptimizerMath";
 import type {
   BargainListing,
@@ -895,5 +896,43 @@ describe("explainLineupSwaps", () => {
     expect(swaps[0].kind).toBe("cap_fix");
     expect(swaps[0].deltaPts).toBe(-7.4);
     expect(swaps[0].reason).toContain("over the 11★ cap");
+  });
+});
+
+describe("resolveSyncedLineupCardSlugs", () => {
+  const cards: GalleryCard[] = [
+    makeCard("malik-monk", "Malik Monk", 22, 24, { slug: "monk-2026-limited", rarity: "limited", seasonYear: 2026 }),
+    makeCard("malik-monk", "Malik Monk", 22, 24, { slug: "monk-2026-rare", rarity: "rare", seasonYear: 2026 }),
+    makeCard("aaron-gordon", "Aaron Gordon", 25, 25, { slug: "gordon-2025-limited", rarity: "limited", seasonYear: 2025 }),
+  ];
+  const entry = (lb: string, names: string[], slugs: string[] = []): CurrentLineupEntry => ({
+    id: lb,
+    name: lb,
+    leaderboardSlug: lb,
+    leaderboardName: lb,
+    draft: false,
+    cardSlugs: slugs,
+    captainCardSlug: null,
+    playerNames: names,
+    source: "dom",
+  });
+
+  it("maps name-only synced lineups to the card of the competition's rarity", () => {
+    const locked = resolveSyncedLineupCardSlugs(
+      [entry("nba_rare_contender", ["Malik Monk"]), entry("nba_limited_contender", ["Aaron Gordon"])],
+      cards,
+    );
+    expect(locked.sort()).toEqual(["gordon-2025-limited", "monk-2026-rare"]);
+  });
+
+  it("never locks the same card twice and ignores unknown names / slugs", () => {
+    const locked = resolveSyncedLineupCardSlugs(
+      [
+        entry("nba_limited_contender", ["Malik Monk", "Nobody Here"], ["not-owned"]),
+        entry("nba_limited_champion", ["Malik Monk"]),
+      ],
+      cards,
+    );
+    expect(locked.sort()).toEqual(["monk-2026-limited", "monk-2026-rare"]);
   });
 });
