@@ -210,6 +210,27 @@ const CARD_NOISE_WORDS = new Set([
 
 const DOTTED_INITIAL_RE = /^(?:\p{L}\.){1,3}$/u;
 
+/**
+ * Sorare renders lineup names in ALL CAPS; plain title-casing loses inner capitals.
+ * Known NBA name parts with an inner capital are restored from this lookup.
+ */
+const MIXED_CASE_NAME_PARTS: Record<string, string> = {
+  deandre: "DeAndre",
+  deanthony: "DeAnthony",
+  dejon: "DeJon",
+  demar: "DeMar",
+  demarcus: "DeMarcus",
+  derozan: "DeRozan",
+  devonte: "DeVonte",
+  javale: "JaVale",
+  jamychal: "JaMychal",
+  lamarcus: "LaMarcus",
+  lamelo: "LaMelo",
+  liangelo: "LiAngelo",
+  lavine: "LaVine",
+  lebron: "LeBron",
+};
+
 const TWO_LETTER_INITIALS = new Set([
   "AJ",
   "BJ",
@@ -578,6 +599,8 @@ function capitalizeWordPart(part: string): string {
   if (lower === "ii" || lower === "iii" || lower === "iv") {
     return lower.toUpperCase();
   }
+  const knownMixed = MIXED_CASE_NAME_PARTS[lower];
+  if (knownMixed) return knownMixed;
   const upper = part.toUpperCase();
   if (TWO_LETTER_INITIALS.has(upper)) {
     return upper;
@@ -998,11 +1021,17 @@ function hasContestHeaderSignal(el: DomElementLike): boolean {
   return hasScopeOrFormat && hasContestMeta;
 }
 
+/** Lineup lock-progress badges such as "4/5 Locked" never describe a card slot. */
+const LINEUP_STATUS_BADGE_RE = /\b\d\s*\/\s*\d\s*locked\b/i;
+
 function isCardSlotCandidate(el: DomElementLike): boolean {
   if (elementContainsActionButton(el)) return false;
   if (isNonSlotInlineBadge(el)) return false;
   if (hasContestHeaderSignal(el)) return false;
   if (!hasCardIdentityMedia(el) && isHeaderOrFooterContainer(el)) return false;
+  if (!hasCardIdentityMedia(el) && LINEUP_STATUS_BADGE_RE.test(extractSpacedText(el))) {
+    return false;
+  }
   if (collectCardSlugsInElement(el).length > 0) return true;
   const names = extractSlotNames(el);
   if (names.length === 1) return true;
@@ -1104,6 +1133,12 @@ function isolateCardSlots(box: DomElementLike): DomElementLike[] {
       if (isCardSlotCandidate(child)) {
         flattenedSlots.push(...expandToCardSlots(child));
       }
+    }
+    // When a parent holds >= 2 media-backed card tiles (portrait / card link / card slug),
+    // media-free text siblings are metadata badges ("Late Swap", "4/5 Locked"), not cards.
+    const mediaSlots = flattenedSlots.filter((s) => hasCardIdentityMedia(s));
+    if (mediaSlots.length >= 2 && mediaSlots.length < flattenedSlots.length) {
+      flattenedSlots.splice(0, flattenedSlots.length, ...mediaSlots);
     }
     if (flattenedSlots.length >= 2 && flattenedSlots.length <= 6) {
       const distinct = countDistinctSlotIdentities(flattenedSlots);

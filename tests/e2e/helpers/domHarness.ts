@@ -496,7 +496,12 @@ export class MiniHTMLElement implements MiniNode {
   }
 
   getBoundingClientRect(): MiniRect {
-    if (this.style.display === "none" || this.hasAttribute("hidden")) {
+    const inlineStyle = (this.getAttribute("style") ?? "").replace(/\s+/g, "").toLowerCase();
+    if (
+      this.style.display === "none" ||
+      inlineStyle.includes("display:none") ||
+      this.hasAttribute("hidden")
+    ) {
       return {
         x: 0,
         y: 0,

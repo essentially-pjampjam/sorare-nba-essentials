@@ -12,7 +12,6 @@ import {
   ALERT_COOLDOWN_WITHIN_MS,
   ALERT_DAILY_RESET_WINDOW_MS,
   ALERT_OUTSIDE_CUTOFF_MS,
-  ALERT_PRICE_BASELINES,
   buildAlertEvaluationScenario,
   buildAlertTrackerUserSettings,
   buildPricedGalleryForAlertTests,
@@ -23,7 +22,6 @@ import {
 } from "./fixtures/alertTrackerFixture.ts";
 import { ARENA_GW10_SUBMITTED_LINEUPS } from "./fixtures/arenaLineupsFixture.ts";
 import {
-  ALL_LEADERBOARD_BENCHMARKS,
   ESPN_INJURIES_FIXTURE,
   ESPN_SCOREBOARD_FIXTURE,
   GW10_LEADERBOARD_BENCHMARKS,

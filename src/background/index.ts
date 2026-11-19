@@ -13,6 +13,10 @@ import {
   RESERVED_USER_SLUGS,
   SORARE_NBA_CARD_URL,
 } from "../shared/constants";
+import {
+  buildProPlayUrl,
+  isAllowedSorareUrl as isVerifiedSorareNavUrl,
+} from "../shared/routes";
 import type {
   BackgroundRequest,
   BackgroundResponse,
@@ -83,9 +87,23 @@ function isAllowedSorareUrl(rawUrl: string | undefined): boolean {
   }
 }
 
+/** True when both URLs point at the same origin + path (ignores query, hash, trailing slash). */
+function isSameNavTarget(currentUrl: string | undefined, targetUrl: string): boolean {
+  if (!currentUrl) return false;
+  try {
+    const a = new URL(currentUrl);
+    const b = new URL(targetUrl);
+    const trim = (p: string) => p.replace(/\/+$/, "").toLowerCase();
+    return a.origin === b.origin && trim(a.pathname) === trim(b.pathname);
+  } catch {
+    return false;
+  }
+}
+
 function isAllowedNavTargetUrl(rawUrl: string | undefined): boolean {
   if (!rawUrl) return false;
-  if (isAllowedSorareUrl(rawUrl)) return true;
+  // Sorare targets must be https sorare.com AND never a known-404 route (/nba/arena, /nba/set).
+  if (isAllowedSorareUrl(rawUrl)) return isVerifiedSorareNavUrl(rawUrl);
   try {
     const parsed = new URL(rawUrl);
     return (
@@ -1480,12 +1498,18 @@ async function handleMessage(
         return { ok: true, data: updatedGallery };
       }
       case "APPLY_LINEUP_HIGHLIGHT": {
+        const targetUrl = msg.targetUrl?.trim() || undefined;
+        if (targetUrl !== undefined && !isVerifiedSorareNavUrl(targetUrl)) {
+          return { ok: false, error: "Blocked disallowed highlight target." };
+        }
+        const autoHighlightFirst = Boolean(msg.autoHighlightFirst);
         await chrome.storage.local.set({
           [PENDING_LINEUP_HUD_KEY]: {
             playerNames: msg.playerNames,
             slots: msg.slots,
             formatLabel: msg.formatLabel,
             projectedTotal: msg.projectedTotal,
+            autoHighlightFirst,
             createdAt: Date.now(),
           },
         });
@@ -1495,9 +1519,13 @@ async function handleMessage(
         });
         const activeTab = tabs[0];
         if (activeTab?.id !== undefined) {
-          if (!activeTab.url?.includes("sorare.com")) {
+          const onSorare = isAllowedSorareUrl(activeTab.url);
+          const needsTargetNav =
+            targetUrl !== undefined && !isSameNavTarget(activeTab.url, targetUrl);
+          if (!onSorare || needsTargetNav) {
+            // Leave the pending HUD staged; the destination page's content script picks it up.
             await chrome.tabs.update(activeTab.id, {
-              url: "https://sorare.com/nba/play",
+              url: targetUrl ?? buildProPlayUrl(),
             });
           } else {
             await chrome.storage.local.remove(PENDING_LINEUP_HUD_KEY);
@@ -1508,6 +1536,7 @@ async function handleMessage(
                 slots: msg.slots,
                 formatLabel: msg.formatLabel,
                 projectedTotal: msg.projectedTotal,
+                autoHighlightFirst,
               })
               .catch(() => {});
           }

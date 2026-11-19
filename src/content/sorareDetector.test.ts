@@ -419,7 +419,7 @@ describe("sorareDomParser & sorareDetector", () => {
     });
     expect(lineups[0].playerNames).toEqual([
       "Morez Johnson Jr.",
-      "Demar Derozan",
+      "DeMar DeRozan",
       "Malik Monk",
       "Christian Anderson Jr.",
       "Taylor Hendricks",
@@ -1203,5 +1203,69 @@ describe("sorareDomParser & sorareDetector", () => {
       "V. Wembanyama",
       "V. Edgecombe",
     ]);
+  });
+  it("restores inner capitals for known ALL-CAPS NBA names (DeMar DeRozan, LeBron, LaMelo)", () => {
+    expect(formatDisplayPlayerName("DEMAR DEROZAN")).toBe("DeMar DeRozan");
+    expect(formatDisplayPlayerName("LEBRON JAMES")).toBe("LeBron James");
+    expect(formatDisplayPlayerName("LAMELO BALL")).toBe("LaMelo Ball");
+    expect(formatDisplayPlayerName("DAY'RON SHARPE")).toBe("Day'Ron Sharpe");
+    expect(formatDisplayPlayerName("DeMar DeRozan")).toBe("DeMar DeRozan");
+  });
+
+  const mediaSlot = (slug: string, name: string) =>
+    `<div><a href="/nba/cards/${slug}"><img src="https://assets.sorare.com/${slug}.png" alt="${name}" /></a></div>`;
+  const fourMediaCards = [
+    mediaSlot("aaron-gordon-2026-limited-45", "Aaron Gordon"),
+    mediaSlot("brook-lopez-2026-limited-11", "Brook Lopez"),
+    mediaSlot("malik-monk-2026-limited-88", "Malik Monk"),
+    mediaSlot("dean-wade-2026-limited-19", "Dean Wade"),
+  ].join("");
+  const expectedFour = ["Aaron Gordon", "Brook Lopez", "Malik Monk", "Dean Wade"];
+
+  it("drops media-free metadata badge rows next to media-backed card tiles (Probe 2e/2h Tailwind layout)", () => {
+    const html = `
+      <main>
+        <section>
+          <h3>Arena In-Season Contender</h3>
+          <div class="flex items-center gap-2"><span>Late Swap</span><span>4/5 Locked</span></div>
+          <div class="grid grid-cols-5">${fourMediaCards}</div>
+          <div class="flex justify-end"><button>Edit Lineup</button></div>
+        </section>
+        <section>
+          <h3>Arena Classic Contender</h3>
+          <div class="meta-badges"><span>Late Swap</span><span>Featured Slate</span></div>
+          <div class="slots">${fourMediaCards}</div>
+          <div class="footer"><button>Edit Lineup</button></div>
+        </section>
+      </main>
+    `;
+    const lineups = extractOpenLineupsFromDocument(
+      parseHtmlToDocument(html),
+      "https://sorare.com/nba/lineups/arena/nba-21-23-nov-2026",
+    );
+    expect(lineups).toHaveLength(2);
+    expect(lineups[0].playerNames).toEqual(expectedFour);
+    expect(lineups[1].playerNames).toEqual(expectedFour);
+  });
+
+  it("drops a media-free badge sibling from flat 2-card partial lineups (Probe 2f/2g)", () => {
+    const html = `
+      <main>
+        <section>
+          <h3>In-Season Contender</h3>
+          <div class="meta-a"><span>Late Swap</span></div>
+          <div class="meta-b"><span>Featured Slate</span></div>
+          ${mediaSlot("aaron-gordon-2026-limited-45", "Aaron Gordon")}
+          ${mediaSlot("brook-lopez-2026-limited-11", "Brook Lopez")}
+          <div class="footer"><button>Edit Lineup</button></div>
+        </section>
+      </main>
+    `;
+    const lineups = extractOpenLineupsFromDocument(
+      parseHtmlToDocument(html),
+      "https://sorare.com/nba/lineups/pro",
+    );
+    expect(lineups).toHaveLength(1);
+    expect(lineups[0].playerNames).toEqual(["Aaron Gordon", "Brook Lopez"]);
   });
 });

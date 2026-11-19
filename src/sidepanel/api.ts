@@ -189,6 +189,7 @@ export function applyLineupHighlight(
     seasonYear: number;
     isCaptain: boolean;
   }>,
+  options?: { targetUrl?: string; autoHighlightFirst?: boolean },
 ): Promise<boolean> {
   return sendBackground<boolean>({
     type: "APPLY_LINEUP_HIGHLIGHT",
@@ -196,6 +197,8 @@ export function applyLineupHighlight(
     formatLabel,
     projectedTotal,
     slots,
+    targetUrl: options?.targetUrl,
+    autoHighlightFirst: options?.autoHighlightFirst,
   });
 }
 

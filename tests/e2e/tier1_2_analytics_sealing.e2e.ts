@@ -394,9 +394,10 @@ function resolveLineupSpread(
       if (typeof val === "number" && Number.isFinite(val)) {
         return Math.sqrt(Math.max(0, val));
       }
-      if (val && typeof val.stdDev === "number") return val.stdDev;
-      if (val && typeof val.variance === "number") {
-        return Math.sqrt(Math.max(0, val.variance));
+      const obj = typeof val === "object" && val !== null ? val : null;
+      if (obj && typeof obj.stdDev === "number") return obj.stdDev;
+      if (obj && typeof obj.variance === "number") {
+        return Math.sqrt(Math.max(0, obj.variance));
       }
     }
   }

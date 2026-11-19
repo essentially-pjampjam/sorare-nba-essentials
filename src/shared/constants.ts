@@ -537,7 +537,7 @@ export interface CompetitionRoomInfo {
   name: string;
   capLabel: string;
   eligibility: string;
-  playUrl: string;
+  url: string;
   maxEntries?: number;
   lineupsUrl?: string;
 }
@@ -581,7 +581,7 @@ export const NBA_COMPETITION_DIRECTORY: CompetitionRoomInfo[] = [
     capLabel: "16★ Cap • Up to 5",
     eligibility:
       "4 In-Season + 1 Classic (or 5/5 In-Season) • Up to 5 In-Season/Arena entries (0 SET / 5) • Best game in GW counts",
-    playUrl: buildProPlayUrl(),
+    url: buildProPlayUrl(),
     maxEntries: COMPETITION_ENTRY_LIMITS.proInSeasonMaxEntries,
   },
   {
@@ -591,7 +591,7 @@ export const NBA_COMPETITION_DIRECTORY: CompetitionRoomInfo[] = [
     capLabel: "11★ Cap • Up to 5",
     eligibility:
       "4 In-Season + 1 Classic • Limited / Rare / Super Rare • Shares 5-entry Pro In-Season/Arena cap",
-    playUrl: buildProPlayUrl(),
+    url: buildProPlayUrl(),
     maxEntries: COMPETITION_ENTRY_LIMITS.proInSeasonMaxEntries,
   },
   {
@@ -601,7 +601,7 @@ export const NBA_COMPETITION_DIRECTORY: CompetitionRoomInfo[] = [
     capLabel: "16★ / 11★ • 4 Lim/Rare",
     eligibility:
       "All-Season / prior-season Pro cards • Up to 4 entries (Limited/Rare) or 2 entries (Super Rare/Unique)",
-    playUrl: buildProPlayUrl(),
+    url: buildProPlayUrl(),
     maxEntries: COMPETITION_ENTRY_LIMITS.proClassicMaxEntriesByRarity.limited,
   },
   {
@@ -611,7 +611,7 @@ export const NBA_COMPETITION_DIRECTORY: CompetitionRoomInfo[] = [
     capLabel: "12★ / 15★ / ∞ • Up to 5",
     eligibility:
       "10-team Arena cash/Pro pods (ARENA_75, ARENA_140, ARENA_UNCAPPED) • Counts toward 5 In-Season/Arena entries",
-    playUrl: buildArenaOngoingUrl(),
+    url: buildArenaOngoingUrl(),
     lineupsUrl: buildArenaOngoingUrl(),
     maxEntries: COMPETITION_ENTRY_LIMITS.arenaCashMaxEntries,
   },
@@ -622,7 +622,7 @@ export const NBA_COMPETITION_DIRECTORY: CompetitionRoomInfo[] = [
     capLabel: "U23 12★ / Vet 15★",
     eligibility:
       "Age-restricted 10-team Arena rooms (U23 <=23 yrs, Veterans 30+) • Counts toward 5 Arena/In-Season entries",
-    playUrl: buildProPlayUrl(),
+    url: buildProPlayUrl(),
     lineupsUrl: buildArenaOngoingUrl(),
     maxEntries: COMPETITION_ENTRY_LIMITS.arenaCashMaxEntries,
   },
@@ -633,7 +633,7 @@ export const NBA_COMPETITION_DIRECTORY: CompetitionRoomInfo[] = [
     capLabel: "4 Lives • +5% Boost",
     eligibility:
       "Daily Solo board with 4 Lives, +5% Edition & Collection boost, card tiers, and duplicate scrapping for Essence",
-    playUrl: buildSetPlayUrl("arcade"),
+    url: buildSetPlayUrl("arcade"),
   },
   {
     id: "set-squad",
@@ -642,7 +642,7 @@ export const NBA_COMPETITION_DIRECTORY: CompetitionRoomInfo[] = [
     capLabel: "120 Cap + Free MVP",
     eligibility:
       "Co-op / Common Squad boards (120 Cap + free MVP slot, 3 best lineups counted, +up to 5% Collection boost)",
-    playUrl: buildSetPlayUrl("squad"),
+    url: buildSetPlayUrl("squad"),
     maxEntries: COMPETITION_ENTRY_LIMITS.squadBestLineupsCounted,
   },
   {
@@ -652,7 +652,7 @@ export const NBA_COMPETITION_DIRECTORY: CompetitionRoomInfo[] = [
     capLabel: "3 Entries • Target Pts",
     eligibility:
       "Hot Streak series (up to 3 entries, beat target score streak for Essence)",
-    playUrl: buildSetPlayUrl("hot_streak"),
+    url: buildSetPlayUrl("hot_streak"),
     maxEntries: COMPETITION_ENTRY_LIMITS.hotStreakMaxEntries,
   },
 ];

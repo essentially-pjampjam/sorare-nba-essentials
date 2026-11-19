@@ -568,6 +568,10 @@ export type BackgroundRequest =
         seasonYear: number;
         isCaptain: boolean;
       }>;
+      /** Optional verified Sorare route to open before showing the HUD (Go actions). */
+      targetUrl?: string;
+      /** Auto-highlight the first resolved slot once the HUD renders. */
+      autoHighlightFirst?: boolean;
     }
   | { type: "CANCEL_SCAN" }
   | {

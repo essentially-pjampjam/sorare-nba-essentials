@@ -9,6 +9,8 @@
     "watch": "vite build --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:e2e": "vitest run --config tests/e2e/vitest.e2e.config.ts",
+    "typecheck:e2e": "tsc -p tests/e2e/tsconfig.e2e.json --noEmit",
     "build": "vite build",
     "check": "npm run typecheck && npm test && npm run build",
     "zip": "npm run build && node scripts/pack-webstore.mjs"

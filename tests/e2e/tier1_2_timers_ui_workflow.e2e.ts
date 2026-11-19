@@ -4,8 +4,6 @@ import { spawnSync } from "node:child_process";
 import React from "react";
 import {
   afterAll,
-  beforeAll,
-  beforeEach,
   describe,
   expect,
   it,

@@ -50,6 +50,7 @@ import {
   NBA_COMPETITION_DIRECTORY,
   NBA_POSITION_LABELS,
 } from "../../shared/constants";
+import { buildArenaLineupsUrl, buildProPlayUrl } from "../../shared/routes";
 import type {
   BargainListing,
   BargainsResult,
@@ -713,7 +714,12 @@ export function LineupsTab({
                   <button
                     type="button"
                     onClick={() =>
-                      void openInActiveTab("https://sorare.com/nba/arena")
+                      // Open (pre-lock) lineups live on the upcoming fixture page; /ongoing only shows locked LIVE lineups.
+                      void openInActiveTab(
+                        buildArenaLineupsUrl(
+                          openFixture?.aasmState === "opened" ? openFixture.slug : null,
+                        ),
+                      )
                     }
                     className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-gradient-to-r from-sky-400 to-emerald-400 px-2.5 py-1.5 text-[10px] font-bold text-slate-950 shadow-sm hover:from-sky-300 hover:to-emerald-300"
                   >
@@ -723,7 +729,7 @@ export function LineupsTab({
                   <button
                     type="button"
                     onClick={() =>
-                      void openInActiveTab("https://sorare.com/nba/play")
+                      void openInActiveTab(buildProPlayUrl())
                     }
                     className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-white/15 bg-[#111726] px-2.5 py-1.5 text-[10px] font-semibold text-slate-200 hover:border-white/30"
                   >
@@ -2476,7 +2482,7 @@ export function LineupsTab({
               </div>
               <button
                 type="button"
-                onClick={() => void openInActiveTab(room.playUrl)}
+                onClick={() => void openInActiveTab(room.url)}
                 className="inline-flex shrink-0 cursor-pointer items-center gap-0.5 rounded-lg border border-white/10 bg-[#0b101b] px-2 py-1 text-[10px] font-semibold text-sky-300 hover:border-sky-400/40"
               >
                 Open

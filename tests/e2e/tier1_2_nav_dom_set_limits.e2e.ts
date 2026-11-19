@@ -2,13 +2,11 @@ import React from "react";
 import {
   afterAll,
   beforeAll,
-  beforeEach,
   describe,
   expect,
   it,
 } from "vitest";
 import type {
-  CurrentLineupEntry,
   GalleryCard,
   InjuryReportEntry,
   LeaderboardBenchmark,
@@ -43,7 +41,6 @@ import {
 } from "./helpers/chromeMock.ts";
 import {
   closeContractLoader,
-  loadContractModule,
   readRepoText,
   requireContractModule,
   requireExport,
@@ -1153,7 +1150,7 @@ describe("Feature 3: Reliable DOM Lineup Extraction (Arena & Multi-Lineup)", () 
     const extracted = domParser.extractOpenLineupsFromDocument(doc, url);
     expect(extracted).toHaveLength(1);
     expect(extracted[0]?.playerNames).toEqual([
-      "Day'ron Sharpe",
+      "Day'Ron Sharpe",
       "Nickeil Alexander-Walker",
       "P.J. Washington",
       "CJ McCollum",

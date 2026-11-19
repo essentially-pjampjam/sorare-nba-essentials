@@ -339,7 +339,6 @@ describe("F15 Tier 1 — E2E Harness Positive Contracts & Helper Fidelity", () =
       localStorage?: unknown;
     };
     const priorWindow = g.window;
-    const priorChrome = g.chrome;
     const priorStorage = g.localStorage;
 
     const handle = installChromeAndFetchMock({ manifestVersion: "2.7.0" });
@@ -477,7 +476,7 @@ describe("F15 Tier 2 — Harness Boundaries, Resilience & AGENTS.md Invariants",
     expect(emptyId).toBe("notif-1");
     expect(spaceId).toBe("notif-2");
 
-    const sourceOptions: chrome.notifications.NotificationOptions = {
+    const sourceOptions: chrome.notifications.NotificationCreateOptions = {
       type: "list",
       iconUrl: "icon.png",
       title: "Clone Check",

@@ -452,6 +452,7 @@ export function installChromeAndFetchMock(
             sendResponse: (response?: unknown) => void,
           ) => boolean | void,
         ) => runtimeMessageListeners.has(fn),
+        hasListeners: () => runtimeMessageListeners.size > 0,
       },
       reload: () => {},
       connect: (connectInfo?: chrome.runtime.ConnectInfo) => {
