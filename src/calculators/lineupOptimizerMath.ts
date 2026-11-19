@@ -5,6 +5,7 @@ import {
   buildContestThresholds,
   evaluateContestEv,
   lineupStdDev,
+  probabilityAtLeast,
 } from "./entryEvMath";
 import type {
   BargainListing,
@@ -1062,8 +1063,14 @@ export interface FormatRecommendationCandidate {
   /** Short display label, e.g. "In-Season Contender 11★". */
   label: string;
   topScore: number | null;
-  /** Probability (%) of clearing the field's reward cutoff. */
+  /** Probability (%) of clearing the field's reward cutoff (cash or Essence; XP-only ranks excluded). */
   cashProb: number;
+  /** Probability (%) of finishing inside the real cash (USD) ranks; null when unknown. */
+  moneyProb?: number | null;
+  /** Ranks paid in cash and the best prize, live from Sorare. */
+  cashPlaces?: number;
+  topCashLabel?: string | null;
+  rewardTiers?: LeaderboardBenchmark["rewardTiers"];
   /** Probability (%) of clearing the top-20% line. */
   top20Prob: number;
   /** Probability (%) of clearing the podium line. */
@@ -1169,6 +1176,11 @@ export function recommendBestFormat(
       : 0;
     const ev = evaluateContestEv(top ? top.totalScore : null, sd, thresholds);
     const viable = ev.viable && top !== null && top.slots.length === 5;
+    const cashCut = bm?.cashCutoffScore;
+    const moneyProb =
+      top && typeof cashCut === "number" && Number.isFinite(cashCut) && cashCut > 0
+        ? Math.round(Math.min(ev.cashProb, probabilityAtLeast(top.totalScore, sd, cashCut)) * 10) / 10
+        : null;
     return {
       format: contest.format,
       seasonScope: contest.scope,
@@ -1177,6 +1189,10 @@ export function recommendBestFormat(
       cashProb: ev.cashProb,
       top20Prob: ev.top20Prob,
       podiumProb: ev.podiumProb,
+      moneyProb,
+      cashPlaces: bm?.cashPlaces,
+      topCashLabel: bm?.topCashLabel ?? null,
+      rewardTiers: bm?.rewardTiers,
       expectedValueScore: ev.expectedValueScore,
       viable,
       essencePct: ev.cashProb,
@@ -1213,16 +1229,20 @@ export function recommendBestFormat(
     inSeasonContender.viable &&
     inSeasonContender.cashProb > classicContender.cashProb + 10
   ) {
-    inSeasonVsClassicTip = `Field Tip: In-Season Contender pays ${inSeasonContender.fieldPaidPct ?? "?"}% of the field (cut ~${Math.round(inSeasonContender.paidCutoffScore ?? 0)}) vs Classic ${classicContender.fieldPaidPct ?? "?"}% (cut ~${Math.round(classicContender.paidCutoffScore ?? 0)}): ${inSeasonContender.cashProb}% vs ${classicContender.cashProb}% cash odds for your best lineup.`;
+    inSeasonVsClassicTip = `Field Tip: In-Season Contender pays ${inSeasonContender.fieldPaidPct ?? "?"}% of the field (cut ~${Math.round(inSeasonContender.paidCutoffScore ?? 0)}) vs Classic ${classicContender.fieldPaidPct ?? "?"}% (cut ~${Math.round(classicContender.paidCutoffScore ?? 0)}): ${inSeasonContender.cashProb}% vs ${classicContender.cashProb}% reward odds for your best lineup.`;
   }
 
   const alternatives = ranked
     .slice(1, 3)
-    .map((c) => `${c.label} ${c.cashProb}% cash`)
+    .map((c) => `${c.label} ${c.cashProb}% reward`)
     .join(" • ");
   const reason = best.viable
-    ? `${best.label} projects ${best.topScore?.toFixed(1) ?? "--"} pts: ${best.cashProb}% cash odds (cut ~${Math.round(best.paidCutoffScore ?? 0)}), ${best.top20Prob}% top-20%, ${best.podiumProb}% podium. Next: ${alternatives}.`
-    : `No contest gives at least ${MIN_VIABLE_CASH_PCT}% cash odds with your current cards. Closest: ${best.label} (${best.cashProb}% cash, ${best.topScore?.toFixed(1) ?? "--"} pts).`;
+    ? `${best.label} projects ${best.topScore?.toFixed(1) ?? "--"} pts: ${best.cashProb}% odds of a reward (Essence or cash, cut ~${Math.round(best.paidCutoffScore ?? 0)})${
+        best.moneyProb !== null && best.moneyProb !== undefined
+          ? `, ${best.moneyProb}% odds of cash (top ${best.cashPlaces ?? "?"}${best.topCashLabel ? `, up to ${best.topCashLabel}` : ""})`
+          : ""
+      }, ${best.podiumProb}% podium. Next: ${alternatives}.`
+    : `No contest gives at least ${MIN_VIABLE_CASH_PCT}% reward odds with your current cards. Closest: ${best.label} (${best.cashProb}% reward, ${best.topScore?.toFixed(1) ?? "--"} pts).`;
 
   return {
     recommendedFormat: best.format,

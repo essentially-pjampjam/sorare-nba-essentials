@@ -1,6 +1,7 @@
 import { buildMarketPriceKey } from "../calculators/collectionEssenceMath";
 import { evaluateStarTierShift } from "../calculators/lineupOptimizerMath";
 import { selectOpenGameWeek } from "../calculators/countdownMath";
+import { selectDailyPickerWindow } from "../calculators/dailySlateMath";
 import {
   ALERT_TRACKER_ALARM_NAME,
   CUTOFF_REMINDER_ALARM_NAME,
@@ -39,6 +40,7 @@ import type {
   CraftPoolResult,
   Currency,
   CurrentLineupEntry,
+  DailyPickerPool,
   GalleryCard,
   GalleryResult,
   MissingSlot,
@@ -50,7 +52,7 @@ import type {
   WatchlistEntry,
 } from "../shared/types";
 import { clearAllCache, getCached, setCached } from "./cache";
-import { fetchExternalNbaContext } from "./externalDataClient";
+import { fetchDailySlateGames, fetchExternalNbaContext } from "./externalDataClient";
 import {
   RateLimitedError,
   RateLimitQueue,
@@ -1692,6 +1694,18 @@ async function handleMessage(
       }
       case "GET_ALERT_FEED": {
         return { ok: true, data: await getAlertFeed() };
+      }
+      case "GET_DAILY_PICKER_POOL": {
+        const now = Date.now();
+        const window = selectDailyPickerWindow(await fetchDailySlateGames(now), now);
+        let rosterCards: GalleryCard[] = [];
+        try {
+          rosterCards = await sorareClient.fetchTeamRosterCards(window.teamSlugs);
+        } catch {
+          // No API key (complexity) or network error: the picker falls back to owned Common cards.
+        }
+        const pool: DailyPickerPool = { window, rosterCards, fetchedAt: now };
+        return { ok: true, data: pool };
       }
       case "CLEAR_WATCHLIST_ALERTS": {
         await saveSettings({ watchlistAlerts: [] });

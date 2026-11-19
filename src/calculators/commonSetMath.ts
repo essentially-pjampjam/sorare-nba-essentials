@@ -12,6 +12,32 @@ import {
   type EvaluatedLineupCard,
   type SuggestedLineup,
 } from "./lineupOptimizerMath";
+import { lineupStdDev, probabilityAtLeast } from "./entryEvMath";
+
+/** Live Set Solo (Arcade / Hot Streak) step targets, checked 2026-11-19 (CareerStep.target). */
+export const SET_SOLO_STEP_TARGETS = [150, 180, 210, 240, 270, 290] as const;
+/** Live: a Solo step allows up to 4 lineups (CareerStep.maxLineupsCount), 5 cards each. */
+export const SET_SOLO_MAX_TEAMS = 4;
+
+export interface SetTeamStepOdds {
+  target: number;
+  /** P(team total >= target), percent. */
+  hitPct: number;
+}
+
+export interface SetSoloTeam {
+  lineup: SuggestedLineup;
+  /** Average card power bonus across the 5 cards (%). */
+  avgBoostPct: number;
+  stepOdds: SetTeamStepOdds[];
+}
+
+export interface DailyPickerOptions {
+  /** Teams playing in the live Daily Picker window; when set, only their players are ranked. */
+  allowedTeamSlugs?: string[];
+  /** Players of those teams not in the manager's gallery (any player can be picked). */
+  extraPlayers?: GalleryCard[];
+}
 
 export interface DailyPickerCandidate {
   card: GalleryCard;
@@ -33,23 +59,38 @@ export function rankDailyPickerCandidates(
   injuriesByName: Record<string, InjuryReportEntry>,
   gamesPerTeam: Record<string, number>,
   limit = 8,
+  options: DailyPickerOptions = {},
 ): DailyPickerCandidate[] {
   const seenPlayers = new Set<string>();
   const candidates: DailyPickerCandidate[] = [];
 
-  for (const card of commonCards) {
+  // Live Daily Picker: only players whose team plays in today's window (before the next
+  // 07:00 UTC reset), owned or not. Each such team plays exactly one game in that daily slate.
+  const allowed = options.allowedTeamSlugs ? new Set(options.allowedTeamSlugs) : null;
+  const pool = allowed
+    ? [...commonCards, ...(options.extraPlayers ?? [])].filter(
+        (c) => c.teamSlug !== null && allowed.has(c.teamSlug),
+      )
+    : commonCards;
+  const games = allowed
+    ? Object.fromEntries(Array.from(allowed).map((t) => [t, 1]))
+    : gamesPerTeam;
+
+  for (const card of pool) {
     if (seenPlayers.has(card.playerSlug)) continue;
     const ev = evaluateCardForLineup(
       card,
       "blended_smart",
       new Map(),
       injuriesByName,
-      gamesPerTeam,
+      games,
     );
     if (ev.injuryStatus === "OUT" || ev.injuryStatus === "DOUBTFUL") continue;
 
     const l10 = card.l10 ?? 0;
-    const projectedScore = Math.round(ev.injuryAdjustedBase * 10) / 10;
+    // Sorare's own next-daily projection when present, else the blended injury-adjusted base.
+    const daily = allowed && typeof card.sorareDailyProjected === "number" ? card.sorareDailyProjected : null;
+    const projectedScore = Math.round((daily ?? ev.injuryAdjustedBase) * 10) / 10;
     if (projectedScore < 12) continue;
 
     seenPlayers.add(card.playerSlug);
@@ -100,7 +141,24 @@ export interface SetAutoBuildResult {
   mode: SetBuildMode;
   soloPicks: EvaluatedLineupCard[];
   squadTeams: SuggestedLineup[];
+  /** Solo mode: full 5-card teams under the 16-star cap (up to 4), like the Pro builder. */
+  soloTeams: SetSoloTeam[];
   activePoolCount: number;
+}
+
+function toSoloTeam(lineup: SuggestedLineup): SetSoloTeam {
+  const sd = lineupStdDev(
+    lineup.slots.map((s) => ({ projectedScore: s.slotScore, teamSlug: s.evaluated.card.teamSlug })),
+  );
+  const boosts = lineup.slots.map((s) => ((s.evaluated.card.powerMultiplier ?? 1) - 1) * 100);
+  return {
+    lineup,
+    avgBoostPct: boosts.length ? Math.round((boosts.reduce((a, b) => a + b, 0) / boosts.length) * 10) / 10 : 0,
+    stepOdds: SET_SOLO_STEP_TARGETS.map((target) => ({
+      target,
+      hitPct: Math.round(probabilityAtLeast(lineup.totalScore, sd, target)),
+    })),
+  };
 }
 
 /**
@@ -155,10 +213,28 @@ export function buildSetTeams(
       if (soloPicks.length >= count) break;
     }
 
+    // Live Solo rules: each lineup is 5 Common cards under a 16-star cap, up to 4 per step.
+    const teamsRes = generateTopLineups(commonCards, {
+      format: "champion_16",
+      rarityFilter: "common",
+      projectionSource: options.projectionSource,
+      customProjectionsRaw: options.customProjectionsRaw,
+      injuriesByName: options.injuriesByName,
+      gamesPerTeam: options.gamesPerTeam,
+      excludeOut: options.excludeOut,
+      excludeQuestionable: false,
+      inSeasonOnly: false,
+      minInSeasonCards: 0,
+      disjointAcrossLineups: options.disjointAcrossTeams,
+      maxLineups: Math.min(count, SET_SOLO_MAX_TEAMS),
+      captainBonusPct: 0,
+    });
+
     return {
       mode: "solo",
       soloPicks,
       squadTeams: [],
+      soloTeams: teamsRes.lineups.map(toSoloTeam),
       activePoolCount: evaluatedPool.length,
     };
   }
@@ -185,6 +261,7 @@ export function buildSetTeams(
     mode: "squad",
     soloPicks: [],
     squadTeams: squadRes.lineups,
+    soloTeams: [],
     activePoolCount: squadRes.evaluatedPool.length,
   };
 }

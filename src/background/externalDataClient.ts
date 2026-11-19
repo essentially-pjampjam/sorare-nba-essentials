@@ -6,6 +6,7 @@ import {
   type TeamGameOdds,
 } from "../calculators/vegasMath";
 import type {
+  DailySlateGame,
   InjuryReportEntry,
   InjuryStatus,
   TeamSlateSchedule,
@@ -303,4 +304,42 @@ export async function fetchExternalNbaContext(gwWindow?: GameWeekWindow | null):
     await setCached(cacheKey, result);
   }
   return result;
+}
+
+/**
+ * Today's and tomorrow's NBA games (ESPN scoreboard, cached 10 min) for the Daily Picker window.
+ * Independent of the Game Week window: the daily slate can fall between Game Weeks.
+ */
+export async function fetchDailySlateGames(nowMs: number = Date.now()): Promise<DailySlateGame[]> {
+  const start = new Date(nowMs - 12 * 3_600_000);
+  const end = new Date(nowMs + 48 * 3_600_000);
+  const url = `${ESPN_SCOREBOARD_URL}?dates=${formatEspnDate(start)}-${formatEspnDate(end)}&limit=100`;
+  const cacheKey = `espn_daily_slate_v1:${formatEspnDate(start)}`;
+  const cached = await getCached<DailySlateGame[]>(cacheKey);
+  if (cached) return cached.value;
+
+  const res = await fetch(url, { credentials: "omit", signal: AbortSignal.timeout(12_000) });
+  if (!res.ok) return [];
+  const payload = (await res.json()) as EspnScoreboardPayload;
+  const games: DailySlateGame[] = [];
+  for (const ev of payload.events ?? []) {
+    for (const comp of ev.competitions ?? []) {
+      const tip = comp.date ?? ev.date;
+      const home = comp.competitors?.find((c) => c.homeAway === "home");
+      const away = comp.competitors?.find((c) => c.homeAway === "away");
+      if (!tip || !home?.team?.displayName || !away?.team?.displayName) continue;
+      const rawState = comp.status?.type?.state;
+      games.push({
+        id: `${tip}:${home.team.displayName}`,
+        tipOffIso: tip,
+        homeTeamSlug: teamDisplayToSlug(home.team.displayName),
+        awayTeamSlug: teamDisplayToSlug(away.team.displayName),
+        homeAbbr: home.team.abbreviation ?? home.team.displayName.slice(0, 3).toUpperCase(),
+        awayAbbr: away.team.abbreviation ?? away.team.displayName.slice(0, 3).toUpperCase(),
+        state: rawState === "in" ? "in" : rawState === "post" ? "post" : "pre",
+      });
+    }
+  }
+  await setCached(cacheKey, games);
+  return games;
 }

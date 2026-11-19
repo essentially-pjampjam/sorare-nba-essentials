@@ -20,6 +20,16 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.0",
+    title: "v2.7.0 (testing build M5): Real Rewards, Live Daily Picker, Full Set Teams",
+    items: [
+      "Recommended Entry now splits Reward odds (Essence or cash) from real Cash $ odds, and lists each contest's live reward tiers from Sorare (cash only for the top ranks, then Essence, then XP).",
+      "Daily Picker follows Sorare's live rule: only players from today's games before the 07:00 UTC reset, including players you don't own.",
+      "Set Solo builds full 5-card teams under the 16-star cap (up to 4) with Apply, Go, card boost and odds for the Hot Streak steps (150, 180, 210, 240).",
+      "Set teams only use players with a game on today's slate.",
+    ],
+  },
+  {
     version: "2.6.10-exp.M4",
     title: "Experimental M4: New Side Panel Tools",
     items: [

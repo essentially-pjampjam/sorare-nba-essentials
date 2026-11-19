@@ -23,6 +23,8 @@ import type {
   CurrentLineupEntry,
   GalleryCard,
   LeaderboardBenchmark,
+  LeaderboardRewardTier,
+  RewardTierKind,
   LineupAgeFilter,
   LineupFormat,
   MissingSlot,
@@ -1291,6 +1293,86 @@ export class SorareClient {
    * across In-Season, Classic, and Arena rooms so win odds & entry recommendations
    * reflect live Sorare NBA competition difficulty rather than static estimates.
    */
+  /**
+   * Active players of the given NBA teams (`team(slug).activePlayers`, public) as Common-card
+   * stand-ins for the Daily Picker: any player in today's games can be picked, owned or not.
+   * Needs an API key for more than one team (no-key complexity limit 500).
+   */
+  async fetchTeamRosterCards(teamSlugs: string[], signal?: AbortSignal): Promise<GalleryCard[]> {
+    const slugs = Array.from(new Set(teamSlugs.filter((t) => /^[a-z0-9-]+$/.test(t)))).slice(0, 30);
+    if (slugs.length === 0) return [];
+    const blocks = slugs.map(
+      (slug, i) => `
+        t${i}: team(slug: "${slug}") {
+          slug
+          name
+          activePlayers {
+            nodes {
+              slug
+              displayName
+              anyPositions
+              l10: averageScore(type: LAST_TEN_PLAYED_SO5_AVERAGE_SCORE)
+              l5: averageScore(type: LAST_FIVE_AVERAGE_ALL_AROUND_SCORE)
+              daily: nextDailyFixtureProjectedScore
+            }
+          }
+        }`,
+    );
+    interface RosterTeam {
+      slug: string;
+      name: string;
+      activePlayers?: {
+        nodes?: Array<{
+          slug: string;
+          displayName: string;
+          anyPositions?: string[] | null;
+          l10?: number | null;
+          l5?: number | null;
+          daily?: number | null;
+        }>;
+      } | null;
+    }
+    const data = await this.postGraphQL<Record<string, RosterTeam | null>>(
+      `query DailyPickerRosters { ${blocks.join("\n")} }`,
+      {},
+      `daily_rosters_v1:${slugs.slice().sort().join(",")}`,
+      signal,
+    );
+    const round1 = (v: number | null | undefined): number | null =>
+      typeof v === "number" && Number.isFinite(v) ? Math.round(v * 10) / 10 : null;
+    const cards: GalleryCard[] = [];
+    for (const team of Object.values(data ?? {})) {
+      if (!team) continue;
+      for (const p of team.activePlayers?.nodes ?? []) {
+        const positions = (p.anyPositions ?? []).filter(
+          (pos): pos is NbaPosition =>
+            pos === "basketball_guard" || pos === "basketball_forward" || pos === "basketball_center",
+        );
+        const l10 = round1(p.l10);
+        cards.push({
+          slug: `roster:${p.slug}`,
+          rarity: "common",
+          seasonYear: new Date().getUTCFullYear(),
+          inSeasonEligible: false,
+          grade: 0,
+          powerMultiplier: 1,
+          teamName: team.name,
+          teamSlug: team.slug,
+          playerSlug: p.slug,
+          playerName: p.displayName,
+          positions,
+          l10,
+          l5: round1(p.l5),
+          sorareClassicProjected: null,
+          sorareDailyProjected: round1(p.daily),
+          starCost: resolveStarRating(null, l10).stars,
+          starSource: "estimated",
+        });
+      }
+    }
+    return cards;
+  }
+
   async fetchClosedLeaderboardBenchmarks(
     fixtureSlug: string,
     fixtureName: string,
@@ -1308,7 +1390,15 @@ export class SorareClient {
               rarityType
               so5LineupsCount
               rewardsConfig {
-                ranking { ranks }
+                ranking {
+                  ranks
+                  rewardConfigs {
+                    __typename
+                    ... on MonetaryRewardConfig { amount { usdCents eurCents } }
+                    ... on CardShardRewardConfig { quantity }
+                    ... on InGameCurrencyRewardConfig { currency amount }
+                  }
+                }
               }
             }
           }
@@ -1316,13 +1406,22 @@ export class SorareClient {
       }
     `;
 
+    interface RawRankReward {
+      ranks?: number | null;
+      rewardConfigs?: Array<{
+        __typename?: string;
+        amount?: { usdCents?: number | null; eurCents?: number | null } | number | null;
+        quantity?: number | null;
+        currency?: string | null;
+      }> | null;
+    }
     interface RawLb {
       slug: string;
       displayName: string;
       rarityType: string | null;
       so5LineupsCount: number | null;
       rewardsConfig?: {
-        ranking?: Array<{ ranks?: number | null }>;
+        ranking?: RawRankReward[];
       } | null;
     }
 
@@ -1335,12 +1434,23 @@ export class SorareClient {
       };
     }
 
-    const listResp = await this.postGraphQL<ListResp>(
-      listQuery,
-      { slug: fixtureSlug },
-      `benchmarks_list_v1:${fixtureSlug}:${rarity}`,
-      signal,
-    );
+    let listResp: ListResp;
+    try {
+      listResp = await this.postGraphQL<ListResp>(
+        listQuery,
+        { slug: fixtureSlug },
+        `benchmarks_list_v2:${fixtureSlug}:${rarity}`,
+        signal,
+      );
+    } catch {
+      // Typed reward tiers need depth 8 (API key limit 13, no-key limit 7): fall back to rank counts.
+      listResp = await this.postGraphQL<ListResp>(
+        listQuery.replace(/rewardConfigs \{[\s\S]*?\n {18}\}/, ""),
+        { slug: fixtureSlug },
+        `benchmarks_list_v2_basic:${fixtureSlug}:${rarity}`,
+        signal,
+      );
+    }
 
     const allBoards = listResp.so5?.so5Fixture?.so5Leaderboards ?? [];
     const suffixRarity = rarity.toLowerCase();
@@ -1357,7 +1467,52 @@ export class SorareClient {
       totalEntries: number;
       paidPlaces: number;
       isPod: boolean;
+      cashPlaces: number;
+      topCashLabel: string | null;
+      rewardTiers: LeaderboardRewardTier[];
     }
+
+    // Live reward tiers: cash (Monetary), Essence (CardShard), XP (InGameCurrency).
+    // "Paid" = cash or Essence; XP-only ranks are participation rewards.
+    const readTiers = (lb: RawLb) => {
+      const tiers: LeaderboardRewardTier[] = [];
+      let rank = 0;
+      let cashPlaces = 0;
+      let paidPlaces = 0;
+      let topCash = 0;
+      for (const r of lb.rewardsConfig?.ranking ?? []) {
+        const n = Math.max(0, Number(r.ranks ?? 0) || 0);
+        if (n === 0) continue;
+        const cfgs = r.rewardConfigs ?? [];
+        const money = cfgs.find((x) => x.__typename === "MonetaryRewardConfig");
+        const shard = cfgs.find((x) => x.__typename === "CardShardRewardConfig");
+        const xp = cfgs.find((x) => x.__typename === "InGameCurrencyRewardConfig");
+        let kind: RewardTierKind = "other";
+        let label = "Reward";
+        if (money && typeof money.amount === "object" && money.amount) {
+          const cents = money.amount.usdCents ?? money.amount.eurCents ?? 0;
+          kind = "cash";
+          label = `$${Math.round(cents / 100).toLocaleString("en-US")}`;
+          topCash = Math.max(topCash, cents);
+        } else if (shard) {
+          kind = "essence";
+          label = `${(shard.quantity ?? 0).toLocaleString("en-US")} Essence`;
+        } else if (xp) {
+          kind = "xp";
+          label = `${typeof xp.amount === "number" ? xp.amount.toLocaleString("en-US") : ""} XP`.trim();
+        }
+        tiers.push({ fromRank: rank + 1, toRank: rank + n, kind, label });
+        rank += n;
+        if (kind === "cash") cashPlaces = rank;
+        if (kind !== "xp") paidPlaces = rank;
+      }
+      return {
+        tiers,
+        cashPlaces,
+        paidPlaces,
+        topCashLabel: topCash > 0 ? `$${Math.round(topCash / 100).toLocaleString("en-US")}` : null,
+      };
+    };
 
     const aggMap = new Map<string, TargetAgg>();
 
@@ -1371,10 +1526,8 @@ export class SorareClient {
     ) => {
       const entries = Math.max(0, Number(lb.so5LineupsCount ?? 0) || 0);
       if (entries <= 0) return;
-      const paid = (lb.rewardsConfig?.ranking ?? []).reduce(
-        (sum, r) => sum + Math.max(0, Number(r.ranks ?? 0) || 0),
-        0,
-      );
+      const tierInfo = readTiers(lb);
+      const paid = tierInfo.paidPlaces;
       const existing = aggMap.get(key);
       if (existing) {
         existing.totalEntries += entries;
@@ -1383,6 +1536,9 @@ export class SorareClient {
           existing.sampleSlug = lb.slug;
           existing.sampleTotal = entries;
           existing.samplePaid = paid;
+          existing.cashPlaces = tierInfo.cashPlaces;
+          existing.topCashLabel = tierInfo.topCashLabel;
+          existing.rewardTiers = tierInfo.tiers;
         }
       } else {
         aggMap.set(key, {
@@ -1397,6 +1553,9 @@ export class SorareClient {
           totalEntries: entries,
           paidPlaces: paid,
           isPod,
+          cashPlaces: tierInfo.cashPlaces,
+          topCashLabel: tierInfo.topCashLabel,
+          rewardTiers: tierInfo.tiers,
         });
       }
     };
@@ -1449,6 +1608,12 @@ export class SorareClient {
       const top5Rank = Math.max(1, Math.min(n, Math.round(n * 0.05)));
       const podiumRank = Math.max(1, Math.min(n, Math.min(3, Math.round(n * 0.02))));
 
+      const cashRank = t.cashPlaces > 0 ? Math.min(n, t.cashPlaces) : 0;
+      const vCash = `c_${idx}`;
+      if (cashRank > 0) {
+        varDecls.push(`$${vCash}: String`);
+        variables[vCash] = encodeRankCursor(cashRank);
+      }
       const vPaid = `p_${idx}`;
       const vTop20 = `t20_${idx}`;
       const vTop5 = `t5_${idx}`;
@@ -1466,6 +1631,7 @@ export class SorareClient {
           top5: so5Rankings(first: 1, after: $${vTop5}) { nodes { score } }
           top20: so5Rankings(first: 1, after: $${vTop20}) { nodes { score } }
           paidCut: so5Rankings(first: 1, after: $${vPaid}) { nodes { score } }
+          ${cashRank > 0 ? `cashCut: so5Rankings(first: 1, after: $${vCash}) { nodes { score } }` : ""}
         }
       `);
     });
@@ -1487,6 +1653,7 @@ export class SorareClient {
       top5?: ScoreConn;
       top20?: ScoreConn;
       paidCut?: ScoreConn;
+      cashCut?: ScoreConn;
     }
     interface CutoffResp {
       so5: Record<string, CutoffBoardResp | null>;
@@ -1495,7 +1662,7 @@ export class SorareClient {
     const cutoffsResp = await this.postGraphQL<CutoffResp>(
       cutoffQuery,
       variables,
-      `benchmarks_cutoffs_v1:${fixtureSlug}:${rarity}`,
+      `benchmarks_cutoffs_v2:${fixtureSlug}:${rarity}`,
       signal,
     );
 
@@ -1510,7 +1677,7 @@ export class SorareClient {
       const b = cutoffsResp.so5?.[t.key];
       const winRate =
         t.totalEntries > 0
-          ? Math.round((t.paidPlaces / t.totalEntries) * 1000) / 10
+          ? Math.min(100, Math.round((t.paidPlaces / t.totalEntries) * 1000) / 10)
           : 0;
       return {
         fixtureSlug,
@@ -1530,6 +1697,10 @@ export class SorareClient {
         podiumScore: readScore(b?.podium),
         top1Score: readScore(b?.top1),
         podSize: t.isPod ? t.sampleTotal : undefined,
+        cashPlaces: t.cashPlaces,
+        cashCutoffScore: t.cashPlaces > 0 ? readScore(b?.cashCut) : null,
+        topCashLabel: t.topCashLabel,
+        rewardTiers: t.rewardTiers,
       };
     });
   }

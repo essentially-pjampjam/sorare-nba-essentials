@@ -352,6 +352,50 @@ export interface LeaderboardBenchmark {
   podiumScore: number | null;
   top1Score: number | null;
   podSize?: number;
+  /** Ranks paid in cash (MonetaryRewardConfig), live from Sorare's rewardsConfig. */
+  cashPlaces?: number;
+  /** Score at the last cash rank (closed GW). */
+  cashCutoffScore?: number | null;
+  /** Best cash prize label, e.g. "$2,000". */
+  topCashLabel?: string | null;
+  /** Live reward tiers (cumulative ranks) for display. */
+  rewardTiers?: LeaderboardRewardTier[];
+}
+
+export type RewardTierKind = "cash" | "essence" | "xp" | "other";
+
+export interface LeaderboardRewardTier {
+  fromRank: number;
+  toRank: number;
+  kind: RewardTierKind;
+  label: string;
+}
+
+/** One NBA game on the daily slate (ESPN scoreboard, team slugs match Sorare's). */
+export interface DailySlateGame {
+  id: string;
+  tipOffIso: string;
+  homeTeamSlug: string;
+  awayTeamSlug: string;
+  homeAbbr: string;
+  awayAbbr: string;
+  state: "pre" | "in" | "post";
+}
+
+export interface DailyPickerWindow {
+  /** Window start (now, or the next reset when today's games already started). */
+  startIso: string;
+  /** Next 07:00 UTC daily reset after the start. */
+  endIso: string;
+  games: DailySlateGame[];
+  teamSlugs: string[];
+}
+
+export interface DailyPickerPool {
+  window: DailyPickerWindow;
+  /** Active players of the teams in the window (Common stand-ins). */
+  rosterCards: GalleryCard[];
+  fetchedAt: number;
 }
 
 export interface So5FixtureSummary {
@@ -640,6 +684,7 @@ export type BackgroundRequest =
   | { type: "RUN_ALERT_CHECK" }
   | { type: "SEND_TEST_ALERT_NOTIFICATION" }
   | { type: "GET_ALERT_FEED" }
+  | { type: "GET_DAILY_PICKER_POOL" }
   | { type: "CLEAR_WATCHLIST_ALERTS" }
   | { type: "DETECTED_USERNAME_FROM_CONTENT"; username: string; sourceUrl: string }
   | {

@@ -27,7 +27,7 @@ import {
   Zap,
 } from "lucide-react";
 import { CountdownTimers } from "../components/CountdownTimers";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   buildSetTeams,
   rankDailyPickerCandidates,
@@ -67,8 +67,9 @@ import type {
   ProjectionSource,
   Rarity,
   WalletBalanceInfo,
+  DailyPickerPool,
 } from "../../shared/types";
-import { applyLineupHighlight, openInActiveTab } from "../api";
+import { applyLineupHighlight, getDailyPickerPool, openInActiveTab } from "../api";
 import { HeadToHeadCompareBox } from "../components/HeadToHeadCompareBox";
 import { PlayerCardRow } from "../components/PlayerCardRow";
 import { formatMoney, formatTimeLeft } from "../utils/format";
@@ -355,15 +356,35 @@ export function LineupsTab({
 
   const commonPool = gallery?.commonCards ?? [];
 
+  // Live Daily Picker slate (today's games before the next 07:00 UTC reset + their rosters).
+  const [dailyPool, setDailyPool] = useState<DailyPickerPool | null>(null);
+  useEffect(() => {
+    if (arenaMode !== "set_common" || !gallery) return;
+    let cancelled = false;
+    getDailyPickerPool()
+      .then((pool) => {
+        if (!cancelled && pool?.window) setDailyPool(pool);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [arenaMode, gallery]);
+
   const dailyPickerPicks = useMemo(() => {
-    if (!gallery || commonPool.length === 0) return [];
+    if (!gallery) return [];
+    const live = dailyPool && dailyPool.window.teamSlugs.length > 0 ? dailyPool : null;
+    if (!live && commonPool.length === 0) return [];
     return rankDailyPickerCandidates(
       commonPool,
       gallery.injuriesByName,
       gallery.gamesPerTeam,
       5,
+      live
+        ? { allowedTeamSlugs: live.window.teamSlugs, extraPlayers: live.rosterCards }
+        : {},
     );
-  }, [commonPool, gallery]);
+  }, [commonPool, dailyPool, gallery]);
 
   const setAutoBuilt = useMemo(() => {
     if (!gallery || commonPool.length === 0) return null;
@@ -374,13 +395,18 @@ export function LineupsTab({
       projectionSource,
       customProjectionsRaw,
       injuriesByName: gallery.injuriesByName,
-      gamesPerTeam: gallery.gamesPerTeam,
+      // Set lineups are played on the daily slate: only teams with a game before the next reset.
+      gamesPerTeam:
+        dailyPool && dailyPool.window.teamSlugs.length > 0
+          ? Object.fromEntries(dailyPool.window.teamSlugs.map((t) => [t, 1]))
+          : gallery.gamesPerTeam,
       excludeOut,
       disjointAcrossTeams: disjointLineups,
     });
   }, [
     buildSeed,
     commonPool,
+    dailyPool,
     customProjectionsRaw,
     disjointLineups,
     excludeOut,
@@ -770,7 +796,7 @@ export function LineupsTab({
                   </span>
                   {formatRec.fieldPaidPct !== undefined && (
                     <span className="rounded border border-emerald-400/35 bg-emerald-500/15 px-1 text-[9px] font-semibold text-emerald-200">
-                      {formatRec.fieldPaidPct}% Paid
+                      {formatRec.fieldPaidPct}% rewarded
                       {formatRec.paidCutoffScore
                         ? ` • Cut ~${Math.round(formatRec.paidCutoffScore)}`
                         : ""}
@@ -804,8 +830,15 @@ export function LineupsTab({
                   <tr className="text-left text-slate-500">
                     <th className="font-medium">Contest</th>
                     <th className="text-right font-medium">Top</th>
-                    <th className="text-right font-medium">Cash</th>
-                    <th className="text-right font-medium">Top 20%</th>
+                    <th
+                      className="text-right font-medium"
+                      title="Odds of any reward: Essence or cash (XP-only ranks not counted)"
+                    >
+                      Reward
+                    </th>
+                    <th className="text-right font-medium" title="Odds of finishing in the real cash (USD) ranks">
+                      Cash $
+                    </th>
                     <th className="text-right font-medium">Podium</th>
                   </tr>
                 </thead>
@@ -818,12 +851,42 @@ export function LineupsTab({
                       <td className="truncate pr-1">{c.label}</td>
                       <td className="text-right">{c.topScore !== null ? c.topScore.toFixed(0) : "--"}</td>
                       <td className="text-right">{c.cashProb.toFixed(0)}%</td>
-                      <td className="text-right">{c.top20Prob.toFixed(0)}%</td>
+                      <td
+                        className="text-right"
+                        title={
+                          c.cashPlaces
+                            ? `Cash for the top ${c.cashPlaces}${c.topCashLabel ? `, up to ${c.topCashLabel}` : ""}`
+                            : "Cash ranks not loaded"
+                        }
+                      >
+                        {c.moneyProb !== null && c.moneyProb !== undefined ? `${c.moneyProb.toFixed(0)}%` : "--"}
+                      </td>
                       <td className="text-right">{c.podiumProb.toFixed(0)}%</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              {(() => {
+                const tiers = formatRec.candidates[0]?.rewardTiers ?? [];
+                if (tiers.length === 0) return null;
+                const kinds: Array<{ kind: "cash" | "essence" | "xp"; name: string }> = [
+                  { kind: "cash", name: "Cash" },
+                  { kind: "essence", name: "Essence" },
+                  { kind: "xp", name: "XP" },
+                ];
+                const parts = kinds
+                  .map(({ kind, name }) => {
+                    const t = tiers.filter((x) => x.kind === kind);
+                    if (t.length === 0) return null;
+                    return `${name} #${t[0].fromRank}-${t[t.length - 1].toRank} (${t[0].label}${t.length > 1 ? ` to ${t[t.length - 1].label}` : ""})`;
+                  })
+                  .filter(Boolean);
+                return (
+                  <div className="mt-1 text-[9.5px] text-slate-400">
+                    Rewards ({formatRec.candidates[0].label}, live from Sorare, last GW): {parts.join(" • ")}
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>
@@ -1213,9 +1276,27 @@ export function LineupsTab({
                 <SlidersHorizontal className="h-2.5 w-2.5" />
                 Odds
               </span>
-                <GoButton url={buildSetPlayUrl("arcade")} title="Open Sorare Daily Picker / Set play" />
+                <GoButton url={`${buildSetPlayUrl("arcade")}?missions=play`} title="Open Sorare Daily Picker" />
               </span>
             </div>
+            {dailyPool && (
+              <div className="mb-2 text-[10px] text-slate-400">
+                {dailyPool.window.games.length > 0 ? (
+                  <>
+                    Daily slate until {new Date(dailyPool.window.endIso).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}:{" "}
+                    {dailyPool.window.games
+                      .map(
+                        (g) =>
+                          `${g.awayAbbr}@${g.homeAbbr} ${new Date(g.tipOffIso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
+                      )
+                      .join(" • ")}
+                    {dailyPool.rosterCards.length === 0 && " (owned cards only: add an API key for full rosters)"}
+                  </>
+                ) : (
+                  "No NBA games before the next daily reset."
+                )}
+              </div>
+            )}
 
             {dailyPickerPicks.length === 0 ? (
               <div className="text-xs text-slate-400">
@@ -1343,67 +1424,77 @@ export function LineupsTab({
             >
               <Wand2 className="h-3.5 w-3.5" />
               Auto-Build {effectiveSetTeams}{" "}
-              {setBuildMode === "solo" ? "Solo Anchor Picks" : "Squad Teams"}
+              {setBuildMode === "solo" ? "Solo Teams (5 cards, 16★)" : "Squad Team (5 cards, 16★)"}
             </button>
 
             {setAutoBuilt && setBuildMode === "solo" && (
-              <div className="space-y-1.5">
-                {setAutoBuilt.soloPicks.map((ev, idx) => (
-                  <PlayerCardRow
-                    key={ev.card.slug}
-                    playerName={ev.card.playerName}
-                    teamSlug={ev.card.teamSlug}
-                    teamName={ev.card.teamName}
-                    rarity={ev.card.rarity}
-                    pictureUrl={ev.card.pictureUrl}
-                    leftBadge={
-                      <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300">
-                        #{idx + 1}
-                      </span>
-                    }
-                    subline={
-                      <>
-                        <span>{ev.card.teamName ?? "NBA"}</span>
-                        <span>• L10 {ev.card.l10 ?? "--"}</span>
-                      </>
-                    }
-                    heroRight={
-                      <span className="text-emerald-300">
-                        {ev.effectiveScore.toFixed(1)}
-                      </span>
-                    }
-                    subRight={<span>Proj</span>}
-                    actionRight={
-<span className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void applyLineupHighlight(
-                            [ev.card.playerName],
-                            `Set Solo #${idx + 1}`,
-                            ev.effectiveScore,
-                            [
-                              {
-                                slotLabel: `SOLO #${idx + 1}`,
-                                cardSlug: ev.card.slug,
-                                playerName: ev.card.playerName,
-                                rarity: ev.card.rarity,
-                                seasonYear: ev.card.seasonYear,
-                                isCaptain: false,
-                              },
-                            ],
-                          )
-                        }
-                        className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-emerald-500/20 px-2 py-1 text-[10px] font-semibold text-emerald-200 hover:bg-emerald-500/30"
-                      >
-                        <Send className="h-2.5 w-2.5" />
-                        Apply
-                      </button>
-<GoButton url={buildSetPlayUrl("arcade")} title="Open Set Solo play on Sorare" />
-</span>
-                    }
-                  />
-                ))}
+              <div className="space-y-2">
+                {setAutoBuilt.soloTeams.length === 0 && (
+                  <div className="text-xs text-slate-400">
+                    Not enough Common cards for a 5-card team under the 16★ cap.
+                  </div>
+                )}
+                {setAutoBuilt.soloTeams.map((team, idx) => {
+                  const lu = team.lineup;
+                  const names = lu.slots.map((sl) => sl.evaluated.card.playerName);
+                  const label = `Set Solo #${idx + 1}`;
+                  return (
+                    <div key={lu.rank} className="rounded-xl border border-white/8 bg-[#0b101b] p-2.5">
+                      <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+                        <span className="font-semibold text-emerald-300">
+                          {label} • {lu.totalScore.toFixed(1)} pts •{" "}
+                          {lu.capLimit ? `${lu.capUsed}/${lu.capLimit}★` : `${lu.totalStars}★`}
+                          {team.avgBoostPct > 0 && (
+                            <span className="ml-1 text-[10px] font-normal text-sky-300">
+                              +{team.avgBoostPct}% boost
+                            </span>
+                          )}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void applyLineupHighlight(
+                                names,
+                                label,
+                                lu.totalScore,
+                                lu.slots.map((sl) => ({
+                                  slotLabel: sl.slotLabel,
+                                  cardSlug: sl.evaluated.card.slug,
+                                  playerName: sl.evaluated.card.playerName,
+                                  rarity: sl.evaluated.card.rarity,
+                                  seasonYear: sl.evaluated.card.seasonYear,
+                                  isCaptain: sl.isCaptainOrMvp,
+                                })),
+                              )
+                            }
+                            className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-200"
+                          >
+                            <Send className="h-2.5 w-2.5" />
+                            Apply
+                          </button>
+                          <GoButton url={buildSetPlayUrl("arcade")} title="Open Set Solo play on Sorare" />
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-300">
+                        {lu.slots
+                          .map((sl) => `${sl.evaluated.card.playerName} ${sl.slotScore.toFixed(0)}`)
+                          .join(" • ")}
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-x-2 text-[9.5px] text-slate-400">
+                        <span>Step odds:</span>
+                        {team.stepOdds.slice(0, 4).map((o) => (
+                          <span
+                            key={o.target}
+                            className={o.hitPct >= 60 ? "text-emerald-300" : o.hitPct >= 30 ? "text-amber-300" : ""}
+                          >
+                            {o.target}: {o.hitPct}%
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
 

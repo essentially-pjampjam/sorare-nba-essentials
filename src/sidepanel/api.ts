@@ -2,6 +2,7 @@ import type {
   BackgroundRequest,
   BackgroundResponse,
   BargainMode,
+  DailyPickerPool,
   TrackedAlertEvent,
   BargainsResult,
   CraftPoolResult,
@@ -350,4 +351,8 @@ export function sendTestAlertNotification(): Promise<boolean> {
 
 export function getAlertFeed(): Promise<TrackedAlertEvent[]> {
   return sendBackground<TrackedAlertEvent[]>({ type: "GET_ALERT_FEED" });
+}
+
+export function getDailyPickerPool(): Promise<DailyPickerPool> {
+  return sendBackground<DailyPickerPool>({ type: "GET_DAILY_PICKER_POOL" });
 }

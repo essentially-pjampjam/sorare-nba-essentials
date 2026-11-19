@@ -775,7 +775,7 @@ function cleanAltOrAriaPlayerName(raw: string): string | null {
     .replace(/\s*(?:limited|rare|super[\s_]?rare|unique|common)\s*(?:#\d+)?$/i, "")
     .replace(/\s*#\d+$/i, "")
     // Live Sorare alts read "DeMar DeRozan - limited": drop the dangling separator.
-    .replace(/\s*[-–—|·•:]+$/, "")
+    .replace(/\s*[-\u2013\u2014|·•:]+$/, "")
     .trim();
   if (!stripped || isNoiseWordOrToken(stripped) || isNoisePhrase(stripped)) {
     return null;
@@ -877,7 +877,7 @@ function pairStackedNameTokens(rawTokens: string[]): string[] {
     if (
       i + 2 < rawTokens.length &&
       /^[A-Z]{2,4}$/.test(t0) &&
-      /^(?:vs\.?|v\.?|at|@|-|–|—)$/i.test(t1) &&
+      /^(?:vs\.?|v\.?|at|@|-|\u2013|\u2014)$/i.test(t1) &&
       /^[A-Z]{2,4}$/.test(t2)
     ) {
       i += 2;

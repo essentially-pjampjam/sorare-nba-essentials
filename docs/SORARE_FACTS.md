@@ -152,3 +152,19 @@ can sit in two lineups in the same GW (editor's "Used in another lineup" filter 
 - [Introducing Sorare Set NBA](https://sorare.com/blog/nba/%F0%9F%86%95-introducing-sorare-set-2)
 - [How are player scores calculated in Sorare NBA?](https://help.sorare.com/hc/en-us/articles/7245592557725-How-are-player-scores-calculated-in-Sorare-NBA)
 - [Sorare NBA 27: Stars, Rules and 2026-27 Strategy (third-party)](https://www.soraregoat.com/sorare-nba-27/)
+
+## Leaderboard rewards (live, 2026-11-19, Apollo cache on sorare.com + public API)
+- `So5Leaderboard.rewardsConfig { prizePoolCurrency ranking { ranks rankPct rewardConfigs } }`. `ranks` is the number of places in that tier (cumulative from rank 1).
+- Reward types: `MonetaryRewardConfig { amount { usdCents eurCents } }` (cash), `CardShardRewardConfig { quantity configRarity }` (Essence), `InGameCurrencyRewardConfig { currency amount }` (e.g. `LIMITED_XP`).
+- Example GW10 Limited In-Season Champion (1,243 lineups): cash for ranks 1-50 ($2,000, $1,000, $500, $250, $125, then $50 x5, $25 x40), Essence for 51-1,500 (2,000 down to 250), XP for 1,501-3,000.
+- Querying `rewardConfigs` makes the board query depth 8: needs an API key (limit 13; no-key limit 7).
+
+## Daily Picker (live, 2026-11-19)
+- Mission `DecisivePlayerPickerTask` ("Daily Picker"): `overperform { averageType: LAST_TEN_PLAYED_SO5_AVERAGE_SCORE, by: 7 }`, also must score 20+, `maxAppearancesCount: 1`, reward Common Essence (`CardShardRewardConfig`).
+- `pickableGames` = the not-yet-started games before the next 07:00 UTC reset (2026-11-19: 4 games at 01:00 UTC Nov 20). Any player in those games can be picked.
+- Opened from `/nba/series/play?missions=play`. User-specific (needs login), so the extension rebuilds the slate from ESPN + public `team(slug).activePlayers`.
+
+## Set Solo steps (live, 2026-11-19)
+- `CareerStep { target maxLineupsCount }`: targets 150, 180, 210, 240, 270, 290; `maxLineupsCount` 4.
+- Each step lineup has 5 `AppearanceRule`s (5 cards).
+- Inferred, to confirm: Set lineups use the daily slate (the Set page shows a day picker beside each day's games).
