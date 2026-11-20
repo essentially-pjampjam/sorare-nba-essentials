@@ -15,3 +15,6 @@ PRIVACY_POLICY.md
 /logo.af
 /logo.png
 scripts/generate-promos.mjs
+
+# AI session handoff notes and screenshots (local only)
+docs/handoff/
