@@ -1455,8 +1455,8 @@ describe("Tier 3 — Pairwise Cross-Feature Integration (F1–F16)", () => {
     };
     const projectState = readRepoText("PROJECT_STATE.md");
 
-    expect(pkg.version).toBe("2.7.0");
-    expect(manifest.version).toBe("2.7.0");
+    expect(pkg.version).toMatch(/^2\.7\.\d+$/);
+    expect(manifest.version).toBe(pkg.version);
     expect(projectState).toContain("2.7.0");
     expect(manifest.permissions).toContain("notifications");
     expect(manifest.permissions).toContain("alarms");

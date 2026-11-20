@@ -2,6 +2,11 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
+## 2.7.1 (2026-11-20)
+
+Fixed:
+- Support / Trade Cards button opened Sorare's "Page not found" (`/nba/club/pjampjam`); it now opens `/nba/my-club/pjampjam`.
+
 ## 2.7.0 (2026-11-20)
 
 Added:

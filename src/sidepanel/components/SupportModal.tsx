@@ -141,6 +141,7 @@ export function SupportModal({ onClose }: SupportModalProps) {
               <strong className="text-amber-300">
                 {SUPPORT_DONATION_INFO.sorareHandle}
               </strong>
+              <span className="text-slate-400"> • opens my club; sign in to Sorare to send a trade</span>
             </div>
           </div>
           <button

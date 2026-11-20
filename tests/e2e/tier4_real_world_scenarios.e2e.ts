@@ -1397,8 +1397,8 @@ describe("Tier 4 — Real-World End-to-End Scenarios (1–9)", () => {
       const changelog = readRepoText("CHANGELOG.md");
       const whatsNew = readRepoText("src/sidepanel/components/WhatsNewModal.tsx");
 
-      expect(pkg.version).toBe("2.7.0");
-      expect(manifest.version).toBe("2.7.0");
+      expect(pkg.version).toMatch(/^2\.7\.\d+$/);
+      expect(manifest.version).toBe(pkg.version);
       expect(projectState).toContain("2.7.0");
       expect(changelog).toContain("2.7.0");
       expect(whatsNew).toContain("2.7.0");

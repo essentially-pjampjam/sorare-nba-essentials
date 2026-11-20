@@ -694,7 +694,8 @@ export const BOOSTING_GUIDE_RULES = [
 ];
 
 export const SUPPORT_DONATION_INFO = {
-  sorareTradeUrl: "https://sorare.com/nba/club/pjampjam",
+  // Public club page (checked 2026-11-20; the old /nba/club/ path is "Page not found").
+  sorareTradeUrl: "https://sorare.com/nba/my-club/pjampjam",
   sorareHandle: "@pjampjam",
   githubUrl: "https://github.com/essentially-pjampjam/sorare-nba-essentials",
   feedbackUrl: "https://github.com/essentially-pjampjam/sorare-nba-essentials/issues/new",

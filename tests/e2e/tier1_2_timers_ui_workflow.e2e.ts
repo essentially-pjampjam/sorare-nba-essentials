@@ -1136,16 +1136,16 @@ describe("Feature 14: .0SR-Inspired Workflow Tooling, Invariant Checks & v2.7.0 
     };
     expect(
       pkg.version,
-      `[F14] package.json version must be 2.7.0 (got ${pkg.version})`,
-    ).toBe("2.7.0");
+      `[F14] package.json version must be a 2.7.x release (got ${pkg.version})`,
+    ).toMatch(/^2\.7\.\d+$/);
     expect(
       manifest.version,
-      `[F14] public/manifest.json version must be 2.7.0 (got ${manifest.version})`,
-    ).toBe("2.7.0");
+      `[F14] public/manifest.json version must match package.json (got ${manifest.version})`,
+    ).toBe(pkg.version);
 
     const projectState = readRepoText("PROJECT_STATE.md");
     expect(
-      /Status:[^\n]*2\.7\.0/i.test(projectState),
+      /Status:[^\n]*2\.7\.\d/i.test(projectState),
       "[F14] PROJECT_STATE.md status header must reference v2.7.0",
     ).toBe(true);
 

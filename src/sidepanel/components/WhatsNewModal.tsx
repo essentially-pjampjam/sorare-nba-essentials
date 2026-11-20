@@ -20,6 +20,13 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.1",
+    title: "v2.7.1: Fixed Support Link",
+    items: [
+      "Fixed: the Support / Trade Cards button opened a Sorare \"Page not found\". It now opens my club (sorare.com/nba/my-club/pjampjam).",
+    ],
+  },
+  {
     version: "2.7.0",
     title: "v2.7.0: Daily Play Guide, Real Rewards, Set Solo Fast Finish, Squad, Packs & Duplicates",
     items: [
