@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { DailySlateGame, GalleryCard } from "../shared/types";
 import { rankDailyPickerCandidates } from "./commonSetMath";
 import { selectDailyPickerWindow } from "./dailySlateMath";
+import { summarizeRewardTiers, type RawRankReward } from "./rewardTiersMath";
 
 const game = (tip: string, home: string, away: string, state: DailySlateGame["state"] = "pre"): DailySlateGame => ({
   id: `${tip}:${home}`,
@@ -65,5 +66,41 @@ describe("Daily Picker window (live: games before the next 07:00 UTC reset)", ()
     expect(names).not.toContain("heat-guard");
     expect(names).toEqual(expect.arrayContaining(["bucks-guard", "spurs-star"]));
     expect(picks.find((p) => p.card.playerSlug === "spurs-star")?.projectedScore).toBe(45);
+  });
+});
+
+describe("Live leaderboard reward tiers (GW10 Limited In-Season Champion)", () => {
+  const cash = (usd: number, ranks: number): RawRankReward => ({
+    ranks,
+    rewardConfigs: [{ __typename: "MonetaryRewardConfig", amount: { usdCents: usd * 100 } }],
+  });
+  const essence = (q: number, ranks: number): RawRankReward => ({
+    ranks,
+    rewardConfigs: [{ __typename: "CardShardRewardConfig", quantity: q }],
+  });
+  const xp = (ranks: number): RawRankReward => ({
+    ranks,
+    rewardConfigs: [{ __typename: "InGameCurrencyRewardConfig", currency: "LIMITED_XP", amount: 100 }],
+  });
+  const ranking = [
+    cash(2000, 1), cash(1000, 1), cash(500, 1), cash(250, 1), cash(125, 1), cash(50, 5), cash(25, 40),
+    essence(2000, 50), essence(1000, 150), essence(750, 250), essence(500, 500), essence(250, 500),
+    xp(500), xp(1000),
+  ];
+
+  it("splits cash, Essence and XP ranks", () => {
+    const s = summarizeRewardTiers(ranking);
+    expect(s.cashPlaces).toBe(50);
+    expect(s.paidPlaces).toBe(1500);
+    expect(s.topCashLabel).toBe("$2,000");
+    expect(s.tiers[0]).toEqual({ fromRank: 1, toRank: 1, kind: "cash", label: "$2,000" });
+    expect(s.tiers.at(-1)).toMatchObject({ fromRank: 2001, toRank: 3000, kind: "xp" });
+  });
+
+  it("untyped rows (no-API-key fallback) still count as paid ranks", () => {
+    const s = summarizeRewardTiers([{ ranks: 3 }, { ranks: 7 }]);
+    expect(s.paidPlaces).toBe(10);
+    expect(s.cashPlaces).toBe(0);
+    expect(s.topCashLabel).toBeNull();
   });
 });

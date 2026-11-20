@@ -48,6 +48,8 @@ export interface DailyPickerCandidate {
   hitChancePct: number;
   injuryStatus: InjuryStatus;
   rationale: string;
+  /** False for roster players the manager has no Common card of (shown grayed, "Not owned"). */
+  owned: boolean;
 }
 
 /**
@@ -122,6 +124,7 @@ export function rankDailyPickerCandidates(
       hitChancePct,
       injuryStatus: ev.injuryStatus,
       rationale,
+      owned: !card.slug.startsWith("roster:"),
     });
   }
 

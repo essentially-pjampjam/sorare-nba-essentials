@@ -8,6 +8,10 @@ Then reload any open sorare.com tabs so the new content script runs.
 
 ---
 
+## 2.7.0-exp.M6 - Hardening
+
+See [../TESTING.md](../TESTING.md) T1-T10 (T5, T9, T10 are new).
+
 ## 2.7.0-exp.M5 - Real rewards, live Daily Picker, Set Solo teams
 
 Reload the extension, then **Refresh**. The numbered list lives in [../TESTING.md](../TESTING.md) (T1-T8).

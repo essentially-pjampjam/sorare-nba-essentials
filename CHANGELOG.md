@@ -2,9 +2,10 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
-## 2.7.0 (in testing as 2.7.0-exp.M5, branch v2.7.0-wip)
+## 2.7.0 (in testing as 2.7.0-exp.M6, branch v2.7.0-wip)
 
 Added:
+- Daily Picker: your own cards first; better picks you don't own shown grayed as "Not owned".
 - Live leaderboard rewards from Sorare: cash, Essence and XP tiers per contest. Recommended Entry now shows **Reward** odds (Essence or cash) and real **Cash $** odds separately, plus the live tier list.
 - Daily Picker uses Sorare's live rule: only players from today's games before the next 07:00 UTC reset, including players you don't own (team rosters).
 - Set Solo builds full 5-card teams under the 16-star cap (up to 4), with Apply, Go, card boost % and odds for the Hot Streak step targets (150 to 290).
@@ -20,6 +21,8 @@ Changed:
 - Classic Limited entry limit is 3 (live); Arena / In-Season up to 5.
 
 Fixed:
+- ESPN schedules were empty: ESPN stopped answering multi-day `dates=A-B` requests, so the extension fetches each day and merges them (Game Week game counts, Vegas lines, daily slate).
+- Gallery failed without an API key (query complexity 720 over the 500 limit); safe mode now loads 6 cards per page.
 - "Cash" odds were really odds of any reward including XP-only ranks.
 - Daily Picker suggested players whose team had no game in the daily slate.
 - Ghost empty lineup when opening Sorare's lineup menu; stale page-captured lineups after edits elsewhere.

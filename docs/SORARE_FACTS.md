@@ -168,3 +168,8 @@ can sit in two lineups in the same GW (editor's "Used in another lineup" filter 
 - `CareerStep { target maxLineupsCount }`: targets 150, 180, 210, 240, 270, 290; `maxLineupsCount` 4.
 - Each step lineup has 5 `AppearanceRule`s (5 cards).
 - Inferred, to confirm: Set lineups use the daily slate (the Set page shows a day picker beside each day's games).
+
+## ESPN scoreboard and no-key limits (checked 2026-11-20)
+- `site.api.espn.com/.../scoreboard?dates=YYYYMMDD-YYYYMMDD` now returns 0 events; single `dates=YYYYMMDD` still works (US calendar day). The extension fetches each day and merges.
+- Live Daily Picker at 00:14 UTC Nov 20 offered GS@MEM, POR@MIL, NY@MIN, LAC@SA (01:00 UTC), matching ESPN's Nov 19 US-date games before the 07:00 UTC reset.
+- No-key gallery query: 10 cards/page = complexity 720, 8 = 586, 6 fits under 500.

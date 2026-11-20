@@ -1,5 +1,6 @@
 import { scoreBargainListing } from "../calculators/bargainHunterMath";
 import { buildMarketPriceKey } from "../calculators/collectionEssenceMath";
+import { summarizeRewardTiers, type RawRankReward } from "../calculators/rewardTiersMath";
 import { buildTierStarMap, resolveStarRating } from "../calculators/starRatings";
 import {
   getActiveNbaSeasonYear,
@@ -24,7 +25,6 @@ import type {
   GalleryCard,
   LeaderboardBenchmark,
   LeaderboardRewardTier,
-  RewardTierKind,
   LineupAgeFilter,
   LineupFormat,
   MissingSlot,
@@ -1119,7 +1119,8 @@ export class SorareClient {
       };
     }
 
-    const pageSize = useFast ? 50 : 10;
+    // No-key limit is complexity 500: 10 cards/page measured 720, 6 fits (checked 2026-11-20).
+    const pageSize = useFast ? 50 : 6;
     let tierStars = buildTierStarMap(null);
     const cards: GalleryCard[] = [];
     const commonCards: GalleryCard[] = [];
@@ -1212,7 +1213,7 @@ export class SorareClient {
     // 1) Pro Cards (Limited / Rare / Super Rare / Unique)
     let after: string | null = null;
     let pages = 0;
-    const maxProPages = useFast ? 4 : 6;
+    const maxProPages = useFast ? 4 : 10;
     const proQuery = buildCardsQuery("limited, rare, super_rare, unique");
     while (pages < maxProPages) {
       pages += 1;
@@ -1240,11 +1241,11 @@ export class SorareClient {
       after = data.user.cards.pageInfo.endCursor;
     }
 
-    // 2) Set / Common Cards (2 pages -> up to 100 cards in Fast mode, 50 in Safe mode)
+    // 2) Set / Common Cards (up to 100 in Fast mode, 36 in Safe mode)
     const commonQuery = buildCardsQuery("common").replace(proExtraFields, "");
     let commonAfter: string | null = null;
     let commonPages = 0;
-    while (commonPages < 2) {
+    while (commonPages < (useFast ? 2 : 6)) {
       commonPages += 1;
       const data: Resp = await this.postGraphQL<Resp>(
         commonQuery,
@@ -1406,15 +1407,6 @@ export class SorareClient {
       }
     `;
 
-    interface RawRankReward {
-      ranks?: number | null;
-      rewardConfigs?: Array<{
-        __typename?: string;
-        amount?: { usdCents?: number | null; eurCents?: number | null } | number | null;
-        quantity?: number | null;
-        currency?: string | null;
-      }> | null;
-    }
     interface RawLb {
       slug: string;
       displayName: string;
@@ -1472,48 +1464,6 @@ export class SorareClient {
       rewardTiers: LeaderboardRewardTier[];
     }
 
-    // Live reward tiers: cash (Monetary), Essence (CardShard), XP (InGameCurrency).
-    // "Paid" = cash or Essence; XP-only ranks are participation rewards.
-    const readTiers = (lb: RawLb) => {
-      const tiers: LeaderboardRewardTier[] = [];
-      let rank = 0;
-      let cashPlaces = 0;
-      let paidPlaces = 0;
-      let topCash = 0;
-      for (const r of lb.rewardsConfig?.ranking ?? []) {
-        const n = Math.max(0, Number(r.ranks ?? 0) || 0);
-        if (n === 0) continue;
-        const cfgs = r.rewardConfigs ?? [];
-        const money = cfgs.find((x) => x.__typename === "MonetaryRewardConfig");
-        const shard = cfgs.find((x) => x.__typename === "CardShardRewardConfig");
-        const xp = cfgs.find((x) => x.__typename === "InGameCurrencyRewardConfig");
-        let kind: RewardTierKind = "other";
-        let label = "Reward";
-        if (money && typeof money.amount === "object" && money.amount) {
-          const cents = money.amount.usdCents ?? money.amount.eurCents ?? 0;
-          kind = "cash";
-          label = `$${Math.round(cents / 100).toLocaleString("en-US")}`;
-          topCash = Math.max(topCash, cents);
-        } else if (shard) {
-          kind = "essence";
-          label = `${(shard.quantity ?? 0).toLocaleString("en-US")} Essence`;
-        } else if (xp) {
-          kind = "xp";
-          label = `${typeof xp.amount === "number" ? xp.amount.toLocaleString("en-US") : ""} XP`.trim();
-        }
-        tiers.push({ fromRank: rank + 1, toRank: rank + n, kind, label });
-        rank += n;
-        if (kind === "cash") cashPlaces = rank;
-        if (kind !== "xp") paidPlaces = rank;
-      }
-      return {
-        tiers,
-        cashPlaces,
-        paidPlaces,
-        topCashLabel: topCash > 0 ? `$${Math.round(topCash / 100).toLocaleString("en-US")}` : null,
-      };
-    };
-
     const aggMap = new Map<string, TargetAgg>();
 
     const recordAgg = (
@@ -1526,7 +1476,7 @@ export class SorareClient {
     ) => {
       const entries = Math.max(0, Number(lb.so5LineupsCount ?? 0) || 0);
       if (entries <= 0) return;
-      const tierInfo = readTiers(lb);
+      const tierInfo = summarizeRewardTiers(lb.rewardsConfig?.ranking);
       const paid = tierInfo.paidPlaces;
       const existing = aggMap.get(key);
       if (existing) {

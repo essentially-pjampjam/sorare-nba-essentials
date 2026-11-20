@@ -102,13 +102,51 @@ export interface GameWeekWindow {
   endIso: string;
 }
 
-function buildSlateScoreboardUrl(window?: GameWeekWindow | null): string {
+/**
+ * ESPN scoreboard for each calendar day in [startMs, endMs] (max 6 days), merged and de-duplicated.
+ * ESPN stopped answering `dates=A-B` ranges (checked 2026-11-20: 0 events), single days still work.
+ */
+async function fetchScoreboardDays(startMs: number, endMs: number): Promise<EspnScoreboardPayload | null> {
+  const days: string[] = [];
+  for (let t = startMs; t <= endMs && days.length < 6; t += 86_400_000) {
+    const d = formatEspnDate(new Date(t));
+    if (!days.includes(d)) days.push(d);
+  }
+  const endDay = formatEspnDate(new Date(endMs));
+  if (!days.includes(endDay) && days.length < 6) days.push(endDay);
+
+  const results = await Promise.allSettled(
+    days.map((d) =>
+      fetch(`${ESPN_SCOREBOARD_URL}?dates=${d}&limit=100`, {
+        credentials: "omit",
+        signal: AbortSignal.timeout(12_000),
+      }).then((r) => (r.ok ? (r.json() as Promise<EspnScoreboardPayload>) : null)),
+    ),
+  );
+  const seen = new Set<string>();
+  const events: NonNullable<EspnScoreboardPayload["events"]> = [];
+  let anyOk = false;
+  for (const r of results) {
+    if (r.status !== "fulfilled" || !r.value) continue;
+    anyOk = true;
+    for (const ev of r.value.events ?? []) {
+      const comp = ev.competitions?.[0];
+      const key = `${comp?.date ?? ev.date}|${(comp?.competitors ?? []).map((c) => c.team?.displayName ?? "").join("|")}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      events.push(ev);
+    }
+  }
+  return anyOk ? { events } : null;
+}
+
+function slateRangeMs(window?: GameWeekWindow | null): [number, number] {
   const startMs = window ? Date.parse(window.startIso) : Number.NaN;
   const endMs = window ? Date.parse(window.endIso) : Number.NaN;
   // ESPN dates are US calendar days, so pad the UTC window by 12h on the left.
-  const start = Number.isFinite(startMs) ? new Date(startMs - 12 * 3_600_000) : new Date();
-  const end = Number.isFinite(endMs) ? new Date(endMs) : new Date(start.getTime() + 3 * 86_400_000);
-  return `${ESPN_SCOREBOARD_URL}?dates=${formatEspnDate(start)}-${formatEspnDate(end)}&limit=100`;
+  const start = Number.isFinite(startMs) ? startMs - 12 * 3_600_000 : Date.now();
+  const end = Number.isFinite(endMs) ? endMs : start + 3 * 86_400_000;
+  return [start, end];
 }
 
 /**
@@ -120,7 +158,7 @@ export async function fetchExternalNbaContext(gwWindow?: GameWeekWindow | null):
   gamesPerTeam: Record<string, number>;
   scheduleByTeam: Record<string, TeamSlateSchedule>;
 }> {
-  const cacheKey = `espn_nba_context_v5:${gwWindow ? `${gwWindow.startIso}_${gwWindow.endIso}` : "next4d"}`;
+  const cacheKey = `espn_nba_context_v6:${gwWindow ? `${gwWindow.startIso}_${gwWindow.endIso}` : "next4d"}`;
   const cached = await getCached<{
     injuriesByName: Record<string, InjuryReportEntry>;
     gamesPerTeam: Record<string, number>;
@@ -154,10 +192,7 @@ export async function fetchExternalNbaContext(gwWindow?: GameWeekWindow | null):
       credentials: "omit",
       signal: AbortSignal.timeout(12_000),
     }).then((r) => (r.ok ? (r.json() as Promise<EspnInjuriesPayload>) : null)),
-    fetch(buildSlateScoreboardUrl(gwWindow), {
-      credentials: "omit",
-      signal: AbortSignal.timeout(12_000),
-    }).then((r) => (r.ok ? (r.json() as Promise<EspnScoreboardPayload>) : null)),
+    fetchScoreboardDays(...slateRangeMs(gwWindow)),
   ]);
 
   let anyFeedSucceeded = false;
@@ -312,15 +347,12 @@ export async function fetchExternalNbaContext(gwWindow?: GameWeekWindow | null):
  */
 export async function fetchDailySlateGames(nowMs: number = Date.now()): Promise<DailySlateGame[]> {
   const start = new Date(nowMs - 12 * 3_600_000);
-  const end = new Date(nowMs + 48 * 3_600_000);
-  const url = `${ESPN_SCOREBOARD_URL}?dates=${formatEspnDate(start)}-${formatEspnDate(end)}&limit=100`;
-  const cacheKey = `espn_daily_slate_v1:${formatEspnDate(start)}`;
+  const cacheKey = `espn_daily_slate_v2:${formatEspnDate(start)}`;
   const cached = await getCached<DailySlateGame[]>(cacheKey);
   if (cached) return cached.value;
 
-  const res = await fetch(url, { credentials: "omit", signal: AbortSignal.timeout(12_000) });
-  if (!res.ok) return [];
-  const payload = (await res.json()) as EspnScoreboardPayload;
+  const payload = await fetchScoreboardDays(nowMs - 12 * 3_600_000, nowMs + 36 * 3_600_000);
+  if (!payload) return [];
   const games: DailySlateGame[] = [];
   for (const ev of payload.events ?? []) {
     for (const comp of ev.competitions ?? []) {

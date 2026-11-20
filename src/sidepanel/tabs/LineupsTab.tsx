@@ -375,15 +375,20 @@ export function LineupsTab({
     if (!gallery) return [];
     const live = dailyPool && dailyPool.window.teamSlugs.length > 0 ? dailyPool : null;
     if (!live && commonPool.length === 0) return [];
-    return rankDailyPickerCandidates(
+    const ranked = rankDailyPickerCandidates(
       commonPool,
       gallery.injuriesByName,
       gallery.gamesPerTeam,
-      5,
+      40,
       live
         ? { allowedTeamSlugs: live.window.teamSlugs, extraPlayers: live.rosterCards }
         : {},
     );
+    // Your own cards first; up to 3 better-odds players you don't own, shown grayed.
+    const owned = ranked.filter((p) => p.owned).slice(0, 5);
+    const worstOwned = owned.length ? owned[owned.length - 1].hitChancePct : 0;
+    const notOwned = ranked.filter((p) => !p.owned && p.hitChancePct > worstOwned).slice(0, 3);
+    return [...owned, ...notOwned];
   }, [commonPool, dailyPool, gallery]);
 
   const setAutoBuilt = useMemo(() => {
@@ -1306,8 +1311,12 @@ export function LineupsTab({
             ) : (
               <div className="space-y-1.5">
                 {dailyPickerPicks.map((pick) => (
-                  <PlayerCardRow
+                  <div
                     key={pick.card.slug}
+                    className={pick.owned ? "" : "opacity-50 grayscale"}
+                    title={pick.owned ? undefined : "You don't own a Common card of this player"}
+                  >
+                  <PlayerCardRow
                     playerName={pick.card.playerName}
                     teamSlug={pick.card.teamSlug}
                     teamName={pick.card.teamName}
@@ -1315,6 +1324,11 @@ export function LineupsTab({
                     pictureUrl={pick.card.pictureUrl}
                     subline={
                       <>
+                        {!pick.owned && (
+                          <span className="rounded bg-slate-600/40 px-1 text-[9px] font-semibold text-slate-200">
+                            Not owned
+                          </span>
+                        )}
                         <span>{pick.card.teamName ?? "NBA"}</span>
                         <span>• L10 {pick.l10}</span>
                         <span>• Proj {pick.projectedScore}</span>
@@ -1358,10 +1372,11 @@ export function LineupsTab({
                       >
                         Pin
                       </button>
-<GoButton url={buildSetPlayUrl("arcade")} title="Open Sorare Daily Picker / Set play" />
+<GoButton url={`${buildSetPlayUrl("arcade")}?missions=play`} title="Open Sorare Daily Picker" />
 </span>
                     }
                   />
+                  </div>
                 ))}
               </div>
             )}
