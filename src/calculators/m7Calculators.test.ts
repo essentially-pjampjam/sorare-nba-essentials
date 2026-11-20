@@ -86,3 +86,14 @@ describe("Daily pick ideas (Pro Daily Picker / Rebounds Picker)", () => {
     expect(risk[0].upsideTags[0]).toMatch(/Hot/);
   });
 });
+
+describe("League Collect ladders (live 2026-11-20)", () => {
+  it("Non Playoffs at 20 goes to 35 (not 25); Playoffs at 15 goes to 25; Draft at 16 goes to 18", async () => {
+    const { resolveNextQuestStep } = await import("./questOptimizerMath");
+    expect(resolveNextQuestStep("non-playoffs-26", 20)).toEqual({ target: 35, reward: 1000 });
+    expect(resolveNextQuestStep("playoffs-26", 15)).toEqual({ target: 25, reward: 500 });
+    expect(resolveNextQuestStep("draft-26", 16)).toEqual({ target: 18, reward: 500 });
+    expect(resolveNextQuestStep("conf-finals-26", 2)).toEqual({ target: 10, reward: 500 });
+    expect(resolveNextQuestStep("full-collection", 0)).toEqual({ target: 1, reward: 2000 });
+  });
+});

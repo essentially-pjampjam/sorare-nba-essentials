@@ -2,8 +2,9 @@
 
 Run after reloading the extension in `chrome://extensions` and pressing **Refresh**. Detailed per-build history: `docs/LIVE_TESTS.md`.
 
-## Open (2.7.0-exp.M7)
-- **T1** Header badge shows `v2.7.0·M7` in red; What's New lists 2.7.0.
+## Open (2.7.0-exp.M7.1)
+- **T1** Header badge shows `v2.7.0·M7.1` in red; What's New lists 2.7.0.
+- **T16** Collections → Real Essence Quests: targets match Sorare's Collect panel (Draft 16/18 +500, Non Playoffs 20/35 +1,000, Playoffs 15/25 +500, Conf Finals 2/10 +500, Full Collection 0/1 +2,000).
 - **T11** Lineups (Pro): "Daily Play" box with Pro Daily Picker / Rebounds Picker chips. Picks are from your Limited cards in today's games; Rebounds picks are 1.5★ or less with their rebounds per game.
 - **T12** Switch Best odds / Safe / Risk / upside: Safe drops flagged players; Risk shows hot-form, teammate-OUT or big-minutes players with ▲ tags.
 - **T13** Switch Mine / Not owned / All: not-owned rows are grayed and their Pin is disabled. Go opens Sorare's Play missions.

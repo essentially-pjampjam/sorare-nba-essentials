@@ -34,29 +34,38 @@ export interface QuestProgressItem {
   cheapestBuys: QuestShoppingCandidate[];
 }
 
-const QUEST_STEP_LADDER: Array<{ target: number; reward: number }> = [
-  { target: 5, reward: 500 },
-  { target: 10, reward: 500 },
-  { target: 12, reward: 500 },
-  { target: 14, reward: 500 },
-  { target: 16, reward: 500 },
-  { target: 18, reward: 500 },
-  { target: 20, reward: 1000 },
-  { target: 25, reward: 1000 },
-  { target: 28, reward: 1000 },
-  { target: 30, reward: 3000 },
-];
+type QuestStep = { target: number; reward: number };
+const ladder = (targets: number[], rewards: number[]): QuestStep[] =>
+  targets.map((target, i) => ({ target, reward: rewards[i] }));
 
-function resolveNextQuestStep(
-  current: number,
-  baseTarget: number,
-  baseReward: number,
-): { target: number; reward: number } {
-  if (current < baseTarget) {
-    return { target: baseTarget, reward: baseReward };
-  }
-  const nextStep = QUEST_STEP_LADDER.find((s) => s.target > current);
-  return nextStep ?? { target: 30, reward: 3000 };
+/**
+ * Live NBA League Collect ladders (Sorare `TasksTrack.steps`, checked 2026-11-20). Each quest has
+ * its own milestones and Essence rewards; Full Collection counts complete teams.
+ */
+export const QUEST_LADDERS: Record<string, QuestStep[]> = {
+  "draft-26": ladder([5, 10, 12, 14, 16, 18, 20, 25, 28, 30], [500, 500, 500, 500, 500, 500, 1000, 1000, 1000, 3000]),
+  "non-playoffs-26": ladder(
+    [10, 20, 35, 50, 75, 100, 125, 150, 200, 250],
+    [1000, 1000, 1000, 2000, 2000, 2000, 3000, 4000, 4500, 5000],
+  ),
+  "playoffs-26": ladder(
+    [12, 25, 40, 60, 80, 100, 125, 150, 175, 200],
+    [500, 500, 750, 750, 1000, 2000, 3000, 4000, 5000, 6000],
+  ),
+  "conf-finals-26": ladder(
+    [10, 15, 20, 25, 30, 40, 50, 60, 65, 70],
+    [500, 500, 750, 750, 1000, 2000, 3000, 4000, 5000, 6000],
+  ),
+  "full-collection": ladder(
+    [1, 3, 6, 8, 10, 12, 15, 20, 25, 30],
+    [2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 15000],
+  ),
+};
+
+/** Next milestone above `current` for a quest (last step once the ladder is finished). */
+export function resolveNextQuestStep(questId: string, current: number): QuestStep {
+  const steps = QUEST_LADDERS[questId] ?? QUEST_LADDERS["draft-26"];
+  return steps.find((s) => s.target > current) ?? steps[steps.length - 1];
 }
 
 function classifyPlayerQuests(
@@ -164,9 +173,7 @@ export function evaluateLeagueQuests(
         return b.collection.fulfilledSlotsCount - a.collection.fulfilledSlotsCount;
       })[0] ?? null;
 
-  const hasAnyTeamComplete = collectionAnalyses.some(
-    (a) => a.collection.complete,
-  );
+  const completeTeamsCount = collectionAnalyses.filter((a) => a.collection.complete).length;
 
   const getCollectionOps = (a: CollectionAnalysis | null | undefined) =>
     a?.opportunities ?? a?.nextEssenceMilestone?.rankedShoppingList ?? [];
@@ -321,7 +328,7 @@ export function evaluateLeagueQuests(
     switch (m.id) {
       case "conf-finals-26": {
         rawCurrent = confFinalsCount;
-        const step = resolveNextQuestStep(rawCurrent, m.nextStepTarget, m.essenceReward);
+        const step = resolveNextQuestStep(m.id, rawCurrent);
         target = step.target;
         essenceReward = step.reward;
         remaining = Math.max(0, target - rawCurrent);
@@ -330,7 +337,7 @@ export function evaluateLeagueQuests(
       }
       case "playoffs-26": {
         rawCurrent = playoffsCount;
-        const step = resolveNextQuestStep(rawCurrent, m.nextStepTarget, m.essenceReward);
+        const step = resolveNextQuestStep(m.id, rawCurrent);
         target = step.target;
         essenceReward = step.reward;
         remaining = Math.max(0, target - rawCurrent);
@@ -339,7 +346,7 @@ export function evaluateLeagueQuests(
       }
       case "non-playoffs-26": {
         rawCurrent = nonPlayoffsCount;
-        const step = resolveNextQuestStep(rawCurrent, m.nextStepTarget, m.essenceReward);
+        const step = resolveNextQuestStep(m.id, rawCurrent);
         target = step.target;
         essenceReward = step.reward;
         remaining = Math.max(0, target - rawCurrent);
@@ -348,7 +355,7 @@ export function evaluateLeagueQuests(
       }
       case "draft-26": {
         rawCurrent = draftCandidateCount;
-        const step = resolveNextQuestStep(rawCurrent, m.nextStepTarget, m.essenceReward);
+        const step = resolveNextQuestStep(m.id, rawCurrent);
         target = step.target;
         essenceReward = step.reward;
         remaining = Math.max(0, target - rawCurrent);
@@ -357,7 +364,10 @@ export function evaluateLeagueQuests(
       }
       case "full-collection":
       default: {
-        rawCurrent = hasAnyTeamComplete ? 1 : 0;
+        rawCurrent = completeTeamsCount;
+        const step = resolveNextQuestStep("full-collection", rawCurrent);
+        target = step.target;
+        essenceReward = step.reward;
         const teamMissing = closestFullTeam
           ? Math.max(
               1,
@@ -365,13 +375,13 @@ export function evaluateLeagueQuests(
                 closestFullTeam.collection.fulfilledSlotsCount,
             )
           : 15;
-        remaining = hasAnyTeamComplete ? 0 : teamMissing;
+        remaining = rawCurrent >= target ? 0 : teamMissing;
         closestTeamName = closestFullTeam?.collection.name;
         const fullTeamInstants = getCollectionOps(closestFullTeam)
           .map((op) => op.instantBuyCents)
           .filter((p): p is number => p !== null);
         closestTeamCostCents =
-          !hasAnyTeamComplete && fullTeamInstants.length >= teamMissing
+          remaining > 0 && fullTeamInstants.length >= teamMissing
             ? fullTeamInstants
                 .slice(0, teamMissing)
                 .reduce((sum, p) => sum + p, 0)

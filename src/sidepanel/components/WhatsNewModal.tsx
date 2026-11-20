@@ -21,8 +21,9 @@ const RELEASE_HIGHLIGHTS: Array<{
 }> = [
   {
     version: "2.7.0",
-    title: "v2.7.0 (testing build M7): Daily Play Guide, Pick Strategies, Real Rewards",
+    title: "v2.7.0 (testing build M7.1): Daily Play Guide, Pick Strategies, Real Rewards",
     items: [
+      "Fixed: League Collect quests now use Sorare's real milestones for each quest (e.g. Non Playoffs 20 / 35, not 20 / 25), with the right Essence per step.",
       "New Daily Play guide: Pro Daily Picker (3 picks), Rebounds Picker (1.5 stars or less, 5+ rebounds) and the Set Daily Picker, each with Best odds, Safe and Risk / upside picks.",
       "Filter picks by Mine, Not owned or All. Not-owned players are grayed (Sorare only lets you pick your own cards). Risk picks flag hot form, a star teammate OUT and big minutes.",
       "Pro lineups: switch between Max projection, Safe floor and High ceiling; each lineup shows its likely score range.",

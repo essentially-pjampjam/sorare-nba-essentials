@@ -2,7 +2,7 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
-## 2.7.0 (in testing as 2.7.0-exp.M7, branch v2.7.0-wip)
+## 2.7.0 (in testing as 2.7.0-exp.M7.1, branch v2.7.0-wip)
 
 Added:
 - Daily Play guide: Pro Daily Picker, Rebounds Picker and Set Daily Picker with Best odds, Safe and Risk / upside strategies, and a Mine / Not owned / All filter.
@@ -23,6 +23,7 @@ Changed:
 - Classic Limited entry limit is 3 (live); Arena / In-Season up to 5.
 
 Fixed:
+- League Collect quests used one shared milestone ladder (Non Playoffs showed 20 / 25 instead of 20 / 35); each quest now uses Sorare's live ladder and rewards.
 - ESPN schedules were empty: ESPN stopped answering multi-day `dates=A-B` requests, so the extension fetches each day and merges them (Game Week game counts, Vegas lines, daily slate).
 - Gallery failed without an API key (query complexity 720 over the 500 limit); safe mode now loads 6 cards per page.
 - "Cash" odds were really odds of any reward including XP-only ranks.

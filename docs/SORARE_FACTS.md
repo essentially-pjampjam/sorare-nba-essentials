@@ -180,3 +180,11 @@ can sit in two lineups in the same GW (editor's "Used in another lineup" filter 
 - Both offer only the manager's own Limited cards of today's slate games (`pickableCards`, e.g. 4 owned Bucks cards).
 - Streaks shown on the same page: Limited Contender 190 (150 reward), Limited Champion 240 ($5).
 - Rebound averages come from ESPN `site.api.espn.com/apis/common/v3/sports/basketball/nba/statistics/byathlete` (472 players with `isqualified=false`).
+
+## League Collect ladders (live, 2026-11-20, Sorare `TasksTrack.steps`, first-owner cards)
+- Draft 26': 5, 10, 12, 14, 16, 18 (+500 each), 20, 25, 28 (+1,000), 30 (+3,000).
+- 26' Non Playoffs: 10, 20, 35 (+1,000), 50, 75, 100 (+2,000), 125 (+3,000), 150 (+4,000), 200 (+4,500), 250 (+5,000).
+- 26' Playoffs: 12, 25 (+500), 40, 60 (+750), 80 (+1,000), 100 (+2,000), 125 (+3,000), 150 (+4,000), 175 (+5,000), 200 (+6,000).
+- 26' Conference Finals: 10, 15 (+500), 20, 25 (+750), 30 (+1,000), 40 (+2,000), 50 (+3,000), 60 (+4,000), 65 (+5,000), 70 (+6,000).
+- Full Collection (complete teams): 1 (+2,000), 3 (+3,000), 6 (+4,000), 8 (+5,000), 10 (+6,000), 12 (+7,000), 15 (+8,000), 20 (+9,000), 25 (+10,000), 30 (+15,000).
+- Panel: sorare.com Pro map, gold Collect icon (League tab). The ladders are user-specific queries, so the extension keeps them as constants.
