@@ -4,36 +4,17 @@ Run after reloading the extension in `chrome://extensions` and pressing **Refres
 
 ## Open (2.7.0-exp.M10)
 - **T1** Header badge shows `v2.7.0·M10` in red; What's New lists 2.7.0.
-- **T26** Set Solo: switch Today only / Today first / Best. Today first marks players (today) / (tmrw) and shows "Today: N players, X pts, finish today: 150: y%"; Best can pick tomorrow's players.
-- **T27** Gallery: Duplicate Sell Advisor lists duplicate players; Pro shows Sell with a floor price, Set shows Scrap; Shiny / Holo, sealed and in-lineup copies say Keep.
-- **T28** Lineups (Pro): Pro Progress shows each submitted lineup with rank of entries, top %, and In the cash / In rewards / Outside rewards once games start; the Game Week history fills after refreshes.
 - **T21** Daily Play: Scan not-owned / refresh slate -> "Not-owned players: N from X/X teams" with no error; Not owned / All list grayed players.
 - **T22** Switch Sorare from Pro to Set: the panel's Limited Essence stays at your Pro value (Set Essence shows next to Pack & Mission Advisor).
 - **T23** Set: Pack & Mission Advisor lists Gold / Silver / Bronze and today's Live Today packs with 3★+ %, 4★+ % and slot #4 top tiers (Bronze 3★+ about 20%+).
 - **T24** Open the Set Shop, press Scan shop: Daily Pack opened / not opened and Bronze+ x/10 match Sorare.
 - **T25** Squad Activity: "Counting now" names match the 3 avatars on Sorare's squad score card; points still needed = target - score.
-- **T17** Chrome asks nothing new on reload (the new `scripting` permission has no warning); the extension still loads.
-- **T18** Daily Play: "Not-owned players: N from X/Y teams" shows N > 0. Press Scan not-owned / refresh slate; Not owned / All now list grayed players.
-- **T19** After the night's games tip off (before 07:00 UTC), an amber banner says today's picker is locked and the list is the NEXT Daily Picker.
-- **T20** Set: open sorare.com/nba/series/squad (Go opens Members), press Scan squad on both the Members page and the Squad page: all 10 members, live stage score / target, and "No team yet" names match Sorare.
-- **T16** Collections → Real Essence Quests: targets match Sorare's Collect panel (Draft 16/18 +500, Non Playoffs 20/35 +1,000, Playoffs 15/25 +500, Conf Finals 2/10 +500, Full Collection 0/1 +2,000).
-- **T11** Lineups (Pro): "Daily Play" box with Pro Daily Picker / Rebounds Picker chips. Picks are from your Limited cards in today's games; Rebounds picks are 1.5★ or less with their rebounds per game.
-- **T12** Switch Best odds / Safe / Risk / upside: Safe drops flagged players; Risk shows hot-form, teammate-OUT or big-minutes players with ▲ tags.
-- **T13** Switch Mine / Not owned / All: not-owned rows are grayed and their Pin is disabled. Go opens Sorare's Play missions.
-- **T14** Set / Common: the same box for the Set Daily Picker.
-- **T15** Pro lineups: Max projection / Safe floor / High ceiling reorder the lineups; each shows a score range next to proj pts.
-- **T2** Lineups → Recommended Entry table has **Reward** and **Cash $** columns. Reward = odds of Essence or cash; Cash $ = odds of the real cash ranks. A line below lists the live tiers (e.g. Cash #1-50, Essence #51-1,500, XP).
-- **T3** Hover the Cash $ cell: shows "Cash for the top N, up to $X".
-- **T4** Lineups → Set / Common → Daily Picker: a "Daily slate until ..." line lists only today's games (same games as Sorare's Daily Picker), and every pick plays in one of them.
-- **T5** Daily Picker lists your own cards first; up to 3 better picks you don't own show grayed with "Not owned". The slate matches Sorare's picker games. Go opens Sorare's Daily Picker.
-- **T9** Lineups: Game Week bar shows game counts and matchups again (ESPN per-day fix).
-- **T10** Optional: remove the API key in Settings, Refresh: the gallery still loads (slower), then put the key back.
-- **T6** Set Solo Mode → Auto-Build: full 5-card teams under 16★ (up to 4), each with Apply, Go, boost % and step odds (150 / 180 / 210 / 240). Only players with a game on today's slate.
-- **T7** Set Squad Mode builds 1 team with Apply + Go.
-- **T8** `node scripts/verify.mjs` prints all PASS; `node scripts/ship-helper.mjs next` prints a checklist and changes no files.
+- **T26** Set Solo: switch Today only / Today first / Best. Today first marks players (today) / (tmrw) and shows "Today: N players, X pts, finish today: 150: y%"; Best can pick tomorrow's players.
+- **T27** Gallery: Duplicate Sell Advisor lists duplicate players; Pro shows Sell with a floor price, Set shows Scrap; Shiny / Holo, sealed and in-lineup copies say Keep.
+- **T28** Lineups (Pro): Pro Progress shows each submitted lineup with rank of entries, top %, and In the cash / In rewards / Outside rewards once games start; the Game Week history fills after refreshes.
 
 ## Done
-- **T-M9** 2.7.0-exp.M9: not tested yet (user tests M9 + M10 together).
+- **T-M1-M8** T2-T20 covered by the user's live tests (2026-11-20).
 - **T-M8** 2.7.0-exp.M8 (2026-11-20): all OK except Scan not-owned (failed) and Set Essence saved as Limited (fixed in M9).
 - **T-M7.1** 2.7.0-exp.M7.1 (2026-11-20): Not owned empty and Daily Picker looked outdated (fixed in M8).
 - **T-M6** 2.7.0-exp.M6 live test (2026-11-20): OK; asked for daily play guides, pick strategies and filters (M7).
