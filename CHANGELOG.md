@@ -2,9 +2,12 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
-## 2.7.0 (in testing as 2.7.0-exp.M9, branch v2.7.0-wip)
+## 2.7.0 (in testing as 2.7.0-exp.M10, branch v2.7.0-wip)
 
 Added:
+- Set Solo timing: Today only / Today first (fast finish) / Best (today + tomorrow), with today-only finish odds.
+- Duplicate Sell Advisor (Gallery).
+- Pro Progress Tracker: live rank vs reward / cash places and Game Week history.
 - Pack & Mission Advisor (Set): Daily Pack, Bronze+ progress, Live Today packs, 3★+ / 4★+ odds per pack.
 - Squad Activity: best-3 counting teams and points they still need.
 - Squad Activity (Set): who has a team in the live Squad stage, who is missing, points to target.

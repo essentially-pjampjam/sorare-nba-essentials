@@ -2,8 +2,11 @@
 
 Run after reloading the extension in `chrome://extensions` and pressing **Refresh**. Detailed per-build history: `docs/LIVE_TESTS.md`.
 
-## Open (2.7.0-exp.M9)
-- **T1** Header badge shows `v2.7.0·M9` in red; What's New lists 2.7.0.
+## Open (2.7.0-exp.M10)
+- **T1** Header badge shows `v2.7.0·M10` in red; What's New lists 2.7.0.
+- **T26** Set Solo: switch Today only / Today first / Best. Today first marks players (today) / (tmrw) and shows "Today: N players, X pts, finish today: 150: y%"; Best can pick tomorrow's players.
+- **T27** Gallery: Duplicate Sell Advisor lists duplicate players; Pro shows Sell with a floor price, Set shows Scrap; Shiny / Holo, sealed and in-lineup copies say Keep.
+- **T28** Lineups (Pro): Pro Progress shows each submitted lineup with rank of entries, top %, and In the cash / In rewards / Outside rewards once games start; the Game Week history fills after refreshes.
 - **T21** Daily Play: Scan not-owned / refresh slate -> "Not-owned players: N from X/X teams" with no error; Not owned / All list grayed players.
 - **T22** Switch Sorare from Pro to Set: the panel's Limited Essence stays at your Pro value (Set Essence shows next to Pack & Mission Advisor).
 - **T23** Set: Pack & Mission Advisor lists Gold / Silver / Bronze and today's Live Today packs with 3★+ %, 4★+ % and slot #4 top tiers (Bronze 3★+ about 20%+).
@@ -30,6 +33,7 @@ Run after reloading the extension in `chrome://extensions` and pressing **Refres
 - **T8** `node scripts/verify.mjs` prints all PASS; `node scripts/ship-helper.mjs next` prints a checklist and changes no files.
 
 ## Done
+- **T-M9** 2.7.0-exp.M9: not tested yet (user tests M9 + M10 together).
 - **T-M8** 2.7.0-exp.M8 (2026-11-20): all OK except Scan not-owned (failed) and Set Essence saved as Limited (fixed in M9).
 - **T-M7.1** 2.7.0-exp.M7.1 (2026-11-20): Not owned empty and Daily Picker looked outdated (fixed in M8).
 - **T-M6** 2.7.0-exp.M6 live test (2026-11-20): OK; asked for daily play guides, pick strategies and filters (M7).

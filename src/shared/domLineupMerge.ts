@@ -93,5 +93,10 @@ export function mergeApiAndDomLineups(
   const api = apiLineups.filter((l) => l.source !== "dom");
   if (mode === "load") return api.length > 0 ? api : domLineups;
   const keptApi = api.filter((a) => !domLineups.some((d) => matchesApiLineup(a, d)));
-  return [...keptApi, ...domLineups];
+  // Page captures have no live rank / score: carry them over from the matching API lineup.
+  const dom = domLineups.map((d) => {
+    const a = api.find((x) => matchesApiLineup(x, d));
+    return a ? { ...d, rank: d.rank ?? a.rank, score: d.score ?? a.score, leaderboardSlug: d.leaderboardSlug || a.leaderboardSlug } : d;
+  });
+  return [...keptApi, ...dom];
 }

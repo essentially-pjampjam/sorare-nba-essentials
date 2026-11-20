@@ -140,6 +140,9 @@ can sit in two lineups in the same GW (editor's "Used in another lineup" filter 
 | Set Essence vs Gems | Set sidebar: Essence counter has `essence-gradient-purple` (23 = `CardShardsChest` common), green counter = Gems. Pro: green = Limited Essence | LIVE-VERIFIED 2026-11-20 |
 | Set shop packs (API) | Public `market.cardPack(slug)`: title, price, currency (COMMON_GEM / COMMON_ESSENCE), category (LIVE_TODAY), endDate, cardsCount (standard 4, Live Today 3); `slotGameplayTierOdds(slotIndex)` {gameplayTier, probabilityBasisPoint} ~1000 complexity per slot (key needed). `market.setSections(sport: NBA)` without a key only returns MarketLiveOps (Live Today packs); the NBA Packs group needs login. Slugs: `divination-nba-{gold,silver,bronze}-pack`, `divination-nba-{silver,bronze}-live-today-YYYY-MM-DD`, `divination-nba-legendary-chase` | LIVE-VERIFIED 2026-11-20 |
 | Daily Pack / Bronze+ | Private: `MarketRoot.myCommonDailyClaimTask(sport)` (Task DAILY_CLAIM, aasmState CLAIMED), Bronze+ = `CardPackGroup(nba-all-leagues).boughtPacksCountTask` (title Bronze+, progress 6, target 10) | LIVE-VERIFIED 2026-11-20 |
+| Set Solo finish | A Solo stage completes as soon as the lineup's scores reach the target; players who play later don't matter (user saw a stage finish after 4 of 5 players) | USER 2026-11-20 |
+| Set card editions | `cardEditionName` `divination_standard_base` / `divination_shiny_base` (Holo similar) | LIVE-VERIFIED 2026-11-20 |
+| Lineup rank | `So5Lineup.so5Rankings { ranking score }` (public field; `so5Ranking` singular does not exist) | LIVE-VERIFIED 2026-11-20 |
 | Root fields | Sorare rejects the same root field twice in one query, even aliased ("Duplicated root field: team"); aliases inside `market { }` are fine | LIVE-VERIFIED 2026-11-20 |
 | `team.activePlayers` | One team with 6 fields is complexity ~505-520 without a key; `activePlayers(first: 18)` fits under 500 | LIVE-VERIFIED 2026-11-20 |
 

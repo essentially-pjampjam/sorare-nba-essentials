@@ -332,6 +332,23 @@ export interface CurrentLineupEntry {
   sorareLineupId?: string | null;
   /** When a page capture was taken (ms). Page captures can go stale if edited elsewhere. */
   detectedAt?: number;
+  /** Live rank / score in its leaderboard (`So5Lineup.so5Rankings`, API key only). */
+  rank?: number | null;
+  score?: number | null;
+}
+
+/** One Pro lineup result kept locally per Game Week for the progress tracker. */
+export interface ProProgressRecord {
+  lineupId: string;
+  fixtureSlug: string;
+  leaderboardSlug: string;
+  leaderboardName: string;
+  rank: number | null;
+  score: number | null;
+  totalEntries: number | null;
+  paidPlaces: number | null;
+  cashPlaces: number | null;
+  updatedAt: number;
 }
 
 export interface LeaderboardBenchmark {
@@ -410,6 +427,8 @@ export interface DailyPickerPool {
   /** ESPN season averages keyed by normalized player name. */
   statsByName?: Record<string, PlayerSeasonStats>;
   fetchedAt: number;
+  /** Teams playing in the following daily window (after this picker's reset), for Set Solo timing. */
+  laterTeamSlugs?: string[];
   /** Teams whose roster loaded / were requested (not-owned scan). */
   rosterTeamsLoaded?: number;
   rosterTeamsRequested?: number;
@@ -771,6 +790,7 @@ export type BackgroundRequest =
   | { type: "GET_ALERT_FEED" }
   | { type: "GET_DAILY_PICKER_POOL"; refresh?: boolean }
   | { type: "SCAN_SQUAD_ACTIVITY" }
+  | { type: "GET_PRO_PROGRESS_HISTORY" }
   | { type: "GET_SET_PACK_ADVISOR"; refresh?: boolean }
   | { type: "SCAN_SET_SHOP_STATUS" }
   | { type: "GET_SQUAD_SNAPSHOT" }

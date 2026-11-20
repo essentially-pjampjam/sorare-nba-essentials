@@ -1007,6 +1007,7 @@ export class SorareClient {
                 name
                 draft
                 so5Leaderboard { slug displayName }
+                so5Rankings { ranking score }
               }`
       : `
               openedSo5Lineups {
@@ -1104,6 +1105,7 @@ export class SorareClient {
         name: string | null;
         draft: boolean;
         so5Leaderboard?: { slug: string; displayName: string } | null;
+        so5Rankings?: Array<{ ranking: number | null; score: number | null }> | null;
       }>;
     }
 
@@ -1161,6 +1163,8 @@ export class SorareClient {
             playerNames: [n.anyPlayer.displayName],
             captainCardSlug: null,
             source: "api",
+            rank: ln.so5Rankings?.[0]?.ranking ?? null,
+            score: typeof ln.so5Rankings?.[0]?.score === "number" ? Math.round(ln.so5Rankings[0].score * 10) / 10 : null,
           });
         }
       }

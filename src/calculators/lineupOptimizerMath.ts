@@ -128,6 +128,11 @@ export interface SuggestedLineup {
 }
 
 export interface AutoBuildOptions {
+  /**
+   * Ranking weight per team slug (default 1). Used by Set Solo "today first" to rank players who
+   * play later below today's players; slot scores carry the weight, so callers divide it back out.
+   */
+  scoreWeightByTeam?: Record<string, number>;
   format: LineupFormat;
   rarityFilter: CardRarity | "ALL";
   projectionSource: ProjectionSource;
@@ -797,6 +802,10 @@ export function generateTopLineups(
         options.scheduleByTeam,
       ),
     )
+    .map((ev) => {
+      const w = ev.card.teamSlug ? options.scoreWeightByTeam?.[ev.card.teamSlug] : undefined;
+      return w !== undefined && w !== 1 ? { ...ev, effectiveScore: ev.effectiveScore * w } : ev;
+    })
     .filter((ev) => {
       // No game in the slate = 0 points: never draft it.
       if (ev.gamesInSlate === 0 && ev.effectiveScore <= 0) return false;

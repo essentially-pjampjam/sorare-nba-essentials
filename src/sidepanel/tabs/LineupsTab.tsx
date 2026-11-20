@@ -29,11 +29,14 @@ import { CountdownTimers } from "../components/CountdownTimers";
 import { DailyPlayHub } from "../components/DailyPlayHub";
 import { SquadActivityCard } from "../components/SquadActivityCard";
 import { PackAdvisorCard } from "../components/PackAdvisorCard";
+import { ProProgressCard } from "../components/ProProgressCard";
 import { GoButton } from "../components/GoButton";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildSetTeams,
   type SetBuildMode,
+  SET_SOLO_LATER_WEIGHT,
+  type SetSoloTiming,
 } from "../../calculators/commonSetMath";
 import {
   buildBudgetLineups,
@@ -365,6 +368,24 @@ export function LineupsTab({
   }, [gallery, loadDailyPool]);
 
 
+  // Solo stages finish as soon as the scores reach the target: "today first" can finish today.
+  const [soloTiming, setSoloTiming] = useState<SetSoloTiming>(() => {
+    try {
+      const v = localStorage.getItem("setSoloTiming");
+      return v === "today_first" || v === "any_day" ? v : "today_only";
+    } catch {
+      return "today_only";
+    }
+  });
+  const chooseSoloTiming = (t: SetSoloTiming) => {
+    setSoloTiming(t);
+    try {
+      localStorage.setItem("setSoloTiming", t);
+    } catch {
+      // Per-viewer convenience only.
+    }
+  };
+
   const setAutoBuilt = useMemo(() => {
     if (!gallery || commonPool.length === 0) return null;
     void buildSeed;
@@ -381,11 +402,15 @@ export function LineupsTab({
           : gallery.gamesPerTeam,
       excludeOut,
       disjointAcrossTeams: disjointLineups,
+      soloTiming,
+      todayTeamSlugs: dailyPool?.window.teamSlugs ?? [],
+      laterTeamSlugs: dailyPool?.laterTeamSlugs ?? [],
     });
   }, [
     buildSeed,
     commonPool,
     dailyPool,
+    soloTiming,
     customProjectionsRaw,
     disjointLineups,
     excludeOut,
@@ -772,7 +797,10 @@ export function LineupsTab({
       </div>
 
       {arenaMode === "pro" && (
-        <DailyPlayHub gallery={gallery} pool={dailyPool} poolLoading={dailyPoolLoading} onRefreshPool={() => loadDailyPool(true)} missions={["pro_daily", "rebounds"]} />
+        <>
+          <ProProgressCard gallery={gallery} />
+          <DailyPlayHub gallery={gallery} pool={dailyPool} poolLoading={dailyPoolLoading} onRefreshPool={() => loadDailyPool(true)} missions={["pro_daily", "rebounds"]} />
+        </>
       )}
 
       {/* Optimal Entry Disclosure + Recommended Competition Priority */}
@@ -1330,6 +1358,38 @@ export function LineupsTab({
               {setBuildMode === "solo" ? "Solo Teams (5 cards, 16★)" : "Squad Team (5 cards, 16★)"}
             </button>
 
+            {setBuildMode === "solo" && (
+              <div className="flex flex-wrap items-center gap-1 text-[10px]">
+                <span className="text-slate-400">Players who play:</span>
+                {(
+                  [
+                    ["today_only", "Today only", "Only players with a game before the next 07:00 UTC reset"],
+                    [
+                      "today_first",
+                      "Today first (fast finish)",
+                      "A Solo stage completes as soon as your players' scores reach the target, even if others play later. Ranks today's players first and fills with tomorrow's.",
+                    ],
+                    ["any_day", "Best (today + tomorrow)", "Highest projection across today's and tomorrow's games"],
+                  ] as Array<[SetSoloTiming, string, string]>
+                ).map(([id, label, hint]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    title={hint}
+                    onClick={() => chooseSoloTiming(id)}
+                    className={`rounded-lg border px-2 py-0.5 font-semibold ${
+                      soloTiming === id ? "border-emerald-300/60 bg-emerald-500/20 text-emerald-100" : "border-white/10 text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+                {soloTiming !== "today_only" && (dailyPool?.laterTeamSlugs?.length ?? 0) === 0 && (
+                  <span className="text-amber-300">Tomorrow's games not loaded yet: using today only.</span>
+                )}
+              </div>
+            )}
+
             {setAutoBuilt && setBuildMode === "solo" && (
               <div className="space-y-2">
                 {setAutoBuilt.soloTeams.length === 0 && (
@@ -1345,7 +1405,7 @@ export function LineupsTab({
                     <div key={lu.rank} className="rounded-xl border border-white/8 bg-[#0b101b] p-2.5">
                       <div className="mb-1 flex items-center justify-between gap-2 text-xs">
                         <span className="font-semibold text-emerald-300">
-                          {label} • {lu.totalScore.toFixed(1)} pts •{" "}
+                          {label} • {team.projectedTotal.toFixed(1)} pts •{" "}
                           {lu.capLimit ? `${lu.capUsed}/${lu.capLimit}★` : `${lu.totalStars}★`}
                           {team.avgBoostPct > 0 && (
                             <span className="ml-1 text-[10px] font-normal text-sky-300">
@@ -1360,7 +1420,7 @@ export function LineupsTab({
                               void applyLineupHighlight(
                                 names,
                                 label,
-                                lu.totalScore,
+                                team.projectedTotal,
                                 lu.slots.map((sl) => ({
                                   slotLabel: sl.slotLabel,
                                   cardSlug: sl.evaluated.card.slug,
@@ -1381,9 +1441,28 @@ export function LineupsTab({
                       </div>
                       <div className="text-[11px] text-slate-300">
                         {lu.slots
-                          .map((sl) => `${sl.evaluated.card.playerName} ${sl.slotScore.toFixed(0)}`)
+                          .map((sl) => {
+                            const t = sl.evaluated.card.teamSlug;
+                            const isToday = !dailyPool || (t !== null && dailyPool.window.teamSlugs.includes(t));
+                            const w = soloTiming === "today_first" && !isToday ? SET_SOLO_LATER_WEIGHT : 1;
+                            return `${sl.evaluated.card.playerName} ${(sl.slotScore / w).toFixed(0)}${
+                              soloTiming !== "today_only" ? (isToday ? " (today)" : " (tmrw)") : ""
+                            }`;
+                          })
                           .join(" • ")}
                       </div>
+                      {soloTiming !== "today_only" && (
+                        <div className="mt-0.5 flex flex-wrap gap-x-2 text-[9.5px] text-sky-300">
+                          <span>
+                            Today: {team.todayPlayers} player{team.todayPlayers === 1 ? "" : "s"}, {team.todayProjected.toFixed(0)} pts • finish today:
+                          </span>
+                          {team.todayStepOdds.slice(0, 4).map((o) => (
+                            <span key={o.target}>
+                              {o.target}: {o.hitPct}%
+                            </span>
+                          ))}
+                        </div>
+                      )}
                       <div className="mt-1 flex flex-wrap gap-x-2 text-[9.5px] text-slate-400">
                         <span>Step odds:</span>
                         {team.stepOdds.slice(0, 4).map((o) => (

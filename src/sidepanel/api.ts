@@ -4,6 +4,7 @@ import type {
   BargainMode,
   DailyPickerPool,
   SquadSnapshot,
+  ProProgressRecord,
   SetPackAdvisorData,
   SetShopStatus,
   TrackedAlertEvent,
@@ -362,6 +363,10 @@ export function getSetPackAdvisor(): Promise<SetPackAdvisorData> {
 
 export function scanSetShopStatus(): Promise<SetShopStatus> {
   return sendBackground<SetShopStatus>({ type: "SCAN_SET_SHOP_STATUS" });
+}
+
+export function getProProgressHistory(): Promise<ProProgressRecord[]> {
+  return sendBackground<ProProgressRecord[]>({ type: "GET_PRO_PROGRESS_HISTORY" });
 }
 
 export function scanSquadActivity(): Promise<SquadSnapshot> {

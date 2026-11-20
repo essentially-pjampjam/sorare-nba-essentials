@@ -2,6 +2,7 @@ import { buildMarketPriceKey } from "../calculators/collectionEssenceMath";
 import { evaluateStarTierShift } from "../calculators/lineupOptimizerMath";
 import { selectOpenGameWeek } from "../calculators/countdownMath";
 import { selectDailyPickerWindow } from "../calculators/dailySlateMath";
+import { mergeProProgressHistory } from "../calculators/proProgressMath";
 import {
   ALERT_TRACKER_ALARM_NAME,
   CUTOFF_REMINDER_ALARM_NAME,
@@ -51,6 +52,8 @@ import type {
   WatchlistAlert,
   WatchlistEntry,
   SetPackAdvisorData,
+  ProProgressRecord,
+  LeaderboardBenchmark,
 } from "../shared/types";
 import { clearAllCache, getCached, setCached } from "./cache";
 import { fetchDailySlateGames, fetchExternalNbaContext, fetchPlayerSeasonStats } from "./externalDataClient";
@@ -969,6 +972,21 @@ async function readStoredDomLineups(): Promise<CurrentLineupEntry[]> {
   }
 }
 
+const PRO_PROGRESS_KEY = "pro_progress_history_v1";
+
+async function loadProProgressHistory(): Promise<ProProgressRecord[]> {
+  const stored = await chrome.storage.local.get(PRO_PROGRESS_KEY);
+  const list = stored[PRO_PROGRESS_KEY];
+  return Array.isArray(list) ? (list as ProProgressRecord[]) : [];
+}
+
+/** Keeps each Pro lineup's latest rank / score per Game Week (local only) for the progress tracker. */
+async function recordProProgress(lineups: CurrentLineupEntry[], benchmarks: LeaderboardBenchmark[]): Promise<void> {
+  if (!lineups.some((l) => l.rank != null)) return;
+  const next = mergeProProgressHistory(await loadProProgressHistory(), lineups, benchmarks, Date.now());
+  await chrome.storage.local.set({ [PRO_PROGRESS_KEY]: next });
+}
+
 async function fetchGalleryForLineups(
   username: string,
   forceRefresh = false,
@@ -1056,6 +1074,7 @@ async function fetchGalleryForLineups(
       injuriesByName: result.injuriesByName,
     });
     await syncOverlayLookup(result.cards);
+    await recordProProgress(currentLineups, leaderboardBenchmarks ?? []);
     broadcastProgress({
       phase: "done",
       completed: 1,
@@ -1720,6 +1739,9 @@ async function handleMessage(
       case "SCAN_SET_SHOP_STATUS": {
         return { ok: true, data: await scanShopStatusFromOpenTab() };
       }
+      case "GET_PRO_PROGRESS_HISTORY": {
+        return { ok: true, data: await loadProProgressHistory() };
+      }
       case "GET_SQUAD_SNAPSHOT": {
         return { ok: true, data: await getSavedSquadSnapshot() };
       }
@@ -1727,7 +1749,9 @@ async function handleMessage(
         // Load settings first: after a service-worker restart the API key is not applied yet.
         await loadSettings();
         const now = Date.now();
-        const window = selectDailyPickerWindow(await fetchDailySlateGames(now, Boolean(msg.refresh)), now);
+        const slateGames = await fetchDailySlateGames(now, Boolean(msg.refresh));
+        const window = selectDailyPickerWindow(slateGames, now);
+        const laterWindow = selectDailyPickerWindow(slateGames, Date.parse(window.endIso));
         const roster = await sorareClient
           .fetchTeamRosterCards(window.teamSlugs)
           .catch((err: unknown) => ({
@@ -1742,6 +1766,7 @@ async function handleMessage(
           rosterCards: roster.cards,
           statsByName,
           fetchedAt: now,
+          laterTeamSlugs: laterWindow.startIso === window.endIso ? laterWindow.teamSlugs : [],
           rosterTeamsLoaded: roster.teamsLoaded,
           rosterTeamsRequested: roster.teamsRequested,
           rosterError: roster.error,

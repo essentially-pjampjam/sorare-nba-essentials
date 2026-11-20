@@ -40,6 +40,7 @@ import { openInActiveTab } from "../api";
 import { HeadToHeadCompareBox } from "../components/HeadToHeadCompareBox";
 import { PlayerCardRow } from "../components/PlayerCardRow";
 import { formatMoney } from "../utils/format";
+import { DuplicateAdvisorSection } from "../components/DuplicateAdvisorSection";
 
 type GallerySortBy =
   | "stars_desc"
@@ -481,6 +482,8 @@ export function GalleryTab({
           </div>
         </div>
       )}
+
+      <DuplicateAdvisorSection gallery={gallery} currency={currency} />
 
       {/* Pool, Actions, Filters & Sorting */}
       <div className="space-y-2 rounded-2xl border border-white/8 bg-[#111726] p-3">

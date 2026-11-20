@@ -21,8 +21,11 @@ const RELEASE_HIGHLIGHTS: Array<{
 }> = [
   {
     version: "2.7.0",
-    title: "v2.7.0 (testing build M9): Pack Advisor, Squad Activity, Daily Play Guide",
+    title: "v2.7.0 (testing build M10): Solo Fast Finish, Duplicates, Pro Progress, Pack Advisor",
     items: [
+      "Set Solo: choose Today only, Today first (fast finish) or Best (today + tomorrow). A Solo stage completes as soon as your scores reach the target, so Today first shows the chance today's players finish it alone.",
+      "New Duplicate Sell Advisor (Gallery): keeps the best copy, every Shiny / Holo, sealed and in-lineup cards and a 2nd copy of your top players; flags the rest to sell (Pro, at the Instant Buy floor) or scrap (Set).",
+      "New Pro Progress (Lineups, Pro): live rank of each open lineup vs the reward and cash places, plus a Game Week history saved on this device.",
       "New Pack & Mission Advisor (Set): free Daily Pack reminder, Bronze+ progress, Live Today packs and each pack's chance of a 3★+ / 4★+ card (live slot odds).",
       "Squad Activity now shows the best 3 teams whose scores add up to the stage total, and how many points they still need.",
       "Fixed: Set Essence (purple) was saved as Limited Essence when you switched Sorare to Set.",

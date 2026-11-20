@@ -8,6 +8,10 @@ Then reload any open sorare.com tabs so the new content script runs.
 
 ---
 
+## 2.7.0-exp.M10 - Solo timing, Duplicate Sell Advisor, Pro Progress
+
+See [../TESTING.md](../TESTING.md) T26-T28.
+
 ## 2.7.0-exp.M9 - Pack & Mission Advisor, Squad top 3
 
 See [../TESTING.md](../TESTING.md) T21-T25.

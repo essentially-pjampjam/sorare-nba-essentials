@@ -25,8 +25,20 @@ export interface SetTeamStepOdds {
   hitPct: number;
 }
 
+/** When Solo players should play: a stage finishes as soon as the scores reach its target. */
+export type SetSoloTiming = "today_only" | "today_first" | "any_day";
+/** Ranking weight for players who play after today in "today first" mode. */
+export const SET_SOLO_LATER_WEIGHT = 0.8;
+
 export interface SetSoloTeam {
   lineup: SuggestedLineup;
+  /** Real projected total (ranking weights removed). */
+  projectedTotal: number;
+  /** Projected points of the players who play today (finishes the stage today if enough). */
+  todayProjected: number;
+  todayPlayers: number;
+  /** Odds that today's players alone reach each step (instant finish once the target is reached). */
+  todayStepOdds: SetTeamStepOdds[];
   /** Average card power bonus across the 5 cards (%). */
   avgBoostPct: number;
   stepOdds: SetTeamStepOdds[];
@@ -149,17 +161,35 @@ export interface SetAutoBuildResult {
   activePoolCount: number;
 }
 
-function toSoloTeam(lineup: SuggestedLineup): SetSoloTeam {
-  const sd = lineupStdDev(
-    lineup.slots.map((s) => ({ projectedScore: s.slotScore, teamSlug: s.evaluated.card.teamSlug })),
-  );
+function toSoloTeam(
+  lineup: SuggestedLineup,
+  todayTeams: Set<string> | null,
+  weights: Record<string, number> | undefined,
+): SetSoloTeam {
+  const real = lineup.slots.map((s) => {
+    const team = s.evaluated.card.teamSlug;
+    const w = (team && weights?.[team]) || 1;
+    return { projectedScore: s.slotScore / w, teamSlug: team, today: !todayTeams || (team !== null && todayTeams.has(team)) };
+  });
+  const projectedTotal = Math.round(real.reduce((a, r) => a + r.projectedScore, 0) * 10) / 10;
+  const todayCards = real.filter((r) => r.today);
+  const todayProjected = Math.round(todayCards.reduce((a, r) => a + r.projectedScore, 0) * 10) / 10;
+  const sd = lineupStdDev(real);
+  const todaySd = todayCards.length > 0 ? lineupStdDev(todayCards) : 1;
   const boosts = lineup.slots.map((s) => ((s.evaluated.card.powerMultiplier ?? 1) - 1) * 100);
   return {
     lineup,
+    projectedTotal,
+    todayProjected,
+    todayPlayers: todayCards.length,
+    todayStepOdds: SET_SOLO_STEP_TARGETS.map((target) => ({
+      target,
+      hitPct: todayCards.length > 0 ? Math.round(probabilityAtLeast(todayProjected, todaySd, target)) : 0,
+    })),
     avgBoostPct: boosts.length ? Math.round((boosts.reduce((a, b) => a + b, 0) / boosts.length) * 10) / 10 : 0,
     stepOdds: SET_SOLO_STEP_TARGETS.map((target) => ({
       target,
-      hitPct: Math.round(probabilityAtLeast(lineup.totalScore, sd, target)),
+      hitPct: Math.round(probabilityAtLeast(projectedTotal, sd, target)),
     })),
   };
 }
@@ -181,11 +211,29 @@ export function buildSetTeams(
     gamesPerTeam: Record<string, number>;
     excludeOut: boolean;
     disjointAcrossTeams: boolean;
+    /** Solo timing (default today_only): which game days count and how they rank. */
+    soloTiming?: SetSoloTiming;
+    /** Teams with a game today (before the next 07:00 UTC reset). */
+    todayTeamSlugs?: string[];
+    /** Teams with a game in the next daily window (tomorrow), for today_first / any_day. */
+    laterTeamSlugs?: string[];
   },
 ): SetAutoBuildResult {
   const count = Math.max(1, Math.min(8, Math.round(options.teamCount)));
 
   if (options.mode === "solo") {
+    const timing = options.soloTiming ?? "today_only";
+    const today = options.todayTeamSlugs ?? [];
+    const later = options.laterTeamSlugs ?? [];
+    const todaySet = today.length > 0 ? new Set(today) : null;
+    let soloGames = options.gamesPerTeam;
+    let weights: Record<string, number> | undefined;
+    if (timing !== "today_only" && (today.length > 0 || later.length > 0)) {
+      soloGames = Object.fromEntries([...today, ...later].map((t) => [t, 1]));
+      if (timing === "today_first") {
+        weights = Object.fromEntries(later.filter((t) => !todaySet?.has(t)).map((t) => [t, SET_SOLO_LATER_WEIGHT]));
+      }
+    }
     const customMap = parseCustomProjections(options.customProjectionsRaw);
     const evaluatedPool = commonCards
       .filter((c) => c.rarity === "common")
@@ -195,7 +243,7 @@ export function buildSetTeams(
           options.projectionSource,
           customMap,
           options.injuriesByName,
-          options.gamesPerTeam,
+          soloGames,
         ),
       )
       .filter(
@@ -223,7 +271,8 @@ export function buildSetTeams(
       projectionSource: options.projectionSource,
       customProjectionsRaw: options.customProjectionsRaw,
       injuriesByName: options.injuriesByName,
-      gamesPerTeam: options.gamesPerTeam,
+      gamesPerTeam: soloGames,
+      scoreWeightByTeam: weights,
       excludeOut: options.excludeOut,
       excludeQuestionable: false,
       inSeasonOnly: false,
@@ -237,7 +286,11 @@ export function buildSetTeams(
       mode: "solo",
       soloPicks,
       squadTeams: [],
-      soloTeams: teamsRes.lineups.map(toSoloTeam),
+      soloTeams: teamsRes.lineups
+        .map((l) => toSoloTeam(l, todaySet, weights))
+        .sort((x, y) =>
+          timing === "today_first" ? y.todayProjected - x.todayProjected || y.projectedTotal - x.projectedTotal : y.projectedTotal - x.projectedTotal,
+        ),
       activePoolCount: evaluatedPool.length,
     };
   }
