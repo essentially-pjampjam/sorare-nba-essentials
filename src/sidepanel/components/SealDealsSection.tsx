@@ -7,6 +7,15 @@ import { formatMoney } from "../utils/format";
 
 const BUDGETS = [200, 500, 1000, 2500];
 
+/** Badge color by Sealing Points tier (1 / 2 / 5 / 20 / 50 / 200). */
+function pointsBadge(points: number): string {
+  if (points >= 50) return "border-fuchsia-300/60 bg-fuchsia-500/25 text-fuchsia-100";
+  if (points >= 20) return "border-violet-300/60 bg-violet-500/25 text-violet-100";
+  if (points >= 5) return "border-amber-300/50 bg-amber-500/20 text-amber-100";
+  if (points >= 2) return "border-sky-300/40 bg-sky-500/15 text-sky-100";
+  return "border-white/15 bg-white/5 text-slate-300";
+}
+
 /** Sealing Deal Finder: cheapest market cards ranked by live Sealing Points per euro. */
 export function SealDealsSection({ gallery, rarity, currency }: { gallery: GalleryResult | null; rarity: Rarity; currency: Currency }) {
   const [listings, setListings] = useState<BargainListing[] | null>(null);
@@ -36,7 +45,9 @@ export function SealDealsSection({ gallery, rarity, currency }: { gallery: Galle
           Sealing Deal Finder ({rarity.replace("_", " ")})
         </span>
         <span className="text-[10px] text-slate-400">
-          {deals.length > 0 ? `best ${deals[0].pointsPerUnit} pts per ${currency === "EUR" ? "€" : "$"}` : "cheap cards with the most Sealing Points"}
+          {deals.length > 0
+            ? `best: ${deals[0].sealingPoints} pts for ${formatMoney(deals[0].priceCents, currency)}`
+            : "cheap cards with the most Sealing Points"}
         </span>
       </summary>
       <div className="space-y-2 border-t border-white/8 bg-[#0b101b] p-3 text-[10.5px]">
@@ -79,18 +90,30 @@ export function SealDealsSection({ gallery, rarity, currency }: { gallery: Galle
           <ul className="space-y-1">
             {deals.slice(0, 15).map((d) => (
               <li key={d.listing.cardSlug} className="flex items-center justify-between gap-2 rounded-lg border border-white/6 bg-[#111726] px-2 py-1">
-                <div className="min-w-0">
-                  <div className="truncate font-semibold text-slate-100">
-                    {d.listing.playerName} <span className="font-normal text-slate-400">{d.listing.seasonYear}</span>
-                  </div>
-                  <div className="text-[10px] text-slate-400">
-                    {d.sealingPoints} pts • {formatMoney(d.priceCents, currency)} • L10 {Math.round(d.listing.l10)}
-                    {d.ownedPlayer && <span className="text-sky-300"> • you own this player</span>}
-                    {d.lowLineupValue && <span className="text-slate-500"> • low lineup value</span>}
+                <div className="flex min-w-0 items-center gap-2">
+                  <span
+                    className={`flex h-8 w-11 shrink-0 flex-col items-center justify-center rounded-lg border leading-none ${pointsBadge(d.sealingPoints)}`}
+                    title={`${d.sealingPoints} Sealing Points (Sorare's live value for this card)`}
+                  >
+                    <span className="text-[13px] font-bold">{d.sealingPoints}</span>
+                    <span className="text-[8px] uppercase tracking-wide opacity-80">pts</span>
+                  </span>
+                  <div className="min-w-0">
+                    <div className="truncate font-semibold text-slate-100">
+                      {d.listing.playerName} <span className="font-normal text-slate-400">{d.listing.seasonYear}</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">
+                      <span className="text-emerald-300" title="Sealing Points per 1 of your currency">
+                        {d.pointsPerUnit} pts per {currency === "EUR" ? "€" : "$"}
+                      </span>{" "}
+                      • L10 {Math.round(d.listing.l10)}
+                      {d.ownedPlayer && <span className="text-sky-300"> • you own this player</span>}
+                      {d.lowLineupValue && <span className="text-slate-500"> • low lineup value</span>}
+                    </div>
                   </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <span className="font-bold text-violet-200">{d.pointsPerUnit}/{currency === "EUR" ? "€" : "$"}</span>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <span className="text-[12px] font-bold text-slate-100">{formatMoney(d.priceCents, currency)}</span>
                   <button
                     type="button"
                     onClick={() => void openInActiveTab(d.listing.marketUrl)}

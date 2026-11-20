@@ -2,7 +2,7 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
-## 2.7.2 (in testing as 2.7.2-exp.M1, branch v2.7.2-wip)
+## 2.7.2 (2026-11-20)
 
 Added:
 - Daily Play syncs Sorare's live daily pickers (auto when the missions page is opened, or Scan missions); presets until then.

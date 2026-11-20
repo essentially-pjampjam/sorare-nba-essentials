@@ -21,11 +21,11 @@ const RELEASE_HIGHLIGHTS: Array<{
 }> = [
   {
     version: "2.7.2",
-    title: "v2.7.2 (testing build M1): Live Daily Pickers, Double-Double Odds, Sealing Deal Finder",
+    title: "v2.7.2: Live Daily Pickers, Double-Double Odds, Sealing Deal Finder",
     items: [
       "Daily Play now syncs Sorare's real daily pickers: open Sorare's missions page once a day (Go) and the panel shows today's pickers (e.g. Double Double Picker instead of Rebounds). Scan missions does it on demand.",
       "Double-double and triple-double odds from each player's season (ESPN double-double counts plus points / rebounds / assists); stat pickers (rebounds, assists, ...) read their target and star cap from Sorare.",
-      "New Sealing Deal Finder (Gallery, Pro cards): cheapest market cards ranked by Sorare's live Sealing Points per euro, with a budget planner.",
+      "New Sealing Deal Finder (Gallery, Pro cards): cheapest market cards with Sorare's live Sealing Points (colored badge), price and points per euro, plus a budget planner.",
     ],
   },
   {

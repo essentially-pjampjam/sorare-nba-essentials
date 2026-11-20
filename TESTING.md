@@ -2,14 +2,11 @@
 
 Run after reloading the extension in `chrome://extensions` and pressing **Refresh**. Detailed per-build history: `docs/LIVE_TESTS.md`.
 
-## Open (2.7.2-exp.M1)
-- **T1** Header badge shows `v2.7.2·M1` in red; What's New lists 2.7.2.
-- **T29** Lineups (Pro) → Daily Play: open Sorare's Pro missions (Go). Within ~30 s the box says "Today's pickers synced from Sorare" and the chips match Sorare (e.g. Pro Daily Picker + Double Double Picker), with Sorare's reward text.
-- **T30** Double Double Picker picks: big men / triple-double threats on top; each row shows "x DD in y games" and points / rebounds / assists.
-- **T31** Set → Daily Play: open Sorare's Set missions; it syncs the Set Daily Picker (1 pick). Scan missions works on demand.
-- **T32** Gallery (Pro cards) → Sealing Deal Finder → Scan market: cheapest cards ranked by points per €, Sealing Points match the seal dialog on Sorare for a card or two; budget chips show total points.
+## Open
+- None. 2.7.2 released.
 
 ## Done
+- **T-2.7.2** 2.7.2-exp.M1 (2026-11-20): all OK; Sealing Deal Finder rows redesigned (points badge left, price right) and shipped untested at the user's request.
 - **T-M9/M10** 2.7.0-exp.M9 + M10 (2026-11-20): all OK. Follow-ups shipped untested in 2.7.0 at the user's request: duplicate keep / hold rules and full Set card loading, lineups sorted by potential, Vault guide Pro-only, clearer Solo labels.
 - **T-M1-M8** T2-T20 covered by the user's live tests (2026-11-20).
 - **T-M8** 2.7.0-exp.M8 (2026-11-20): all OK except Scan not-owned (failed) and Set Essence saved as Limited (fixed in M9).

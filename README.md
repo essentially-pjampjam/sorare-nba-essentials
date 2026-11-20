@@ -5,7 +5,7 @@
 <h1 align="center">pjampjam's Sorare NBA Essentials</h1>
 
 <p align="center">
-  <strong>v2.7.1</strong> - Unofficial Chrome Side Panel & Dashboard for Sorare NBA
+  <strong>v2.7.2</strong> - Unofficial Chrome Side Panel & Dashboard for Sorare NBA
 </p>
 
 <p align="center">
@@ -26,7 +26,7 @@ Hey - welcome! I originally put this Chrome extension together for myself becaus
 
 ## Install in 1 Minute (no coding)
 
-1. Download `pjampjams-sorare-nba-essentials-v2.7.1.zip` from the [latest release](https://github.com/essentially-pjampjam/sorare-nba-essentials/releases/latest) and unzip it.
+1. Download `pjampjams-sorare-nba-essentials-v2.7.2.zip` from the [latest release](https://github.com/essentially-pjampjam/sorare-nba-essentials/releases/latest) and unzip it.
 2. Open `chrome://extensions` and turn on **Developer mode** (top right).
 3. Click **Load unpacked** and pick the unzipped folder.
 4. Open `sorare.com/nba`, click the extension icon, type your Sorare username and press **Scan**.
@@ -66,7 +66,7 @@ Optional: paste your own Sorare API key in Settings for much faster loading (it 
   - Lineup strategies (Max projection, Safe floor, High ceiling) with a score range per lineup; your current lineups sorted by potential.
   - **Pro Progress**: live rank of each open lineup vs the reward and cash places, with a Game Week history.
   - Live ESPN injuries and schedules, Game Week and Daily Reset countdowns, cutoff reminders, and a side-by-side lineup helper on `sorare.com`.
-- **Daily Play guide:** Pro Daily Picker, Rebounds Picker and Set Daily Picker on Sorare's live slate, with Best odds / Safe / Risk-upside picks and a Mine / Not owned / All filter.
+- **Daily Play guide:** synced with Sorare's live daily pickers (Daily Picker, Double Double, Rebounds and more) on today's slate, with Best odds / Safe / Risk-upside picks and a Mine / Not owned / All filter.
 - **Set (Common) tools:**
   - **Solo** builder: full 5-card teams under the `16★` cap with stage odds; *Prioritize today* aims to finish a stage the same day.
   - **Squad Activity**: who has a team in the live stage, the best 3 teams that count, and the points still needed.
@@ -74,6 +74,7 @@ Optional: paste your own Sorare API key in Settings for much faster loading (it 
 - **Deals Sniper & Gallery (`Deals`, `Gallery`):**
   - Scans unique instant-buy deals, `1ST` Primary Offers, and realistic auctions ending within 1 hour, plus optional 10-minute watchlist alerts (`chrome.alarms`).
   - Tracks `On Fire` / `Cold` L5-vs-L10 form trends, Star Tier Shift candidates, and Vault vs. Sell comparisons.
+  - **Sealing Deal Finder**: cheapest market cards ranked by Sorare's live Sealing Points per euro, with a budget planner.
   - **Duplicate Sell Advisor**: which extra copies to sell (Pro) or scrap (Set), keeping Shiny / Holo, in-lineup cards and young or injured players worth holding.
 
 ## Install From Source (developers)
