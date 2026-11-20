@@ -2,8 +2,13 @@
 
 Run after reloading the extension in `chrome://extensions` and pressing **Refresh**. Detailed per-build history: `docs/LIVE_TESTS.md`.
 
-## Open (2.7.0-exp.M6)
-- **T1** Header badge shows `v2.7.0·M6` in red; What's New lists 2.7.0.
+## Open (2.7.0-exp.M7)
+- **T1** Header badge shows `v2.7.0·M7` in red; What's New lists 2.7.0.
+- **T11** Lineups (Pro): "Daily Play" box with Pro Daily Picker / Rebounds Picker chips. Picks are from your Limited cards in today's games; Rebounds picks are 1.5★ or less with their rebounds per game.
+- **T12** Switch Best odds / Safe / Risk / upside: Safe drops flagged players; Risk shows hot-form, teammate-OUT or big-minutes players with ▲ tags.
+- **T13** Switch Mine / Not owned / All: not-owned rows are grayed and their Pin is disabled. Go opens Sorare's Play missions.
+- **T14** Set / Common: the same box for the Set Daily Picker.
+- **T15** Pro lineups: Max projection / Safe floor / High ceiling reorder the lineups; each shows a score range next to proj pts.
 - **T2** Lineups → Recommended Entry table has **Reward** and **Cash $** columns. Reward = odds of Essence or cash; Cash $ = odds of the real cash ranks. A line below lists the live tiers (e.g. Cash #1-50, Essence #51-1,500, XP).
 - **T3** Hover the Cash $ cell: shows "Cash for the top N, up to $X".
 - **T4** Lineups → Set / Common → Daily Picker: a "Daily slate until ..." line lists only today's games (same games as Sorare's Daily Picker), and every pick plays in one of them.
@@ -15,5 +20,6 @@ Run after reloading the extension in `chrome://extensions` and pressing **Refres
 - **T8** `node scripts/verify.mjs` prints all PASS; `node scripts/ship-helper.mjs next` prints a checklist and changes no files.
 
 ## Done
+- **T-M6** 2.7.0-exp.M6 live test (2026-11-20): OK; asked for daily play guides, pick strategies and filters (M7).
 - **T-M5** 2.7.0-exp.M5 live test (2026-11-20): all OK except T5 (Daily Picker used a wrong slate: ESPN range bug). Fixed in M6.
 - **T0** 2.6.10-exp.M4 live test (2026-11-19): timers, alerts, sync age, ghost lineup fix, Go buttons, Vault guide all OK. Found: Cash column meant "any reward", Daily Picker used the wrong games, Set Solo built single players. Fixed in 2.7.0-exp.M5.

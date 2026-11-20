@@ -2,9 +2,11 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
-## 2.7.0 (in testing as 2.7.0-exp.M6, branch v2.7.0-wip)
+## 2.7.0 (in testing as 2.7.0-exp.M7, branch v2.7.0-wip)
 
 Added:
+- Daily Play guide: Pro Daily Picker, Rebounds Picker and Set Daily Picker with Best odds, Safe and Risk / upside strategies, and a Mine / Not owned / All filter.
+- Pro lineup strategies: Max projection, Safe floor, High ceiling, with a score range per lineup.
 - Daily Picker: your own cards first; better picks you don't own shown grayed as "Not owned".
 - Live leaderboard rewards from Sorare: cash, Essence and XP tiers per contest. Recommended Entry now shows **Reward** odds (Essence or cash) and real **Cash $** odds separately, plus the live tier list.
 - Daily Picker uses Sorare's live rule: only players from today's games before the next 07:00 UTC reset, including players you don't own (team rosters).

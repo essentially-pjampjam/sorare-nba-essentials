@@ -7,6 +7,7 @@ import {
 } from "../calculators/vegasMath";
 import type {
   DailySlateGame,
+  PlayerSeasonStats,
   InjuryReportEntry,
   InjuryStatus,
   TeamSlateSchedule,
@@ -374,4 +375,47 @@ export async function fetchDailySlateGames(nowMs: number = Date.now()): Promise<
   }
   await setCached(cacheKey, games);
   return games;
+}
+
+interface EspnByAthletePayload {
+  categories?: Array<{ name?: string; names?: string[] }>;
+  athletes?: Array<{
+    athlete?: { displayName?: string };
+    categories?: Array<{ name?: string; values?: number[] }>;
+  }>;
+}
+
+/** ESPN season averages for every NBA player (one request, cached 10 min). */
+export async function fetchPlayerSeasonStats(): Promise<Record<string, PlayerSeasonStats>> {
+  const cacheKey = "espn_player_season_stats_v1";
+  const cached = await getCached<Record<string, PlayerSeasonStats>>(cacheKey);
+  if (cached) return cached.value;
+  const res = await fetch(
+    "https://site.api.espn.com/apis/common/v3/sports/basketball/nba/statistics/byathlete?limit=600&isqualified=false&sort=general.avgRebounds:desc",
+    { credentials: "omit", signal: AbortSignal.timeout(12_000) },
+  );
+  if (!res.ok) return {};
+  const payload = (await res.json()) as EspnByAthletePayload;
+  const indexOf = (cat: string, stat: string) =>
+    (payload.categories ?? []).find((c) => c.name === cat)?.names?.indexOf(stat) ?? -1;
+  const iReb = indexOf("general", "avgRebounds");
+  const iMin = indexOf("general", "avgMinutes");
+  const iGp = indexOf("general", "gamesPlayed");
+  const iPts = indexOf("offensive", "avgPoints");
+  const out: Record<string, PlayerSeasonStats> = {};
+  for (const a of payload.athletes ?? []) {
+    const name = a.athlete?.displayName;
+    if (!name) continue;
+    const vals = (cat: string) => a.categories?.find((c) => c.name === cat)?.values ?? [];
+    const g = vals("general");
+    const o = vals("offensive");
+    out[normalizePlayerName(name)] = {
+      avgRebounds: Number(g[iReb] ?? 0) || 0,
+      avgMinutes: Number(g[iMin] ?? 0) || 0,
+      gamesPlayed: Number(g[iGp] ?? 0) || 0,
+      avgPoints: Number(o[iPts] ?? 0) || 0,
+    };
+  }
+  await setCached(cacheKey, out);
+  return out;
 }

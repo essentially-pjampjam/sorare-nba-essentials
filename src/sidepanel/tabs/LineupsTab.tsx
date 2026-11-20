@@ -18,7 +18,6 @@ import {
   SlidersHorizontal,
   Snowflake,
   Sparkles,
-  Target,
   Timer,
   TrendingUp,
   Trophy,
@@ -27,10 +26,11 @@ import {
   Zap,
 } from "lucide-react";
 import { CountdownTimers } from "../components/CountdownTimers";
+import { DailyPlayHub } from "../components/DailyPlayHub";
+import { GoButton } from "../components/GoButton";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   buildSetTeams,
-  rankDailyPickerCandidates,
   type SetBuildMode,
 } from "../../calculators/commonSetMath";
 import {
@@ -171,20 +171,6 @@ function primaryPosKey(positions: readonly string[]): "G" | "F" | "C" {
   if (first === "basketball_center") return "C";
   if (first === "basketball_forward") return "F";
   return "G";
-}
-
-/** Small "Go" jump: opens the matching Sorare page in the active tab (next to Apply / Pin). */
-function GoButton({ url, title }: { url: string; title: string }) {
-  return (
-    <button
-      type="button"
-      title={title}
-      onClick={() => void openInActiveTab(url)}
-      className="inline-flex shrink-0 items-center rounded-lg border border-sky-400/50 bg-gradient-to-r from-emerald-500/20 to-sky-500/20 px-2 py-0.5 text-[10px] font-bold text-sky-100 hover:border-sky-300"
-    >
-      Go
-    </button>
-  );
 }
 
 export function LineupsTab({
@@ -359,7 +345,7 @@ export function LineupsTab({
   // Live Daily Picker slate (today's games before the next 07:00 UTC reset + their rosters).
   const [dailyPool, setDailyPool] = useState<DailyPickerPool | null>(null);
   useEffect(() => {
-    if (arenaMode !== "set_common" || !gallery) return;
+    if (!gallery) return;
     let cancelled = false;
     getDailyPickerPool()
       .then((pool) => {
@@ -369,27 +355,8 @@ export function LineupsTab({
     return () => {
       cancelled = true;
     };
-  }, [arenaMode, gallery]);
+  }, [gallery]);
 
-  const dailyPickerPicks = useMemo(() => {
-    if (!gallery) return [];
-    const live = dailyPool && dailyPool.window.teamSlugs.length > 0 ? dailyPool : null;
-    if (!live && commonPool.length === 0) return [];
-    const ranked = rankDailyPickerCandidates(
-      commonPool,
-      gallery.injuriesByName,
-      gallery.gamesPerTeam,
-      40,
-      live
-        ? { allowedTeamSlugs: live.window.teamSlugs, extraPlayers: live.rosterCards }
-        : {},
-    );
-    // Your own cards first; up to 3 better-odds players you don't own, shown grayed.
-    const owned = ranked.filter((p) => p.owned).slice(0, 5);
-    const worstOwned = owned.length ? owned[owned.length - 1].hitChancePct : 0;
-    const notOwned = ranked.filter((p) => !p.owned && p.hitChancePct > worstOwned).slice(0, 3);
-    return [...owned, ...notOwned];
-  }, [commonPool, dailyPool, gallery]);
 
   const setAutoBuilt = useMemo(() => {
     if (!gallery || commonPool.length === 0) return null;
@@ -448,7 +415,8 @@ export function LineupsTab({
       ageFilter,
       excludeSubmittedCards,
       excludedCardSlugs: effectiveExcludedCardSlugs,
-      maxLineups: entryLimit,
+      // Extra candidates so the Safe floor / High ceiling strategies have real choices.
+      maxLineups: Math.min(10, entryLimit * 2),
       captainBonusPct: 0,
       benchmarks: gallery.leaderboardBenchmarks,
       benchmarkSeasonScope,
@@ -471,6 +439,21 @@ export function LineupsTab({
     rarityScope,
     strictInSeasonOnly,
   ]);
+
+  // Lineup strategy: max projection, safe floor (p10) or high ceiling (p90), up to the entry limit.
+  const [lineupStrategy, setLineupStrategy] = useState<"proj" | "floor" | "ceiling">("proj");
+  const shownLineups = useMemo(() => {
+    const list = built?.lineups ?? [];
+    const score = (l: (typeof list)[number]) => {
+      const sd = l.stdDev ?? 0;
+      return lineupStrategy === "floor"
+        ? l.totalScore - 1.2816 * sd
+        : lineupStrategy === "ceiling"
+          ? l.totalScore + 1.2816 * sd
+          : l.totalScore;
+    };
+    return [...list].sort((a, b) => score(b) - score(a)).slice(0, entryLimit);
+  }, [built, entryLimit, lineupStrategy]);
 
   const effectiveMarketListings = useMemo(
     () =>
@@ -780,6 +763,10 @@ export function LineupsTab({
           Set / Common ({commonPool.length})
         </button>
       </div>
+
+      {arenaMode === "pro" && (
+        <DailyPlayHub gallery={gallery} pool={dailyPool} missions={["pro_daily", "rebounds"]} />
+      )}
 
       {/* Optimal Entry Disclosure + Recommended Competition Priority */}
       {arenaMode === "pro" && formatRec && (
@@ -1267,120 +1254,8 @@ export function LineupsTab({
             </div>
           </details>
 
-          {/* Daily Picker Finder */}
-          <div className="rounded-2xl border border-emerald-400/25 bg-[#111726] p-3">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5">
-                <Target className="h-3.5 w-3.5 text-emerald-400" />
-                <span className="text-xs font-semibold text-slate-100">
-                  Daily Picker Best Odds (L10 + 7 &amp; ≥ 20)
-                </span>
-              </div>
-              <span className="flex items-center gap-1">
-              <span className="inline-flex items-center gap-1 rounded border border-sky-400/35 bg-sky-500/15 px-1.5 py-0.5 text-[9px] font-bold text-sky-200">
-                <SlidersHorizontal className="h-2.5 w-2.5" />
-                Odds
-              </span>
-                <GoButton url={`${buildSetPlayUrl("arcade")}?missions=play`} title="Open Sorare Daily Picker" />
-              </span>
-            </div>
-            {dailyPool && (
-              <div className="mb-2 text-[10px] text-slate-400">
-                {dailyPool.window.games.length > 0 ? (
-                  <>
-                    Daily slate until {new Date(dailyPool.window.endIso).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}:{" "}
-                    {dailyPool.window.games
-                      .map(
-                        (g) =>
-                          `${g.awayAbbr}@${g.homeAbbr} ${new Date(g.tipOffIso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
-                      )
-                      .join(" • ")}
-                    {dailyPool.rosterCards.length === 0 && " (owned cards only: add an API key for full rosters)"}
-                  </>
-                ) : (
-                  "No NBA games before the next daily reset."
-                )}
-              </div>
-            )}
-
-            {dailyPickerPicks.length === 0 ? (
-              <div className="text-xs text-slate-400">
-                Click Refresh above to load your Common / Set cards for Daily
-                Picker odds.
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                {dailyPickerPicks.map((pick) => (
-                  <div
-                    key={pick.card.slug}
-                    className={pick.owned ? "" : "opacity-50 grayscale"}
-                    title={pick.owned ? undefined : "You don't own a Common card of this player"}
-                  >
-                  <PlayerCardRow
-                    playerName={pick.card.playerName}
-                    teamSlug={pick.card.teamSlug}
-                    teamName={pick.card.teamName}
-                    rarity={pick.card.rarity}
-                    pictureUrl={pick.card.pictureUrl}
-                    subline={
-                      <>
-                        {!pick.owned && (
-                          <span className="rounded bg-slate-600/40 px-1 text-[9px] font-semibold text-slate-200">
-                            Not owned
-                          </span>
-                        )}
-                        <span>{pick.card.teamName ?? "NBA"}</span>
-                        <span>• L10 {pick.l10}</span>
-                        <span>• Proj {pick.projectedScore}</span>
-                      </>
-                    }
-                    heroRight={
-                      <span className="text-emerald-300">
-                        {pick.hitChancePct}%
-                      </span>
-                    }
-                    subRight={
-                      <span>
-                        Need ≥{" "}
-                        <strong className="text-amber-300">
-                          {pick.targetScore}
-                        </strong>
-                      </span>
-                    }
-                    actionRight={
-<span className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void applyLineupHighlight(
-                            [pick.card.playerName],
-                            "Daily Picker",
-                            pick.projectedScore,
-                            [
-                              {
-                                slotLabel: "PICK",
-                                cardSlug: pick.card.slug,
-                                playerName: pick.card.playerName,
-                                rarity: pick.card.rarity,
-                                seasonYear: pick.card.seasonYear,
-                                isCaptain: false,
-                              },
-                            ],
-                          )
-                        }
-                        className="shrink-0 rounded-lg bg-emerald-500/20 px-2 py-1 text-[10px] font-semibold text-emerald-200 hover:bg-emerald-500/30"
-                      >
-                        Pin
-                      </button>
-<GoButton url={`${buildSetPlayUrl("arcade")}?missions=play`} title="Open Sorare Daily Picker" />
-</span>
-                    }
-                  />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          {/* Daily Play: Set Daily Picker (best / safe / risk picks, owned vs not owned) */}
+          <DailyPlayHub gallery={gallery} pool={dailyPool} missions={["set_daily"]} />
 
           {/* Configurable N Teams Auto-Builder for Solo / Squad */}
           <div className="space-y-2.5 rounded-2xl border border-white/8 bg-[#111726] p-3">
@@ -1846,8 +1721,33 @@ export function LineupsTab({
       <div ref={lineupsResultRef} className="space-y-3">
       {built && built.lineups.length > 0 && (
         <div className="px-1 text-[10px] text-slate-400">
-          Showing {built.lineups.length} / {entryLimit} lineups (up to {entryLimit} entries for this
-          competition).
+          <div className="flex flex-wrap items-center gap-1">
+            <span>
+              Showing {shownLineups.length} / {entryLimit} lineups (up to {entryLimit} entries for this
+              competition) •
+            </span>
+            {(
+              [
+                { id: "proj", label: "Max projection", hint: "Highest projected total" },
+                { id: "floor", label: "Safe floor", hint: "Best 10th-percentile score: least likely to bust" },
+                { id: "ceiling", label: "High ceiling", hint: "Best 90th-percentile score: for podium chasing" },
+              ] as const
+            ).map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                title={o.hint}
+                onClick={() => setLineupStrategy(o.id)}
+                className={`rounded-lg border px-1.5 py-0.5 text-[10px] font-semibold ${
+                  lineupStrategy === o.id
+                    ? "border-sky-300/60 bg-sky-500/20 text-sky-100"
+                    : "border-white/10 text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
         </div>
       )}
       {arenaMode === "pro" && gallery && (
@@ -1900,7 +1800,7 @@ export function LineupsTab({
           <strong>All Rarities</strong> or <strong>Uncapped</strong>.
         </div>
       ) : (
-        built?.lineups.map((lineup) => {
+        shownLineups.map((lineup, shownIdx) => {
           const fmtLabel =
             FORMAT_OPTIONS.find((f) => f.id === lineup.format)?.label ??
             lineup.format;
@@ -1915,12 +1815,15 @@ export function LineupsTab({
                 <div>
                   <div className="flex items-center gap-1.5">
                     <span className="rounded-md bg-amber-400/20 px-1.5 py-0.5 text-[10px] font-bold text-amber-300">
-                      #{lineup.rank}
+                      #{shownIdx + 1}
                     </span>
                     <span className="text-sm font-bold text-slate-100">
                       {lineup.totalScore.toFixed(1)}{" "}
                       <span className="text-[11px] font-normal text-slate-400">
                         proj pts
+                        {lineup.stdDev
+                          ? ` • ${(lineup.totalScore - 1.2816 * lineup.stdDev).toFixed(0)}-${(lineup.totalScore + 1.2816 * lineup.stdDev).toFixed(0)}`
+                          : ""}
                       </span>
                     </span>
                   </div>

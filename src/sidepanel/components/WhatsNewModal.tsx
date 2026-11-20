@@ -21,8 +21,11 @@ const RELEASE_HIGHLIGHTS: Array<{
 }> = [
   {
     version: "2.7.0",
-    title: "v2.7.0 (testing build M6): Real Rewards, Live Daily Picker, Full Set Teams",
+    title: "v2.7.0 (testing build M7): Daily Play Guide, Pick Strategies, Real Rewards",
     items: [
+      "New Daily Play guide: Pro Daily Picker (3 picks), Rebounds Picker (1.5 stars or less, 5+ rebounds) and the Set Daily Picker, each with Best odds, Safe and Risk / upside picks.",
+      "Filter picks by Mine, Not owned or All. Not-owned players are grayed (Sorare only lets you pick your own cards). Risk picks flag hot form, a star teammate OUT and big minutes.",
+      "Pro lineups: switch between Max projection, Safe floor and High ceiling; each lineup shows its likely score range.",
       "Fixed: game schedules (Game Week game counts, Vegas lines, the daily slate) were empty because ESPN stopped answering multi-day requests; the extension now asks day by day.",
       "Daily Picker shows your own cards first; up to 3 better picks you don't own appear grayed as Not owned.",
       "Works without an API key again: the gallery loads in smaller pages that fit Sorare's no-key limit.",

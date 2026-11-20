@@ -391,10 +391,20 @@ export interface DailyPickerWindow {
   teamSlugs: string[];
 }
 
+/** ESPN season averages (statistics/byathlete). */
+export interface PlayerSeasonStats {
+  avgRebounds: number;
+  avgMinutes: number;
+  avgPoints: number;
+  gamesPlayed: number;
+}
+
 export interface DailyPickerPool {
   window: DailyPickerWindow;
   /** Active players of the teams in the window (Common stand-ins). */
   rosterCards: GalleryCard[];
+  /** ESPN season averages keyed by normalized player name. */
+  statsByName?: Record<string, PlayerSeasonStats>;
   fetchedAt: number;
 }
 

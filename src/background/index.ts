@@ -52,7 +52,7 @@ import type {
   WatchlistEntry,
 } from "../shared/types";
 import { clearAllCache, getCached, setCached } from "./cache";
-import { fetchDailySlateGames, fetchExternalNbaContext } from "./externalDataClient";
+import { fetchDailySlateGames, fetchExternalNbaContext, fetchPlayerSeasonStats } from "./externalDataClient";
 import {
   RateLimitedError,
   RateLimitQueue,
@@ -1704,7 +1704,8 @@ async function handleMessage(
         } catch {
           // No API key (complexity) or network error: the picker falls back to owned Common cards.
         }
-        const pool: DailyPickerPool = { window, rosterCards, fetchedAt: now };
+        const statsByName = await fetchPlayerSeasonStats().catch(() => ({}));
+        const pool: DailyPickerPool = { window, rosterCards, statsByName, fetchedAt: now };
         return { ok: true, data: pool };
       }
       case "CLEAR_WATCHLIST_ALERTS": {

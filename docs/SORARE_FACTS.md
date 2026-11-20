@@ -173,3 +173,10 @@ can sit in two lineups in the same GW (editor's "Used in another lineup" filter 
 - `site.api.espn.com/.../scoreboard?dates=YYYYMMDD-YYYYMMDD` now returns 0 events; single `dates=YYYYMMDD` still works (US calendar day). The extension fetches each day and merges.
 - Live Daily Picker at 00:14 UTC Nov 20 offered GS@MEM, POR@MIL, NY@MIN, LAC@SA (01:00 UTC), matching ESPN's Nov 19 US-date games before the 07:00 UTC reset.
 - No-key gallery query: 10 cards/page = complexity 720, 8 = 586, 6 fits under 500.
+
+## Pro daily missions (live, 2026-11-20, /nba/play/missions/play/limited)
+- **Daily Picker** (`DecisivePlayerPickerTask`, mode SCORE, rarity limited, 3 picks): beat L10 by 7+ and score 20+, 100 XP per hit.
+- **Rebounds Picker** (mode DECISIVE, `decisiveActions: ["rebounds"]`, target 5, 3 picks): player rated 1.5★ or less with 5+ rebounds today; 1 Division Clue per hit, 10 if all 3 hit.
+- Both offer only the manager's own Limited cards of today's slate games (`pickableCards`, e.g. 4 owned Bucks cards).
+- Streaks shown on the same page: Limited Contender 190 (150 reward), Limited Champion 240 ($5).
+- Rebound averages come from ESPN `site.api.espn.com/apis/common/v3/sports/basketball/nba/statistics/byathlete` (472 players with `isqualified=false`).
