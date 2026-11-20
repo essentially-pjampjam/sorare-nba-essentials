@@ -418,6 +418,12 @@ export interface PlayerSeasonStats {
   avgMinutes: number;
   avgPoints: number;
   gamesPlayed: number;
+  avgAssists?: number;
+  avgSteals?: number;
+  avgBlocks?: number;
+  /** Season double-doubles / triple-doubles (ESPN `general.doubleDouble` / `tripleDouble`). */
+  doubleDoubles?: number;
+  tripleDoubles?: number;
 }
 
 export interface DailyPickerPool {
@@ -470,6 +476,24 @@ export interface TeamSlateSchedule {
   upcomingGames?: number;
   liveClockLabel?: string | null;
 }
+
+/** A live daily picker task read from Sorare's missions page. */
+export interface RawPickerTaskSnapshot {
+  title: string;
+  description: string;
+  mode: string;
+  slug: string;
+  picks: number;
+  state: string;
+}
+
+export interface PickerMissionsSnapshot {
+  mode: "pro" | "set";
+  tasks: RawPickerTaskSnapshot[];
+  scannedAt: number;
+}
+
+export type PickerMissionsByMode = Partial<Record<"pro" | "set", PickerMissionsSnapshot>>;
 
 /** Odds of one gameplay tier in one pack slot (`slotGameplayTierOdds`). */
 export interface PackTierOdds {
@@ -549,7 +573,8 @@ export interface GalleryResult {
   fromCache: boolean;
 }
 
-export type BargainMode = "instant_value" | "primary_instant" | "ending_auctions";
+/** seal_value = cheapest Instant Buy per player with live Sealing Points, for Vault sealing. */
+export type BargainMode = "instant_value" | "primary_instant" | "ending_auctions" | "seal_value";
 
 export type BargainSortBy =
   | "value_score"
@@ -588,6 +613,8 @@ export interface BargainListing {
   centsPerL10: number | null;
   valueScore: number;
   marketUrl: string;
+  /** Live Sealing Points Sorare gives for sealing this card (`Card.sealableFor`, public). */
+  sealingPoints?: number | null;
 }
 
 export interface BargainsResult {
@@ -790,6 +817,9 @@ export type BackgroundRequest =
   | { type: "GET_ALERT_FEED" }
   | { type: "GET_DAILY_PICKER_POOL"; refresh?: boolean }
   | { type: "SCAN_SQUAD_ACTIVITY" }
+  | { type: "GET_PICKER_MISSIONS" }
+  | { type: "GET_SEAL_DEALS"; rarity: Rarity }
+  | { type: "SCAN_PICKER_MISSIONS" }
   | { type: "GET_PRO_PROGRESS_HISTORY" }
   | { type: "GET_SET_PACK_ADVISOR"; refresh?: boolean }
   | { type: "SCAN_SET_SHOP_STATUS" }

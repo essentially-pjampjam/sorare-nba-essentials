@@ -143,6 +143,9 @@ can sit in two lineups in the same GW (editor's "Used in another lineup" filter 
 | Set Solo finish | A Solo stage completes as soon as the lineup's scores reach the target; players who play later don't matter (user saw a stage finish after 4 of 5 players) | USER 2026-11-20 |
 | Set card editions | `cardEditionName` `divination_standard_base` / `divination_shiny_base` (Holo similar) | LIVE-VERIFIED 2026-11-20 |
 | Lineup rank | `So5Lineup.so5Rankings { ranking score }` (public field; `so5Ranking` singular does not exist) | LIVE-VERIFIED 2026-11-20 |
+| Daily pickers rotate | Pro missions page (`/nba/play/missions/play/limited`) Apollo cache: `DecisivePlayerPickerTask` {title, description, mode SCORE / DECISIVE, taskConfigSlug, maxAppearancesCount (picks), target, aasmState}. 2026-11-20: "Daily Picker" (SCORE, 3 picks, 100 XP) + "Double Double Picker" (DECISIVE, 3 picks, $2 market credit per hit, $15 if all). Set page: "Daily Picker" (1 pick). Private (logged-in) | LIVE-VERIFIED 2026-11-20 |
+| Sealing Points on the market | `anyCard(slug).sealableFor` is public (no login) for any card; cheapest Limited Instant Buys (€0.49) give 1-5 points | LIVE-VERIFIED 2026-11-20 |
+| ESPN season counts | `statistics/byathlete`: general `doubleDouble`, `tripleDouble`; offensive `avgAssists`; defensive `avgSteals`, `avgBlocks` | LIVE-VERIFIED 2026-11-20 |
 | Root fields | Sorare rejects the same root field twice in one query, even aliased ("Duplicated root field: team"); aliases inside `market { }` are fine | LIVE-VERIFIED 2026-11-20 |
 | `team.activePlayers` | One team with 6 fields is complexity ~505-520 without a key; `activePlayers(first: 18)` fits under 500 | LIVE-VERIFIED 2026-11-20 |
 

@@ -65,6 +65,7 @@ import {
 import { SorareClient } from "./sorareClient";
 import { getSavedSquadSnapshot, scanSquadFromOpenTab } from "./squadScanner";
 import { getSavedShopStatus, scanShopStatusFromOpenTab } from "./shopScanner";
+import { getSavedPickerMissions, scanPickerMissionsFromOpenTabs, watchMissionPages } from "./missionScanner";
 
 const SETTINGS_KEY = "jamassist_settings_v2";
 const LEGACY_SETTINGS_KEY = "jamassist_settings_v1";
@@ -183,6 +184,8 @@ const queue = new RateLimitQueue({
 });
 
 const sorareClient = new SorareClient(queue);
+// Keep the Daily Play pickers in sync with Sorare whenever its missions page is opened.
+watchMissionPages();
 
 function applyNetworkMode(settings: UserSettings): void {
   const key = settings.sorareApiKey?.trim() ?? "";
@@ -1738,6 +1741,17 @@ async function handleMessage(
       }
       case "SCAN_SET_SHOP_STATUS": {
         return { ok: true, data: await scanShopStatusFromOpenTab() };
+      }
+      case "GET_SEAL_DEALS": {
+        const settings = await loadSettings();
+        const listings = await sorareClient.fetchNbaBargains(msg.rarity, "seal_value", settings.currency);
+        return { ok: true, data: listings };
+      }
+      case "GET_PICKER_MISSIONS": {
+        return { ok: true, data: await getSavedPickerMissions() };
+      }
+      case "SCAN_PICKER_MISSIONS": {
+        return { ok: true, data: await scanPickerMissionsFromOpenTabs() };
       }
       case "GET_PRO_PROGRESS_HISTORY": {
         return { ok: true, data: await loadProProgressHistory() };

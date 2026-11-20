@@ -804,7 +804,7 @@ export function LineupsTab({
       {arenaMode === "pro" && (
         <>
           <ProProgressCard gallery={gallery} />
-          <DailyPlayHub gallery={gallery} pool={dailyPool} poolLoading={dailyPoolLoading} onRefreshPool={() => loadDailyPool(true)} missions={["pro_daily", "rebounds"]} />
+          <DailyPlayHub gallery={gallery} pool={dailyPool} poolLoading={dailyPoolLoading} onRefreshPool={() => loadDailyPool(true)} missions={["pro_daily", "double_double", "rebounds"]} />
         </>
       )}
 

@@ -41,6 +41,7 @@ import { HeadToHeadCompareBox } from "../components/HeadToHeadCompareBox";
 import { PlayerCardRow } from "../components/PlayerCardRow";
 import { formatMoney } from "../utils/format";
 import { DuplicateAdvisorSection } from "../components/DuplicateAdvisorSection";
+import { SealDealsSection } from "../components/SealDealsSection";
 
 type GallerySortBy =
   | "stars_desc"
@@ -688,6 +689,8 @@ export function GalleryTab({
           candidates={gallery.cards.filter((c) => !c.sealed && isSealCandidate(c, vaultContext(c)))}
         />
       )}
+
+      {poolMode === "pro" && <SealDealsSection gallery={gallery} rarity={rarity} currency={currency} />}
 
       {/* Vault vs. Sell ROI Summary Banner */}
       {formFilter === "seal" && poolMode === "pro" && (

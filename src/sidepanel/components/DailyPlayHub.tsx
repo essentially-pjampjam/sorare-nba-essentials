@@ -1,15 +1,18 @@
 import { RefreshCw, Target } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   DAILY_MISSIONS,
   buildDailyPickIdeas,
+  parsePickerMission,
   type DailyMission,
   type OwnershipFilter,
+  type PickerMissionSpec,
   type PickStrategy,
 } from "../../calculators/dailyPicksMath";
+import { nextDailyResetMs } from "../../calculators/countdownMath";
 import { buildProPlayUrl, buildSetPlayUrl } from "../../shared/routes";
-import type { DailyPickerPool, GalleryResult } from "../../shared/types";
-import { applyLineupHighlight } from "../api";
+import type { DailyPickerPool, GalleryResult, PickerMissionsByMode } from "../../shared/types";
+import { applyLineupHighlight, getPickerMissions, scanPickerMissions } from "../api";
 import { GoButton } from "./GoButton";
 
 interface DailyPlayHubProps {
@@ -36,8 +39,13 @@ const OWNERSHIP: Array<{ id: OwnershipFilter; label: string }> = [
   { id: "all", label: "All" },
 ];
 
-function missionUrl(mission: DailyMission): string {
-  return mission === "set_daily" ? `${buildSetPlayUrl("arcade")}?missions=play` : `${buildProPlayUrl()}/missions/play/limited`;
+function missionUrl(mission: PickerMissionSpec): string {
+  return mission.rarity === "common" ? `${buildSetPlayUrl("arcade")}?missions=play` : `${buildProPlayUrl()}/missions/play/limited`;
+}
+
+/** Last 07:00 UTC daily reset before now: detected missions older than that are yesterday's. */
+function lastResetMs(nowMs: number): number {
+  return nextDailyResetMs(nowMs) - 24 * 3_600_000;
 }
 
 function Chip({ active, label, title, onClick }: { active: boolean; label: string; title?: string; onClick: () => void }) {
@@ -57,15 +65,53 @@ function Chip({ active, label, title, onClick }: { active: boolean; label: strin
 
 /** Daily missions guide: best, safe and risk picks from your cards (and not-owned for comparison). */
 export function DailyPlayHub({ gallery, pool, poolLoading, onRefreshPool, missions }: DailyPlayHubProps) {
-  const [mission, setMission] = useState<DailyMission>(missions[0]);
+  const mode: "pro" | "set" = missions.includes("set_daily") ? "set" : "pro";
+  const [detected, setDetected] = useState<PickerMissionsByMode>({});
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  useEffect(() => {
+    const load = () =>
+      getPickerMissions()
+        .then(setDetected)
+        .catch(() => {});
+    load();
+    // Opening Sorare's missions page syncs the pickers in the background: pick that up.
+    const timer = setInterval(load, 30_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const snapshot = detected[mode];
+  const fresh = snapshot ? snapshot.scannedAt >= lastResetMs(Date.now()) : false;
+  const specs: PickerMissionSpec[] = useMemo(() => {
+    if (snapshot && fresh && snapshot.tasks.length > 0) {
+      return snapshot.tasks.map((t) => {
+        const spec = parsePickerMission(t, mode === "set" ? "common" : "limited");
+        // Some tasks (Set Daily Picker) have no reward text: borrow the matching preset's.
+        const preset = Object.values(DAILY_MISSIONS).find((p) => p.kind === spec.kind && p.rarity === spec.rarity);
+        return spec.reward === "See Sorare" && preset ? { ...spec, reward: preset.reward } : spec;
+      });
+    }
+    return missions.map((m) => DAILY_MISSIONS[m]);
+  }, [fresh, missions, mode, snapshot]);
+
+  const [missionId, setMissionId] = useState<string>("");
+  const info = specs.find((s) => s.id === missionId) ?? specs[0];
   const [strategy, setStrategy] = useState<PickStrategy>("best");
   const [ownership, setOwnership] = useState<OwnershipFilter>("owned");
-  const info = DAILY_MISSIONS[mission];
+
+  const scan = () => {
+    setScanBusy(true);
+    setScanError(null);
+    scanPickerMissions()
+      .then(setDetected)
+      .catch((e: unknown) => setScanError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setScanBusy(false));
+  };
 
   const ideas = useMemo(() => {
     if (!gallery) return [];
     return buildDailyPickIdeas({
-      mission,
+      mission: info,
       strategy,
       ownership,
       ownedCards: [...gallery.cards, ...gallery.commonCards],
@@ -75,7 +121,7 @@ export function DailyPlayHub({ gallery, pool, poolLoading, onRefreshPool, missio
       statsByName: pool?.statsByName ?? {},
       limit: 8,
     });
-  }, [gallery, mission, ownership, pool, strategy]);
+  }, [gallery, info, ownership, pool, strategy]);
 
   return (
     <div className="rounded-2xl border border-emerald-400/25 bg-[#111726] p-3">
@@ -84,10 +130,32 @@ export function DailyPlayHub({ gallery, pool, poolLoading, onRefreshPool, missio
           <Target className="h-3.5 w-3.5 text-emerald-400" />
           <span className="text-xs font-semibold text-slate-100">Daily Play: {info.title}</span>
         </div>
-        <GoButton url={missionUrl(mission)} title={`Open ${info.title} on Sorare`} />
+        <GoButton url={missionUrl(info)} title={`Open ${info.title} on Sorare`} />
       </div>
       <div className="mb-1 text-[10px] text-slate-400">
         {info.rule} • {info.reward} • {info.picks} pick{info.picks > 1 ? "s" : ""} • only your own {info.rarity} cards can be picked
+      </div>
+      <div className="mb-1 flex flex-wrap items-center gap-2 text-[10px]">
+        {snapshot && fresh ? (
+          <span className="text-emerald-300">
+            ✓ Today's pickers synced from Sorare ({new Date(snapshot.scannedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})
+          </span>
+        ) : (
+          <span className="text-amber-300">
+            {snapshot ? "Pickers are from yesterday" : "Using default pickers"}: open Sorare's missions (Go) to sync today's, it updates on its own.
+          </span>
+        )}
+        <button
+          type="button"
+          disabled={scanBusy}
+          onClick={scan}
+          title="Read today's daily pickers from your open Sorare missions tab"
+          className="inline-flex items-center gap-1 rounded-lg border border-emerald-300/40 px-2 py-0.5 font-semibold text-emerald-200 hover:bg-emerald-500/15 disabled:opacity-50"
+        >
+          <RefreshCw className={`h-3 w-3 ${scanBusy ? "animate-spin" : ""}`} />
+          Scan missions
+        </button>
+        {scanError && <span className="text-rose-300">{scanError}</span>}
       </div>
       {pool && pool.window.rolledToNext && (
         <div className="mb-1 rounded-lg border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-[10px] text-amber-100">
@@ -127,9 +195,9 @@ export function DailyPlayHub({ gallery, pool, poolLoading, onRefreshPool, missio
       )}
 
       <div className="mb-2 flex flex-wrap items-center gap-1">
-        {missions.length > 1 &&
-          missions.map((m) => (
-            <Chip key={m} active={mission === m} label={DAILY_MISSIONS[m].title} onClick={() => setMission(m)} />
+        {specs.length > 1 &&
+          specs.map((m) => (
+            <Chip key={m.id} active={info.id === m.id} label={m.title} onClick={() => setMissionId(m.id)} />
           ))}
         <span className="mx-1 h-3 w-px bg-white/10" />
         {STRATEGIES.map((s) => (
@@ -146,7 +214,7 @@ export function DailyPlayHub({ gallery, pool, poolLoading, onRefreshPool, missio
       ) : ideas.length === 0 ? (
         <div className="text-xs text-slate-400">
           No {strategy === "risk" ? "upside " : ""}picks for this filter
-          {mission === "rebounds" && !pool?.statsByName ? " (rebound stats load with the daily slate)" : ""}
+          {info.kind !== "score" && !pool?.statsByName ? " (player stats load with the daily slate)" : ""}
           {ownership !== "owned" && (pool?.rosterCards.length ?? 0) === 0 ? ": no not-owned players loaded yet, use Scan not-owned above" : ""}.
         </div>
       ) : (
@@ -206,7 +274,7 @@ export function DailyPlayHub({ gallery, pool, poolLoading, onRefreshPool, missio
                 >
                   Pin
                 </button>
-                <GoButton url={missionUrl(mission)} title={`Open ${info.title} on Sorare`} />
+                <GoButton url={missionUrl(info)} title={`Open ${info.title} on Sorare`} />
               </div>
             </li>
           ))}

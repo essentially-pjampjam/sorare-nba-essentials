@@ -97,3 +97,47 @@ describe("League Collect ladders (live 2026-11-20)", () => {
     expect(resolveNextQuestStep("full-collection", 0)).toEqual({ target: 1, reward: 2000 });
   });
 });
+
+describe("live picker missions (2026-11-20)", () => {
+  it("parses Sorare's Double Double Picker task", async () => {
+    const { parsePickerMission } = await import("./dailyPicksMath");
+    const spec = parsePickerMission(
+      {
+        title: "Double Double Picker",
+        description:
+          "Classic: Pick a player who records a double-double in today’s games and win $2 in market credit per successful choice. Win a total of $15 in market credit if all your picks are successful.",
+        mode: "DECISIVE",
+        slug: "nba-daily-fantasy-double-double-picker-97b44146",
+        picks: 3,
+      },
+      "limited",
+    );
+    expect(spec.kind).toBe("double_double");
+    expect(spec.picks).toBe(3);
+    expect(spec.reward).toContain("$2 in market credit");
+    expect(spec.reward).toContain("$15");
+    expect(spec.rule).toBe("Pick a player who records a double-double in today’s games");
+  });
+
+  it("parses score and stat pickers", async () => {
+    const { parsePickerMission } = await import("./dailyPicksMath");
+    const score = parsePickerMission(
+      { title: "Daily Picker", description: "Classic: Pick a player who outperforms his L10 by 7 points and win 100 XP per successful choice.", mode: "SCORE", slug: "nba-daily-fantasy-overperformance-picker", picks: 3 },
+      "limited",
+    );
+    expect(score.kind).toBe("score");
+    const reb = parsePickerMission(
+      { title: "Rebounds Picker", description: "Pick a player rated 1.5 stars or less who grabs 5+ rebounds today.", mode: "DECISIVE", slug: "nba-rebounds-picker", picks: 3 },
+      "limited",
+    );
+    expect(reb).toMatchObject({ kind: "stat", stat: "rebounds", target: 5, maxStars: 1.5 });
+  });
+
+  it("double-double odds follow the season rate", async () => {
+    const { probabilityMultiDouble } = await import("./dailyPicksMath");
+    const big = { avgPoints: 22, avgRebounds: 12, avgAssists: 3, avgMinutes: 33, gamesPlayed: 15, doubleDoubles: 12, tripleDoubles: 0 };
+    const guard = { avgPoints: 14, avgRebounds: 3, avgAssists: 4, avgMinutes: 28, gamesPlayed: 15, doubleDoubles: 0, tripleDoubles: 0 };
+    expect(probabilityMultiDouble(big, "double_double")).toBeGreaterThan(60);
+    expect(probabilityMultiDouble(guard, "double_double")).toBeLessThan(10);
+  });
+});

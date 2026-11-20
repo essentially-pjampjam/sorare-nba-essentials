@@ -1945,6 +1945,7 @@ export class SorareClient {
           rarityTyped
           seasonYear
           inSeasonEligible
+          sealableFor
           pictureUrl(derivative: "tinified")
           ... on NBACard { cardEditionName }
           ownershipHistory { transferType }
@@ -2052,6 +2053,7 @@ export class SorareClient {
       liveSingleSaleOffer?: LiveOfferRaw | null;
       livePrimaryOffer?: { price?: MonetaryAmountsRaw | null } | null;
       latestEnglishAuction?: AuctionRaw | null;
+      sealableFor?: number | null;
     }
 
     interface GroupedIdsResp {
@@ -2078,7 +2080,7 @@ export class SorareClient {
     }
 
     const useFast = this.hasApiKey();
-    const hydrateChunkSize = useFast ? 35 : 12;
+    const hydrateChunkSize = useFast ? 35 : 10; // 10 cards ~ complexity 470 without a key (12 = 517)
     const auctionChunkSize = useFast ? 35 : 10;
     const activeSeasonStr = String(getActiveNbaSeasonYear());
     const activeSeasonNum = Number(activeSeasonStr);
@@ -2201,6 +2203,7 @@ export class SorareClient {
         centsPerL10,
         valueScore,
         marketUrl: `${SORARE_NBA_CARD_URL}/${c.slug}`,
+        sealingPoints: typeof c.sealableFor === "number" ? c.sealableFor : null,
       });
     };
 
@@ -2349,6 +2352,19 @@ export class SorareClient {
         30,
         30,
         `prim_draft26_${activeSeasonStr}`,
+      );
+      return Array.from(bySlug.values());
+    }
+
+    if (mode === "seal_value") {
+      // Cheapest Instant Buy per player, any season: the cheapest cards usually give the most
+      // Sealing Points per euro. Sealing Points come live from each card (`sealableFor`).
+      await runGroupedBuys(
+        "secondary_instant",
+        [{ field: "sale.type", operator: "EQUAL", values: [{ stringValue: "SingleSaleOffer" }] }],
+        useFast ? 100 : 35,
+        useFast ? 100 : 24,
+        "seal_cheapest",
       );
       return Array.from(bySlug.values());
     }

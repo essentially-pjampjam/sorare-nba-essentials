@@ -4,6 +4,7 @@ import type {
   BargainMode,
   DailyPickerPool,
   SquadSnapshot,
+  PickerMissionsByMode,
   ProProgressRecord,
   SetPackAdvisorData,
   SetShopStatus,
@@ -15,6 +16,7 @@ import type {
   EssenceBalances,
   GalleryResult,
   Rarity,
+  BargainListing,
   ScanProgress,
   ScanResult,
   UserSettings,
@@ -363,6 +365,18 @@ export function getSetPackAdvisor(): Promise<SetPackAdvisorData> {
 
 export function scanSetShopStatus(): Promise<SetShopStatus> {
   return sendBackground<SetShopStatus>({ type: "SCAN_SET_SHOP_STATUS" });
+}
+
+export function getSealDeals(rarity: Rarity): Promise<BargainListing[]> {
+  return sendBackground<BargainListing[]>({ type: "GET_SEAL_DEALS", rarity });
+}
+
+export function getPickerMissions(): Promise<PickerMissionsByMode> {
+  return sendBackground<PickerMissionsByMode>({ type: "GET_PICKER_MISSIONS" });
+}
+
+export function scanPickerMissions(): Promise<PickerMissionsByMode> {
+  return sendBackground<PickerMissionsByMode>({ type: "SCAN_PICKER_MISSIONS" });
 }
 
 export function getProProgressHistory(): Promise<ProProgressRecord[]> {

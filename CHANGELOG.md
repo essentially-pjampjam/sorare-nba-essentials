@@ -2,6 +2,17 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
+## 2.7.2 (in testing as 2.7.2-exp.M1, branch v2.7.2-wip)
+
+Added:
+- Daily Play syncs Sorare's live daily pickers (auto when the missions page is opened, or Scan missions); presets until then.
+- Double-double / triple-double picker odds; generic stat pickers (target and star cap parsed from Sorare).
+- Sealing Deal Finder: cheapest Instant Buy cards ranked by live Sealing Points (`sealableFor`) per euro, with a budget planner.
+
+Fixed:
+- Pro Daily Play showed the Rebounds Picker when Sorare's second picker was the Double Double Picker.
+- No-key Deals scan used 12 cards per request (complexity 517 > 500); now 10.
+
 ## 2.7.1 (2026-11-20)
 
 Fixed:

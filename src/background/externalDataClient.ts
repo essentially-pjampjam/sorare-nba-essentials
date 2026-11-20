@@ -388,7 +388,7 @@ interface EspnByAthletePayload {
 
 /** ESPN season averages for every NBA player (one request, cached 10 min). */
 export async function fetchPlayerSeasonStats(): Promise<Record<string, PlayerSeasonStats>> {
-  const cacheKey = "espn_player_season_stats_v1";
+  const cacheKey = "espn_player_season_stats_v2";
   const cached = await getCached<Record<string, PlayerSeasonStats>>(cacheKey);
   if (cached) return cached.value;
   const res = await fetch(
@@ -403,6 +403,11 @@ export async function fetchPlayerSeasonStats(): Promise<Record<string, PlayerSea
   const iMin = indexOf("general", "avgMinutes");
   const iGp = indexOf("general", "gamesPlayed");
   const iPts = indexOf("offensive", "avgPoints");
+  const iAst = indexOf("offensive", "avgAssists");
+  const iDd = indexOf("general", "doubleDouble");
+  const iTd = indexOf("general", "tripleDouble");
+  const iStl = indexOf("defensive", "avgSteals");
+  const iBlk = indexOf("defensive", "avgBlocks");
   const out: Record<string, PlayerSeasonStats> = {};
   for (const a of payload.athletes ?? []) {
     const name = a.athlete?.displayName;
@@ -410,11 +415,17 @@ export async function fetchPlayerSeasonStats(): Promise<Record<string, PlayerSea
     const vals = (cat: string) => a.categories?.find((c) => c.name === cat)?.values ?? [];
     const g = vals("general");
     const o = vals("offensive");
+    const d = vals("defensive");
     out[normalizePlayerName(name)] = {
       avgRebounds: Number(g[iReb] ?? 0) || 0,
       avgMinutes: Number(g[iMin] ?? 0) || 0,
       gamesPlayed: Number(g[iGp] ?? 0) || 0,
       avgPoints: Number(o[iPts] ?? 0) || 0,
+      avgAssists: Number(o[iAst] ?? 0) || 0,
+      avgSteals: Number(d[iStl] ?? 0) || 0,
+      avgBlocks: Number(d[iBlk] ?? 0) || 0,
+      doubleDoubles: Number(g[iDd] ?? 0) || 0,
+      tripleDoubles: Number(g[iTd] ?? 0) || 0,
     };
   }
   await setCached(cacheKey, out);
