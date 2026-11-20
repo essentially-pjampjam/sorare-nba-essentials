@@ -21,8 +21,12 @@ const RELEASE_HIGHLIGHTS: Array<{
 }> = [
   {
     version: "2.7.0",
-    title: "v2.7.0 (testing build M8): Squad Activity, Daily Play Guide, Real Rewards",
+    title: "v2.7.0 (testing build M9): Pack Advisor, Squad Activity, Daily Play Guide",
     items: [
+      "New Pack & Mission Advisor (Set): free Daily Pack reminder, Bronze+ progress, Live Today packs and each pack's chance of a 3★+ / 4★+ card (live slot odds).",
+      "Squad Activity now shows the best 3 teams whose scores add up to the stage total, and how many points they still need.",
+      "Fixed: Set Essence (purple) was saved as Limited Essence when you switched Sorare to Set.",
+      "Fixed: Scan not-owned failed with \"Duplicated root field: team\".",
       "New Squad Activity (Set): press Scan squad with your Sorare Squad page open to see who has a team in the live stage, who still needs one, and how far the squad is from its target.",
       "Daily Play: \"Scan not-owned / refresh slate\" button. It shows how many not-owned players loaded, and why if the scan failed.",
       "Fixed: after today's picker games tip off, the panel clearly says it is showing the NEXT Daily Picker (opens at the 07:00 UTC reset). The slate also refreshes every 10 minutes.",

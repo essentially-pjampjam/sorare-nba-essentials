@@ -175,8 +175,14 @@ import {
     return null;
   }
 
+  /** Set (Common) pages live under /series/; there the sidebar Essence counter is Set Essence. */
+  function isSetModePage(): boolean {
+    return /\/series(\/|$)/i.test(location.pathname);
+  }
+
   function detectEssenceBalances(): Record<string, number> | null {
     const out: Record<string, number> = {};
+    const setMode = isSetModePage();
 
     // 1. Live bottom-left nav collapsed sidebar Essence button (gradient SVG + integer)
     const navButtons = document.querySelectorAll<HTMLElement>(
@@ -188,10 +194,13 @@ import {
       );
       if (!hasEssenceIcon) continue;
       const numMatch = (btn.textContent || "").replace(/,/g, "").trim().match(/^(\d{1,5})$/);
+      // Set Essence uses a purple gradient (`essence-gradient-purple`); Limited Essence is green.
+      const purple = Boolean(btn.querySelector('linearGradient[id*="purple" i]'));
       if (numMatch) {
         const val = Number(numMatch[1]);
         if (Number.isFinite(val) && val >= 0 && val <= 50000) {
-          if (out.limited === undefined) out.limited = val;
+          const key = setMode || purple ? "common" : "limited";
+          if (out[key] === undefined) out[key] = val;
         }
       }
     }
@@ -220,8 +229,12 @@ import {
         out.super_rare = num;
       } else if (label.includes("rare")) {
         out.rare = num;
-      } else if (label.includes("limited") || label.includes("essence") || label.includes("craft")) {
+      } else if (label.includes("limited")) {
         if (out.limited === undefined) out.limited = num;
+      } else if (label.includes("essence") || label.includes("craft")) {
+        // Unlabeled Essence counter: Set Essence on Set pages, Limited Essence on Pro pages.
+        const key = setMode ? "common" : "limited";
+        if (out[key] === undefined) out[key] = num;
       }
     }
     return Object.keys(out).length > 0 ? out : null;

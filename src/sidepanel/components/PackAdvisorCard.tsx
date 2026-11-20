@@ -1,0 +1,126 @@
+import { Package, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { analyzePack, buildPackAdvice } from "../../calculators/packAdvisorMath";
+import type { SetPackAdvisorData } from "../../shared/types";
+import { getSetPackAdvisor, getSettings, scanSetShopStatus } from "../api";
+import { GoButton } from "./GoButton";
+
+const SHOP_URL = "https://sorare.com/nba/series/market";
+
+const currencyLabel = (c: string) => (c === "COMMON_ESSENCE" ? "Essence" : c === "COMMON_GEM" ? "gems" : c.toLowerCase());
+
+/** Set Pack & Mission Advisor: Daily Pack, Bronze+ progress, Live Today packs and per-pack 3★+ odds. */
+export function PackAdvisorCard() {
+  const [data, setData] = useState<SetPackAdvisorData | null>(null);
+  const [commonEssence, setCommonEssence] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setBusy(true);
+    Promise.all([getSetPackAdvisor(), getSettings()])
+      .then(([advisor, settings]) => {
+        setData(advisor);
+        setCommonEssence(typeof settings.commonEssence === "number" ? settings.commonEssence : null);
+      })
+      .catch(() => {})
+      .finally(() => setBusy(false));
+  }, []);
+
+  useEffect(() => load(), [load]);
+
+  const scanShop = () => {
+    setBusy(true);
+    setScanError(null);
+    scanSetShopStatus()
+      .then((shopStatus) => setData((d) => (d ? { ...d, shopStatus } : d)))
+      .catch((e: unknown) => setScanError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setBusy(false));
+  };
+
+  const analyses = useMemo(() => (data?.packs ?? []).map((p) => analyzePack(p, commonEssence)), [commonEssence, data]);
+  const advice = useMemo(
+    () => buildPackAdvice(analyses, data?.shopStatus ?? null, commonEssence, Date.now()),
+    [analyses, commonEssence, data],
+  );
+  const hasOdds = analyses.some((a) => a.pack.slots.length > 0);
+
+  return (
+    <div className="rounded-2xl border border-amber-400/25 bg-[#111726] p-3">
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <Package className="h-3.5 w-3.5 text-amber-300" />
+          <span className="text-xs font-semibold text-slate-100">Pack &amp; Mission Advisor</span>
+          {commonEssence !== null && <span className="text-[10px] text-slate-400">• Set Essence {commonEssence}</span>}
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={scanShop}
+            title="Reads your Daily Pack and Bronze+ progress from your open Sorare Set Shop tab"
+            className="inline-flex items-center gap-1 rounded-lg border border-amber-300/40 px-2 py-0.5 text-[10px] font-semibold text-amber-100 hover:bg-amber-500/15 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3 w-3 ${busy ? "animate-spin" : ""}`} />
+            Scan shop
+          </button>
+          <GoButton url={SHOP_URL} title="Open the Set Shop on Sorare" />
+        </div>
+      </div>
+      {scanError && <div className="mb-1 text-[10px] text-rose-300">{scanError}</div>}
+      {data?.error && <div className="mb-1 text-[10px] text-rose-300">Packs failed to load: {data.error.slice(0, 120)}</div>}
+
+      {advice.length > 0 && (
+        <ul className="mb-2 space-y-0.5 text-[10.5px] text-slate-200">
+          {advice.map((a) => (
+            <li key={a.text}>• {a.text}</li>
+          ))}
+        </ul>
+      )}
+      {!data?.shopStatus && (
+        <div className="mb-1.5 text-[10px] text-slate-400">
+          Open the Set Shop on Sorare (Go) and press Scan shop to add your Daily Pack and Bronze+ progress.
+        </div>
+      )}
+
+      {analyses.length > 0 && (
+        <table className="w-full text-[10px]">
+          <thead>
+            <tr className="text-left text-slate-500">
+              <th className="font-medium">Pack</th>
+              <th className="font-medium">Price</th>
+              <th className="font-medium" title="Chance of at least one 3★+ card (Daily Boost: collect a 3-stars player)">
+                3★+
+              </th>
+              <th className="font-medium">4★+</th>
+              <th className="font-medium" title="Best tiers in the last card slot (#4 carries the best tier)">
+                Slot #{analyses[0]?.pack.slots.length || 4} top
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {analyses.map((a) => (
+              <tr key={a.pack.slug} className={`border-t border-white/5 ${a.affordable === false ? "text-slate-500" : "text-slate-200"}`}>
+                <td className="py-0.5">{a.pack.title}</td>
+                <td>
+                  {a.pack.price} {currencyLabel(a.pack.currency)}
+                </td>
+                <td className="font-semibold text-emerald-300">{hasOdds ? `${a.chance3StarPct}%` : "--"}</td>
+                <td>{hasOdds ? `${a.chance4StarPct}%` : "--"}</td>
+                <td className="truncate text-slate-400">
+                  {a.lastSlotTop
+                    .slice(0, 3)
+                    .map((t) => `${t.label} ${t.pct}%`)
+                    .join(", ") || "--"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {analyses.length > 0 && !hasOdds && (
+        <div className="mt-1 text-[10px] text-slate-400">Pack odds need an API key (Sorare's limit without one is too low).</div>
+      )}
+    </div>
+  );
+}

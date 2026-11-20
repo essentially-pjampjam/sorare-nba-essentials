@@ -452,6 +452,46 @@ export interface TeamSlateSchedule {
   liveClockLabel?: string | null;
 }
 
+/** Odds of one gameplay tier in one pack slot (`slotGameplayTierOdds`). */
+export interface PackTierOdds {
+  /** Sorare tier enum, e.g. ROSTER_PLUS. */
+  tier: string;
+  /** Probability in basis points (450 = 4.5%). */
+  basisPoints: number;
+}
+
+/** A Set pack from Sorare's shop (public `market.cardPack`). */
+export interface SetPackInfo {
+  slug: string;
+  title: string;
+  price: number;
+  /** COMMON_GEM or COMMON_ESSENCE. */
+  currency: string;
+  /** LIVE_TODAY for the daily packs of today's teams; null for the standard packs. */
+  category: string | null;
+  endDate: string | null;
+  cardsCount: number;
+  /** Per slot (#1..#4) tier odds. */
+  slots: PackTierOdds[][];
+}
+
+/** Private Set shop status read from the user's open sorare.com Shop tab. */
+export interface SetShopStatus {
+  /** Daily free pack claimed today (`myCommonDailyClaimTask` CLAIMED). */
+  dailyPackClaimed: boolean | null;
+  /** Bronze+ unlock progress (`boughtPacksCountTask`). */
+  bronzePlusProgress: number | null;
+  bronzePlusTarget: number | null;
+  scannedAt: number;
+}
+
+export interface SetPackAdvisorData {
+  packs: SetPackInfo[];
+  fetchedAt: number;
+  error?: string;
+  shopStatus: SetShopStatus | null;
+}
+
 /** One Set Squad stage as Sorare's page loaded it (`SquadStep`). */
 export interface SquadStepSnapshot {
   /** LIVE, CLAIMED, ... */
@@ -599,6 +639,8 @@ export interface UserSettings {
   theme: AppTheme;
   density?: UiDensity;
   essenceByRarity: EssenceBalances;
+  /** Set (Common) Essence read from Sorare's Set pages; kept apart from Limited Essence. */
+  commonEssence?: number;
   walletBalance?: WalletBalanceInfo;
   autoShowInPageWizards?: boolean;
   watchlist?: WatchlistEntry[];
@@ -729,12 +771,15 @@ export type BackgroundRequest =
   | { type: "GET_ALERT_FEED" }
   | { type: "GET_DAILY_PICKER_POOL"; refresh?: boolean }
   | { type: "SCAN_SQUAD_ACTIVITY" }
+  | { type: "GET_SET_PACK_ADVISOR"; refresh?: boolean }
+  | { type: "SCAN_SET_SHOP_STATUS" }
   | { type: "GET_SQUAD_SNAPSHOT" }
   | { type: "CLEAR_WATCHLIST_ALERTS" }
   | { type: "DETECTED_USERNAME_FROM_CONTENT"; username: string; sourceUrl: string }
   | {
       type: "DETECTED_ESSENCE_FROM_CONTENT";
-      balances: Partial<EssenceBalances>;
+      /** `common` = Set Essence (read on /series/ pages), never stored as Limited. */
+      balances: Partial<EssenceBalances> & { common?: number };
     }
   | {
       type: "DETECTED_LINEUPS_FROM_CONTENT";

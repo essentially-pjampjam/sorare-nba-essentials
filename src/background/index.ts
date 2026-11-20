@@ -50,6 +50,7 @@ import type {
   UserSettings,
   WatchlistAlert,
   WatchlistEntry,
+  SetPackAdvisorData,
 } from "../shared/types";
 import { clearAllCache, getCached, setCached } from "./cache";
 import { fetchDailySlateGames, fetchExternalNbaContext, fetchPlayerSeasonStats } from "./externalDataClient";
@@ -60,6 +61,7 @@ import {
 } from "./rateLimitQueue";
 import { SorareClient } from "./sorareClient";
 import { getSavedSquadSnapshot, scanSquadFromOpenTab } from "./squadScanner";
+import { getSavedShopStatus, scanShopStatusFromOpenTab } from "./shopScanner";
 
 const SETTINGS_KEY = "jamassist_settings_v2";
 const LEGACY_SETTINGS_KEY = "jamassist_settings_v1";
@@ -1385,6 +1387,10 @@ async function handleMessage(
             }
           }
         }
+        const common = incoming.common;
+        if (typeof common === "number" && Number.isFinite(common) && common >= 0 && common <= 50000 && common !== current.commonEssence) {
+          await saveSettings({ commonEssence: common });
+        }
         if (changed) {
           await saveSettings({ essenceByRarity: nextBalances });
           broadcastMessage({
@@ -1698,6 +1704,21 @@ async function handleMessage(
       }
       case "SCAN_SQUAD_ACTIVITY": {
         return { ok: true, data: await scanSquadFromOpenTab() };
+      }
+      case "GET_SET_PACK_ADVISOR": {
+        await loadSettings();
+        let packs: SetPackAdvisorData["packs"] = [];
+        let error: string | undefined;
+        try {
+          packs = await sorareClient.fetchSetPacks();
+        } catch (err) {
+          error = err instanceof Error ? err.message : String(err);
+        }
+        const advisor: SetPackAdvisorData = { packs, fetchedAt: Date.now(), error, shopStatus: await getSavedShopStatus() };
+        return { ok: true, data: advisor };
+      }
+      case "SCAN_SET_SHOP_STATUS": {
+        return { ok: true, data: await scanShopStatusFromOpenTab() };
       }
       case "GET_SQUAD_SNAPSHOT": {
         return { ok: true, data: await getSavedSquadSnapshot() };

@@ -28,6 +28,7 @@ import {
 import { CountdownTimers } from "../components/CountdownTimers";
 import { DailyPlayHub } from "../components/DailyPlayHub";
 import { SquadActivityCard } from "../components/SquadActivityCard";
+import { PackAdvisorCard } from "../components/PackAdvisorCard";
 import { GoButton } from "../components/GoButton";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -1265,6 +1266,9 @@ export function LineupsTab({
 
           {/* Set Squad: who has a team in the live stage */}
           <SquadActivityCard mySlug={gallery?.username ?? null} />
+
+          {/* Set packs: Daily Pack, Bronze+, Live Today, 3★+ odds */}
+          <PackAdvisorCard />
 
           {/* Configurable N Teams Auto-Builder for Solo / Squad */}
           <div className="space-y-2.5 rounded-2xl border border-white/8 bg-[#111726] p-3">

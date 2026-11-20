@@ -74,11 +74,30 @@ export function SquadActivityCard({ mySlug }: { mySlug: string | null }) {
               <div className="mt-1 h-1.5 overflow-hidden rounded bg-white/10">
                 <div className="h-full bg-violet-400/70" style={{ width: `${summary.progressPct}%` }} />
               </div>
+              <div className="mt-1 text-[10px] text-slate-300">
+                Only the best {cur.minimumLineups} teams count (their scores are added up).
+                {summary.counting.length > 0 && (
+                  <>
+                    {" "}Counting now:{" "}
+                    <strong className="text-violet-200">
+                      {summary.counting.map((m) => `#${m.liveRank} ${m.nickname}${m.isMe ? " (you)" : ""}`).join(", ")}
+                    </strong>
+                    .
+                  </>
+                )}
+                {summary.pointsToTarget > 0 && summary.counting.length > 0 && (
+                  <span className="text-slate-400">
+                    {" "}They need {summary.pointsToTarget} more together (~{summary.pointsPerCountingTeam} each). A member who sets a team
+                    that beats #{cur.minimumLineups} {summary.counting[summary.counting.length - 1]?.nickname} raises the total.
+                  </span>
+                )}
+              </div>
             </div>
           )}
           {summary.missing.length > 0 ? (
             <div className="mb-1 text-[10px] text-amber-200">
               No team yet ({summary.missing.length}): {summary.missing.map((m) => `${m.nickname}${m.isMe ? " (you)" : ""}`).join(", ")}
+              <span className="text-slate-400"> • a strong team from them could replace a counting one</span>
             </div>
           ) : (
             <div className="mb-1 text-[10px] text-emerald-300">Every member has a team in the live stage.</div>
@@ -86,8 +105,11 @@ export function SquadActivityCard({ mySlug }: { mySlug: string | null }) {
           <ul className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10px]">
             {summary.members.map((m) => (
               <li key={m.slug} className="flex items-center justify-between gap-1 truncate">
-                <span className={`truncate ${m.activeNow ? "text-slate-200" : "text-slate-500"}`}>
-                  {m.activeNow ? "●" : "○"} {m.nickname}
+                <span
+                  className={`truncate ${m.counting ? "font-semibold text-violet-200" : m.activeNow ? "text-slate-200" : "text-slate-500"}`}
+                  title={m.counting ? "Counts toward the stage total" : m.activeNow ? "Has a team (not in the best teams right now)" : "No team in the live stage"}
+                >
+                  {m.liveRank ? `#${m.liveRank}` : "○"} {m.nickname}
                   {m.isCaptain ? " (C)" : ""}
                   {m.isMe ? " (you)" : ""}
                 </span>

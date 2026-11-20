@@ -2,9 +2,11 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
-## 2.7.0 (in testing as 2.7.0-exp.M8, branch v2.7.0-wip)
+## 2.7.0 (in testing as 2.7.0-exp.M9, branch v2.7.0-wip)
 
 Added:
+- Pack & Mission Advisor (Set): Daily Pack, Bronze+ progress, Live Today packs, 3★+ / 4★+ odds per pack.
+- Squad Activity: best-3 counting teams and points they still need.
 - Squad Activity (Set): who has a team in the live Squad stage, who is missing, points to target.
 - Daily Play: Scan not-owned / refresh slate button with a loaded-players count.
 - Daily Play guide: Pro Daily Picker, Rebounds Picker and Set Daily Picker with Best odds, Safe and Risk / upside strategies, and a Mine / Not owned / All filter.
@@ -25,6 +27,7 @@ Changed:
 - Classic Limited entry limit is 3 (live); Arena / In-Season up to 5.
 
 Fixed:
+- Set Essence was stored as Limited Essence on Set pages. Scan not-owned failed (Sorare rejects a duplicated `team` root field).
 - Daily Picker silently showed the next day's slate after today's games tipped off; it now says so. Not-owned players were empty after a background restart (API key not loaded).
 - League Collect quests used one shared milestone ladder (Non Playoffs showed 20 / 25 instead of 20 / 35); each quest now uses Sorare's live ladder and rewards.
 - ESPN schedules were empty: ESPN stopped answering multi-day `dates=A-B` requests, so the extension fetches each day and merges them (Game Week game counts, Vegas lines, daily slate).

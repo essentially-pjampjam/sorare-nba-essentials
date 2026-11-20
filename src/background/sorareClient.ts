@@ -32,6 +32,7 @@ import type {
   QuestCardSummary,
   Rarity,
   So5FixtureSummary,
+  SetPackInfo,
 } from "../shared/types";
 import {
   RateLimitedError,
@@ -1299,13 +1300,104 @@ export class SorareClient {
    * stand-ins for the Daily Picker: any player in today's games can be picked, owned or not.
    * Needs an API key for more than one team (no-key complexity limit 500).
    */
+  /**
+   * Set shop packs (public `market`): today's Live Today packs from `setSections`, plus the set's
+   * standard Gold / Silver / Bronze packs (slug pattern `<set>-nba-<quality>-pack`, set taken from
+   * the Live Today slug). Slot odds (`slotGameplayTierOdds`) need an API key (complexity ~1000 per slot).
+   */
+  async fetchSetPacks(signal?: AbortSignal): Promise<SetPackInfo[]> {
+    interface Sections {
+      market?: { setSections?: Array<{ __typename?: string; cardPacks?: Array<{ slug: string }> | null }> | null } | null;
+    }
+    const sections = await this.postGraphQL<Sections>(
+      `query SetShopSections { market { setSections(sport: NBA) { __typename ... on MarketLiveOps { cardPacks { slug } } } } }`,
+      {},
+      "set_shop_sections_v1",
+      signal,
+    );
+    const liveSlugs = (sections.market?.setSections ?? [])
+      .flatMap((s) => s.cardPacks ?? [])
+      .map((p) => p.slug)
+      .filter((slug) => /^[a-z0-9-]+$/.test(slug));
+    const setPrefix = liveSlugs[0]?.split("-nba-")[0] ?? "";
+    const standard = setPrefix ? ["gold", "silver", "bronze"].map((q) => `${setPrefix}-nba-${q}-pack`) : [];
+    const slugs = Array.from(new Set([...liveSlugs, ...standard])).slice(0, 8);
+    if (slugs.length === 0) return [];
+    const withOdds = this.hasApiKey();
+    type Odds = Array<{ gameplayTier: string; probabilityBasisPoint: number }> | null;
+    interface RawPack {
+      slug: string;
+      title: string | null;
+      price: number | null;
+      currency: string | null;
+      category: string | null;
+      endDate: string | null;
+      cardsCount: number | null;
+      s0?: Odds;
+      s1?: Odds;
+      s2?: Odds;
+      s3?: Odds;
+    }
+    const plain = await this.postGraphQL<{ market?: Record<string, RawPack | null> | null }>(
+      `query SetShopPacks { market { ${slugs
+        .map((slug, i) => `p${i}: cardPack(slug: "${slug}") { slug title price currency category endDate cardsCount }`)
+        .join(" ")} } }`,
+      {},
+      `set_shop_packs_v2:${slugs.join(",")}`,
+      signal,
+    );
+    const rawPacks = Object.values(plain.market ?? {}).filter((p): p is RawPack => p !== null);
+    if (withOdds && rawPacks.length > 0) {
+      // Only ask for slots the pack has (Live Today packs have 3 cards, standard packs 4).
+      const oddsBlocks = rawPacks
+        .map((p, i) => {
+          const n = Math.min(4, Math.max(1, Number(p.cardsCount ?? 4) || 4));
+          const slots = Array.from({ length: n }, (_, s) => `s${s}: slotGameplayTierOdds(slotIndex: ${s}) { gameplayTier probabilityBasisPoint }`);
+          return `p${i}: cardPack(slug: "${p.slug}") { slug ${slots.join(" ")} }`;
+        })
+        .join(" ");
+      try {
+        const odds = await this.postGraphQL<{ market?: Record<string, RawPack | null> | null }>(
+          `query SetShopPackOdds { market { ${oddsBlocks} } }`,
+          {},
+          `set_shop_odds_v1:${rawPacks.map((p) => p.slug).join(",")}`,
+          signal,
+        );
+        for (const o of Object.values(odds.market ?? {})) {
+          const target = o ? rawPacks.find((p) => p.slug === o.slug) : undefined;
+          if (target && o) Object.assign(target, { s0: o.s0, s1: o.s1, s2: o.s2, s3: o.s3 });
+        }
+      } catch {
+        // Odds are optional: prices and Live Today timing still show.
+      }
+    }
+    const packs: SetPackInfo[] = [];
+    for (const raw of rawPacks) {
+      const slots = [raw.s0, raw.s1, raw.s2, raw.s3]
+        .filter((s): s is NonNullable<Odds> => Array.isArray(s) && s.length > 0)
+        .map((s) => s.map((o) => ({ tier: o.gameplayTier, basisPoints: Number(o.probabilityBasisPoint) || 0 })));
+      packs.push({
+        slug: raw.slug,
+        title: raw.title ?? raw.slug,
+        price: Number(raw.price ?? 0) || 0,
+        currency: raw.currency ?? "",
+        category: raw.category ?? null,
+        endDate: raw.endDate ?? null,
+        cardsCount: Number(raw.cardsCount ?? slots.length) || slots.length,
+        slots,
+      });
+    }
+    return packs;
+  }
+
   async fetchTeamRosterCards(
     teamSlugs: string[],
     signal?: AbortSignal,
   ): Promise<{ cards: GalleryCard[]; teamsLoaded: number; teamsRequested: number; error?: string }> {
     const slugs = Array.from(new Set(teamSlugs.filter((t) => /^[a-z0-9-]+$/.test(t)))).slice(0, 30);
-    // One team is ~520 complexity: 1 team per request without a key (limit 500 with first: 18), 6 with one.
-    const perRequest = this.hasApiKey() ? 6 : 1;
+    // Sorare rejects the same root field twice in one query ("Duplicated root field: team"), even
+    // with aliases, so each team is its own request (cached 10 min, paced by the queue).
+    const perRequest = 1;
     const cards: GalleryCard[] = [];
     let teamsLoaded = 0;
     let error: string | undefined;

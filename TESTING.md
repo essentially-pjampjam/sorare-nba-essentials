@@ -2,8 +2,13 @@
 
 Run after reloading the extension in `chrome://extensions` and pressing **Refresh**. Detailed per-build history: `docs/LIVE_TESTS.md`.
 
-## Open (2.7.0-exp.M8)
-- **T1** Header badge shows `v2.7.0·M8` in red; What's New lists 2.7.0.
+## Open (2.7.0-exp.M9)
+- **T1** Header badge shows `v2.7.0·M9` in red; What's New lists 2.7.0.
+- **T21** Daily Play: Scan not-owned / refresh slate -> "Not-owned players: N from X/X teams" with no error; Not owned / All list grayed players.
+- **T22** Switch Sorare from Pro to Set: the panel's Limited Essence stays at your Pro value (Set Essence shows next to Pack & Mission Advisor).
+- **T23** Set: Pack & Mission Advisor lists Gold / Silver / Bronze and today's Live Today packs with 3★+ %, 4★+ % and slot #4 top tiers (Bronze 3★+ about 20%+).
+- **T24** Open the Set Shop, press Scan shop: Daily Pack opened / not opened and Bronze+ x/10 match Sorare.
+- **T25** Squad Activity: "Counting now" names match the 3 avatars on Sorare's squad score card; points still needed = target - score.
 - **T17** Chrome asks nothing new on reload (the new `scripting` permission has no warning); the extension still loads.
 - **T18** Daily Play: "Not-owned players: N from X/Y teams" shows N > 0. Press Scan not-owned / refresh slate; Not owned / All now list grayed players.
 - **T19** After the night's games tip off (before 07:00 UTC), an amber banner says today's picker is locked and the list is the NEXT Daily Picker.
@@ -25,6 +30,7 @@ Run after reloading the extension in `chrome://extensions` and pressing **Refres
 - **T8** `node scripts/verify.mjs` prints all PASS; `node scripts/ship-helper.mjs next` prints a checklist and changes no files.
 
 ## Done
+- **T-M8** 2.7.0-exp.M8 (2026-11-20): all OK except Scan not-owned (failed) and Set Essence saved as Limited (fixed in M9).
 - **T-M7.1** 2.7.0-exp.M7.1 (2026-11-20): Not owned empty and Daily Picker looked outdated (fixed in M8).
 - **T-M6** 2.7.0-exp.M6 live test (2026-11-20): OK; asked for daily play guides, pick strategies and filters (M7).
 - **T-M5** 2.7.0-exp.M5 live test (2026-11-20): all OK except T5 (Daily Picker used a wrong slate: ESPN range bug). Fixed in M6.
