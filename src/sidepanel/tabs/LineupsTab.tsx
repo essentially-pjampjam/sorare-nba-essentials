@@ -27,8 +27,9 @@ import {
 } from "lucide-react";
 import { CountdownTimers } from "../components/CountdownTimers";
 import { DailyPlayHub } from "../components/DailyPlayHub";
+import { SquadActivityCard } from "../components/SquadActivityCard";
 import { GoButton } from "../components/GoButton";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildSetTeams,
   type SetBuildMode,
@@ -344,18 +345,23 @@ export function LineupsTab({
 
   // Live Daily Picker slate (today's games before the next 07:00 UTC reset + their rosters).
   const [dailyPool, setDailyPool] = useState<DailyPickerPool | null>(null);
+  const [dailyPoolLoading, setDailyPoolLoading] = useState(false);
+  const loadDailyPool = useCallback((refresh: boolean) => {
+    setDailyPoolLoading(true);
+    getDailyPickerPool(refresh)
+      .then((pool) => {
+        if (pool?.window) setDailyPool(pool);
+      })
+      .catch(() => {})
+      .finally(() => setDailyPoolLoading(false));
+  }, []);
   useEffect(() => {
     if (!gallery) return;
-    let cancelled = false;
-    getDailyPickerPool()
-      .then((pool) => {
-        if (!cancelled && pool?.window) setDailyPool(pool);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [gallery]);
+    loadDailyPool(false);
+    // Re-check every 10 min so tip-offs and the 07:00 UTC reset move the slate along.
+    const timer = setInterval(() => loadDailyPool(false), 10 * 60_000);
+    return () => clearInterval(timer);
+  }, [gallery, loadDailyPool]);
 
 
   const setAutoBuilt = useMemo(() => {
@@ -765,7 +771,7 @@ export function LineupsTab({
       </div>
 
       {arenaMode === "pro" && (
-        <DailyPlayHub gallery={gallery} pool={dailyPool} missions={["pro_daily", "rebounds"]} />
+        <DailyPlayHub gallery={gallery} pool={dailyPool} poolLoading={dailyPoolLoading} onRefreshPool={() => loadDailyPool(true)} missions={["pro_daily", "rebounds"]} />
       )}
 
       {/* Optimal Entry Disclosure + Recommended Competition Priority */}
@@ -1255,7 +1261,10 @@ export function LineupsTab({
           </details>
 
           {/* Daily Play: Set Daily Picker (best / safe / risk picks, owned vs not owned) */}
-          <DailyPlayHub gallery={gallery} pool={dailyPool} missions={["set_daily"]} />
+          <DailyPlayHub gallery={gallery} pool={dailyPool} poolLoading={dailyPoolLoading} onRefreshPool={() => loadDailyPool(true)} missions={["set_daily"]} />
+
+          {/* Set Squad: who has a team in the live stage */}
+          <SquadActivityCard mySlug={gallery?.username ?? null} />
 
           {/* Configurable N Teams Auto-Builder for Solo / Squad */}
           <div className="space-y-2.5 rounded-2xl border border-white/8 bg-[#111726] p-3">

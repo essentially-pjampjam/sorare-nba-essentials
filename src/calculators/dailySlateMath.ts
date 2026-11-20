@@ -28,6 +28,12 @@ export function selectDailyPickerWindow(games: DailySlateGame[], nowMs: number):
   const today = build(nowMs);
   if (today.games.length > 0) return today;
   const nextStart = nextDailyResetMs(nowMs);
+  const lockedGames = games
+    .filter((g) => {
+      const t = Date.parse(g.tipOffIso);
+      return g.state !== "pre" && Number.isFinite(t) && t >= nextStart - 24 * 3_600_000 && t < nextStart;
+    })
+    .sort((a, b) => Date.parse(a.tipOffIso) - Date.parse(b.tipOffIso));
   const tomorrow = build(nextStart);
-  return tomorrow.games.length > 0 ? tomorrow : today;
+  return tomorrow.games.length > 0 ? { ...tomorrow, rolledToNext: true, lockedGames } : { ...today, lockedGames };
 }

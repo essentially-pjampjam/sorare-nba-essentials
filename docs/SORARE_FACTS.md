@@ -134,6 +134,9 @@ can sit in two lineups in the same GW (editor's "Used in another lineup" filter 
 | Collection Bonus | Up to **+5%** for owning multiple players of the same team | OFFICIAL DOC |
 | Set cards get no XP / In-Season bonus | Only Collection Bonus applies | OFFICIAL DOC (Set launch blog) |
 | Squad board example | "Score more than 450+ PTS", guaranteed Shiny card reward | LIVE-VERIFIED |
+| Squad stages (data) | Page Apollo cache `SquadStep`: `state` (CLAIMED / LIVE / LOCKED), `target` (450, 580, 650, 730, 800), `totalLineups`, `minimumLineupsToStartStep` **3**, `totalScore`, `squadLeaderboardLineups[] -> lineup (TaskLineup) -> user`. `Squad`: `name`, `membersCount`, `maxMembersCount` 10, `private`, `captain`, `members[]` (members load only on `/nba/series/squad/members`). Not in the public API (logged-in only) | LIVE-VERIFIED 2026-11-20 |
+| Daily Picker day | Before the 07:00 UTC reset, Sorare still shows the current day's picker (picks locked once games tip off), not the next day's | LIVE-VERIFIED 2026-11-20 |
+| `team.activePlayers` | One team with 6 fields is complexity ~505-520 without a key; `activePlayers(first: 18)` fits under 500 | LIVE-VERIFIED 2026-11-20 |
 
 ## DOM facts used by the content-script parser
 

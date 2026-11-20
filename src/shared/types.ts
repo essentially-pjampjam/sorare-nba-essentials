@@ -389,6 +389,10 @@ export interface DailyPickerWindow {
   endIso: string;
   games: DailySlateGame[];
   teamSlugs: string[];
+  /** True when every game before the next reset has tipped off and this is the next day's picker. */
+  rolledToNext?: boolean;
+  /** Games of the current picker day that already started (picks for them are locked). */
+  lockedGames?: DailySlateGame[];
 }
 
 /** ESPN season averages (statistics/byathlete). */
@@ -406,6 +410,11 @@ export interface DailyPickerPool {
   /** ESPN season averages keyed by normalized player name. */
   statsByName?: Record<string, PlayerSeasonStats>;
   fetchedAt: number;
+  /** Teams whose roster loaded / were requested (not-owned scan). */
+  rosterTeamsLoaded?: number;
+  rosterTeamsRequested?: number;
+  /** Why the not-owned roster scan failed, if it did. */
+  rosterError?: string;
 }
 
 export interface So5FixtureSummary {
@@ -441,6 +450,30 @@ export interface TeamSlateSchedule {
   blowoutRisk?: boolean;
   upcomingGames?: number;
   liveClockLabel?: string | null;
+}
+
+/** One Set Squad stage as Sorare's page loaded it (`SquadStep`). */
+export interface SquadStepSnapshot {
+  /** LIVE, CLAIMED, ... */
+  state: string;
+  target: number;
+  totalLineups: number;
+  /** `minimumLineupsToStartStep` (the stage counts the squad's best teams, e.g. 3). */
+  minimumLineups: number;
+  totalScore: number;
+  lineupUsers: Array<{ slug: string; nickname: string }>;
+}
+
+/** Set Squad data read from the user's open sorare.com Squad page (logged-in, not in the public API). */
+export interface SquadSnapshot {
+  squadName: string;
+  membersCount: number;
+  maxMembersCount: number;
+  captainSlug: string | null;
+  /** Empty until the Squad Members page was opened in that tab. */
+  members: Array<{ slug: string; nickname: string }>;
+  steps: SquadStepSnapshot[];
+  scannedAt: number;
 }
 
 export interface GalleryResult {
@@ -694,7 +727,9 @@ export type BackgroundRequest =
   | { type: "RUN_ALERT_CHECK" }
   | { type: "SEND_TEST_ALERT_NOTIFICATION" }
   | { type: "GET_ALERT_FEED" }
-  | { type: "GET_DAILY_PICKER_POOL" }
+  | { type: "GET_DAILY_PICKER_POOL"; refresh?: boolean }
+  | { type: "SCAN_SQUAD_ACTIVITY" }
+  | { type: "GET_SQUAD_SNAPSHOT" }
   | { type: "CLEAR_WATCHLIST_ALERTS" }
   | { type: "DETECTED_USERNAME_FROM_CONTENT"; username: string; sourceUrl: string }
   | {

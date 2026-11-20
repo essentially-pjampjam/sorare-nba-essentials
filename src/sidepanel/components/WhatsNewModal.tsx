@@ -21,8 +21,12 @@ const RELEASE_HIGHLIGHTS: Array<{
 }> = [
   {
     version: "2.7.0",
-    title: "v2.7.0 (testing build M7.1): Daily Play Guide, Pick Strategies, Real Rewards",
+    title: "v2.7.0 (testing build M8): Squad Activity, Daily Play Guide, Real Rewards",
     items: [
+      "New Squad Activity (Set): press Scan squad with your Sorare Squad page open to see who has a team in the live stage, who still needs one, and how far the squad is from its target.",
+      "Daily Play: \"Scan not-owned / refresh slate\" button. It shows how many not-owned players loaded, and why if the scan failed.",
+      "Fixed: after today's picker games tip off, the panel clearly says it is showing the NEXT Daily Picker (opens at the 07:00 UTC reset). The slate also refreshes every 10 minutes.",
+      "Fixed: not-owned players stayed empty after Chrome restarted the extension in the background (the API key was not loaded yet).",
       "Fixed: League Collect quests now use Sorare's real milestones for each quest (e.g. Non Playoffs 20 / 35, not 20 / 25), with the right Essence per step.",
       "New Daily Play guide: Pro Daily Picker (3 picks), Rebounds Picker (1.5 stars or less, 5+ rebounds) and the Set Daily Picker, each with Best odds, Safe and Risk / upside picks.",
       "Filter picks by Mine, Not owned or All. Not-owned players are grayed (Sorare only lets you pick your own cards). Risk picks flag hot form, a star teammate OUT and big minutes.",

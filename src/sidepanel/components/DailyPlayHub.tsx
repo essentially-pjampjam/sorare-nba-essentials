@@ -1,4 +1,4 @@
-import { Target } from "lucide-react";
+import { RefreshCw, Target } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
   DAILY_MISSIONS,
@@ -15,8 +15,14 @@ import { GoButton } from "./GoButton";
 interface DailyPlayHubProps {
   gallery: GalleryResult | null;
   pool: DailyPickerPool | null;
+  poolLoading?: boolean;
+  /** Re-fetch today's slate and scan the slate teams' rosters (players you don't own). */
+  onRefreshPool?: () => void;
   missions: DailyMission[];
 }
+
+const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const fmtDay = (iso: string) => new Date(iso).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" });
 
 const STRATEGIES: Array<{ id: PickStrategy; label: string; hint: string }> = [
   { id: "best", label: "Best odds", hint: "Highest chance to hit the target" },
@@ -50,7 +56,7 @@ function Chip({ active, label, title, onClick }: { active: boolean; label: strin
 }
 
 /** Daily missions guide: best, safe and risk picks from your cards (and not-owned for comparison). */
-export function DailyPlayHub({ gallery, pool, missions }: DailyPlayHubProps) {
+export function DailyPlayHub({ gallery, pool, poolLoading, onRefreshPool, missions }: DailyPlayHubProps) {
   const [mission, setMission] = useState<DailyMission>(missions[0]);
   const [strategy, setStrategy] = useState<PickStrategy>("best");
   const [ownership, setOwnership] = useState<OwnershipFilter>("owned");
@@ -83,14 +89,40 @@ export function DailyPlayHub({ gallery, pool, missions }: DailyPlayHubProps) {
       <div className="mb-1 text-[10px] text-slate-400">
         {info.rule} • {info.reward} • {info.picks} pick{info.picks > 1 ? "s" : ""} • only your own {info.rarity} cards can be picked
       </div>
+      {pool && pool.window.rolledToNext && (
+        <div className="mb-1 rounded-lg border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-[10px] text-amber-100">
+          Today's picker games have all tipped off ({(pool.window.lockedGames ?? []).map((g) => `${g.awayAbbr}@${g.homeAbbr}`).join(", ") || "picks locked"}).
+          Showing the <strong>next</strong> Daily Picker, which opens at the reset ({fmtDay(pool.window.startIso)}).
+        </div>
+      )}
       {pool && (
         <div className="mb-1.5 text-[10px] text-slate-400">
           {pool.window.games.length > 0
-            ? `Daily slate until ${new Date(pool.window.endIso).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}: ${pool.window.games
-                .map((g) => `${g.awayAbbr}@${g.homeAbbr} ${new Date(g.tipOffIso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`)
+            ? `${pool.window.rolledToNext ? "Next" : "Today's"} slate until ${fmtDay(pool.window.endIso)}: ${pool.window.games
+                .map((g) => `${g.awayAbbr}@${g.homeAbbr} ${fmtTime(g.tipOffIso)}`)
                 .join(" • ")}`
             : "No NBA games before the next daily reset."}
-          {pool.rosterCards.length === 0 && pool.window.games.length > 0 && " (add an API key to also see players you don't own)"}
+          <span className="ml-1 text-slate-500">(updated {fmtTime(new Date(pool.fetchedAt).toISOString())})</span>
+        </div>
+      )}
+      {pool && pool.window.games.length > 0 && (
+        <div className="mb-1.5 flex flex-wrap items-center gap-2 text-[10px] text-slate-400">
+          <span>
+            Not-owned players: {pool.rosterCards.length} from {pool.rosterTeamsLoaded ?? 0}/{pool.rosterTeamsRequested ?? pool.window.teamSlugs.length} teams
+            {pool.rosterError ? ` (scan failed: ${pool.rosterError.slice(0, 90)})` : ""}
+          </span>
+          {onRefreshPool && (
+            <button
+              type="button"
+              disabled={poolLoading}
+              onClick={onRefreshPool}
+              title="Re-check today's games and scan their rosters for players you don't own"
+              className="inline-flex items-center gap-1 rounded-lg border border-sky-300/40 px-2 py-0.5 font-semibold text-sky-200 hover:bg-sky-500/15 disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3 w-3 ${poolLoading ? "animate-spin" : ""}`} />
+              {poolLoading ? "Scanning..." : "Scan not-owned / refresh slate"}
+            </button>
+          )}
         </div>
       )}
 
@@ -114,7 +146,8 @@ export function DailyPlayHub({ gallery, pool, missions }: DailyPlayHubProps) {
       ) : ideas.length === 0 ? (
         <div className="text-xs text-slate-400">
           No {strategy === "risk" ? "upside " : ""}picks for this filter
-          {mission === "rebounds" && !pool?.statsByName ? " (rebound stats load with the daily slate)" : ""}.
+          {mission === "rebounds" && !pool?.statsByName ? " (rebound stats load with the daily slate)" : ""}
+          {ownership !== "owned" && (pool?.rosterCards.length ?? 0) === 0 ? ": no not-owned players loaded yet, use Scan not-owned above" : ""}.
         </div>
       ) : (
         <ul className="space-y-1">

@@ -53,6 +53,7 @@ describe("Daily Picker window (live: games before the next 07:00 UTC reset)", ()
     const w = selectDailyPickerWindow(games, Date.parse("2026-11-20T02:00:00Z"));
     expect(w.games.map((g) => g.homeTeamSlug)).toEqual(["atlanta-hawks"]);
     expect(w.endIso).toBe("2026-11-21T07:00:00.000Z");
+    expect(w.rolledToNext).toBe(true);
   });
 
   it("ranks only players of slate teams, including unowned roster players", () => {

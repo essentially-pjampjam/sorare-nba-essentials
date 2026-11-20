@@ -8,6 +8,10 @@ Then reload any open sorare.com tabs so the new content script runs.
 
 ---
 
+## 2.7.0-exp.M8 - Squad activity, Daily Picker fixes
+
+See [../TESTING.md](../TESTING.md) T17-T20.
+
 ## 2.7.0-exp.M7 - Daily Play guide and strategies
 
 See [../TESTING.md](../TESTING.md) T11-T15.

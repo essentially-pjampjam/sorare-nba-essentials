@@ -3,6 +3,7 @@ import type {
   BackgroundResponse,
   BargainMode,
   DailyPickerPool,
+  SquadSnapshot,
   TrackedAlertEvent,
   BargainsResult,
   CraftPoolResult,
@@ -353,6 +354,14 @@ export function getAlertFeed(): Promise<TrackedAlertEvent[]> {
   return sendBackground<TrackedAlertEvent[]>({ type: "GET_ALERT_FEED" });
 }
 
-export function getDailyPickerPool(): Promise<DailyPickerPool> {
-  return sendBackground<DailyPickerPool>({ type: "GET_DAILY_PICKER_POOL" });
+export function scanSquadActivity(): Promise<SquadSnapshot> {
+  return sendBackground<SquadSnapshot>({ type: "SCAN_SQUAD_ACTIVITY" });
+}
+
+export function getSquadSnapshot(): Promise<SquadSnapshot | null> {
+  return sendBackground<SquadSnapshot | null>({ type: "GET_SQUAD_SNAPSHOT" });
+}
+
+export function getDailyPickerPool(refresh = false): Promise<DailyPickerPool> {
+  return sendBackground<DailyPickerPool>({ type: "GET_DAILY_PICKER_POOL", refresh });
 }

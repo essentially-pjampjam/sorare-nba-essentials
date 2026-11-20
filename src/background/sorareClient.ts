@@ -1299,15 +1299,36 @@ export class SorareClient {
    * stand-ins for the Daily Picker: any player in today's games can be picked, owned or not.
    * Needs an API key for more than one team (no-key complexity limit 500).
    */
-  async fetchTeamRosterCards(teamSlugs: string[], signal?: AbortSignal): Promise<GalleryCard[]> {
+  async fetchTeamRosterCards(
+    teamSlugs: string[],
+    signal?: AbortSignal,
+  ): Promise<{ cards: GalleryCard[]; teamsLoaded: number; teamsRequested: number; error?: string }> {
     const slugs = Array.from(new Set(teamSlugs.filter((t) => /^[a-z0-9-]+$/.test(t)))).slice(0, 30);
-    if (slugs.length === 0) return [];
+    // One team is ~520 complexity: 1 team per request without a key (limit 500 with first: 18), 6 with one.
+    const perRequest = this.hasApiKey() ? 6 : 1;
+    const cards: GalleryCard[] = [];
+    let teamsLoaded = 0;
+    let error: string | undefined;
+    for (let i = 0; i < slugs.length; i += perRequest) {
+      try {
+        const batch = await this.fetchTeamRosterBatch(slugs.slice(i, i + perRequest), signal);
+        cards.push(...batch.cards);
+        teamsLoaded += batch.teams;
+      } catch (err) {
+        error = err instanceof Error ? err.message : String(err);
+        if (err instanceof RateLimitedError) break;
+      }
+    }
+    return { cards, teamsLoaded, teamsRequested: slugs.length, error };
+  }
+
+  private async fetchTeamRosterBatch(slugs: string[], signal?: AbortSignal): Promise<{ cards: GalleryCard[]; teams: number }> {
     const blocks = slugs.map(
       (slug, i) => `
         t${i}: team(slug: "${slug}") {
           slug
           name
-          activePlayers {
+          activePlayers(first: 18) {
             nodes {
               slug
               displayName
@@ -1336,14 +1357,16 @@ export class SorareClient {
     const data = await this.postGraphQL<Record<string, RosterTeam | null>>(
       `query DailyPickerRosters { ${blocks.join("\n")} }`,
       {},
-      `daily_rosters_v1:${slugs.slice().sort().join(",")}`,
+      `daily_rosters_v2:${slugs.slice().sort().join(",")}`,
       signal,
     );
     const round1 = (v: number | null | undefined): number | null =>
       typeof v === "number" && Number.isFinite(v) ? Math.round(v * 10) / 10 : null;
     const cards: GalleryCard[] = [];
+    let teams = 0;
     for (const team of Object.values(data ?? {})) {
       if (!team) continue;
+      teams += 1;
       for (const p of team.activePlayers?.nodes ?? []) {
         const positions = (p.anyPositions ?? []).filter(
           (pos): pos is NbaPosition =>
@@ -1371,7 +1394,7 @@ export class SorareClient {
         });
       }
     }
-    return cards;
+    return { cards, teams };
   }
 
   async fetchClosedLeaderboardBenchmarks(

@@ -59,6 +59,7 @@ import {
   ScanCancelledError,
 } from "./rateLimitQueue";
 import { SorareClient } from "./sorareClient";
+import { getSavedSquadSnapshot, scanSquadFromOpenTab } from "./squadScanner";
 
 const SETTINGS_KEY = "jamassist_settings_v2";
 const LEGACY_SETTINGS_KEY = "jamassist_settings_v1";
@@ -1695,17 +1696,35 @@ async function handleMessage(
       case "GET_ALERT_FEED": {
         return { ok: true, data: await getAlertFeed() };
       }
+      case "SCAN_SQUAD_ACTIVITY": {
+        return { ok: true, data: await scanSquadFromOpenTab() };
+      }
+      case "GET_SQUAD_SNAPSHOT": {
+        return { ok: true, data: await getSavedSquadSnapshot() };
+      }
       case "GET_DAILY_PICKER_POOL": {
+        // Load settings first: after a service-worker restart the API key is not applied yet.
+        await loadSettings();
         const now = Date.now();
-        const window = selectDailyPickerWindow(await fetchDailySlateGames(now), now);
-        let rosterCards: GalleryCard[] = [];
-        try {
-          rosterCards = await sorareClient.fetchTeamRosterCards(window.teamSlugs);
-        } catch {
-          // No API key (complexity) or network error: the picker falls back to owned Common cards.
-        }
+        const window = selectDailyPickerWindow(await fetchDailySlateGames(now, Boolean(msg.refresh)), now);
+        const roster = await sorareClient
+          .fetchTeamRosterCards(window.teamSlugs)
+          .catch((err: unknown) => ({
+            cards: [] as GalleryCard[],
+            teamsLoaded: 0,
+            teamsRequested: window.teamSlugs.length,
+            error: err instanceof Error ? err.message : String(err),
+          }));
         const statsByName = await fetchPlayerSeasonStats().catch(() => ({}));
-        const pool: DailyPickerPool = { window, rosterCards, statsByName, fetchedAt: now };
+        const pool: DailyPickerPool = {
+          window,
+          rosterCards: roster.cards,
+          statsByName,
+          fetchedAt: now,
+          rosterTeamsLoaded: roster.teamsLoaded,
+          rosterTeamsRequested: roster.teamsRequested,
+          rosterError: roster.error,
+        };
         return { ok: true, data: pool };
       }
       case "CLEAR_WATCHLIST_ALERTS": {

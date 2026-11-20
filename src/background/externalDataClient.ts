@@ -346,10 +346,11 @@ export async function fetchExternalNbaContext(gwWindow?: GameWeekWindow | null):
  * Today's and tomorrow's NBA games (ESPN scoreboard, cached 10 min) for the Daily Picker window.
  * Independent of the Game Week window: the daily slate can fall between Game Weeks.
  */
-export async function fetchDailySlateGames(nowMs: number = Date.now()): Promise<DailySlateGame[]> {
+export async function fetchDailySlateGames(nowMs: number = Date.now(), refresh = false): Promise<DailySlateGame[]> {
   const start = new Date(nowMs - 12 * 3_600_000);
-  const cacheKey = `espn_daily_slate_v2:${formatEspnDate(start)}`;
-  const cached = await getCached<DailySlateGame[]>(cacheKey);
+  // Hourly key so tip-off states (pre / in / post) never lag behind by more than the 10 min TTL.
+  const cacheKey = `espn_daily_slate_v3:${formatEspnDate(start)}:${new Date(nowMs).getUTCHours()}`;
+  const cached = refresh ? null : await getCached<DailySlateGame[]>(cacheKey);
   if (cached) return cached.value;
 
   const payload = await fetchScoreboardDays(nowMs - 12 * 3_600_000, nowMs + 36 * 3_600_000);
