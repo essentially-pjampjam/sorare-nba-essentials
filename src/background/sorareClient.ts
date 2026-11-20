@@ -1218,7 +1218,7 @@ export class SorareClient {
     // 1) Pro Cards (Limited / Rare / Super Rare / Unique)
     let after: string | null = null;
     let pages = 0;
-    const maxProPages = useFast ? 4 : 10;
+    const maxProPages = 10;
     const proQuery = buildCardsQuery("limited, rare, super_rare, unique");
     while (pages < maxProPages) {
       pages += 1;
@@ -1250,7 +1250,8 @@ export class SorareClient {
     const commonQuery = buildCardsQuery("common").replace(proExtraFields, "");
     let commonAfter: string | null = null;
     let commonPages = 0;
-    while (commonPages < (useFast ? 2 : 6)) {
+    // Set collections run to ~400 cards: load them all (duplicates, Solo pool), 50 per page with a key.
+    while (commonPages < (useFast ? 12 : 20)) {
       commonPages += 1;
       const data: Resp = await this.postGraphQL<Resp>(
         commonQuery,

@@ -220,6 +220,19 @@ describe("duplicate sell advisor", () => {
     );
     expect(groups[0].cards.map((x) => x.action)).toEqual(["keep", "keep", "scrap"]);
   });
+
+  it("holds extras of injured and young players instead of scrapping", () => {
+    const set = (slug: string, extra: Partial<GalleryCard> = {}) => card(slug, { rarity: "common", ...extra });
+    const young = buildDuplicateAdvice([set("a", { playerAge: 21 }), set("b", { playerAge: 21 }), set("c", { playerAge: 21 })]);
+    expect(young[0].cards.map((x) => x.action)).toEqual(["keep", "keep", "hold"]);
+    const hurt = buildDuplicateAdvice([set("a"), set("b"), set("c")], {
+      injuriesByName: { p: { status: "OUT" } as never },
+    });
+    expect(hurt[0].held).toBe(1);
+    expect(hurt[0].extras).toBe(0);
+    const keep3 = buildDuplicateAdvice([set("a"), set("b"), set("c"), set("d")], { keepPerPlayer: 3 });
+    expect(keep3[0].extras).toBe(1);
+  });
 });
 
 import { fixtureFromLeaderboard, mergeProProgressHistory, summarizeProHistory, summarizeProProgress } from "./proProgressMath";

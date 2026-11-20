@@ -21,10 +21,13 @@ const RELEASE_HIGHLIGHTS: Array<{
 }> = [
   {
     version: "2.7.0",
-    title: "v2.7.0 (testing build M10): Solo Fast Finish, Duplicates, Pro Progress, Pack Advisor",
+    title: "v2.7.0: Daily Play Guide, Real Rewards, Set Solo Fast Finish, Squad, Packs & Duplicates",
     items: [
-      "Set Solo: choose Today only, Today first (fast finish) or Best (today + tomorrow). A Solo stage completes as soon as your scores reach the target, so Today first shows the chance today's players finish it alone.",
-      "New Duplicate Sell Advisor (Gallery): keeps the best copy, every Shiny / Holo, sealed and in-lineup cards and a 2nd copy of your top players; flags the rest to sell (Pro, at the Instant Buy floor) or scrap (Set).",
+      "Set Solo game days: Only today, Prioritize today (fast finish) or Best of today + tomorrow. A Solo stage completes as soon as your scores reach the target, so Prioritize today shows the chance today's players finish it alone.",
+      "Duplicate Sell Advisor now checks all your Set cards, keeps 2 copies per player by default (choose 1-3) and holds extra copies of injured or young / rookie players whose value may rise.",
+      "Your current lineups are sorted from highest to lowest potential.",
+      "The Vault & Sealing guide only shows for Pro cards (Sorare has no Common Vault).",
+      "New Duplicate Sell Advisor (Gallery): flags extra copies to sell (Pro, at the Instant Buy floor) or scrap (Set), never Shiny / Holo, sealed or in-lineup cards.",
       "New Pro Progress (Lineups, Pro): live rank of each open lineup vs the reward and cash places, plus a Game Week history saved on this device.",
       "New Pack & Mission Advisor (Set): free Daily Pack reminder, Bronze+ progress, Live Today packs and each pack's chance of a 3★+ / 4★+ card (live slot odds).",
       "Squad Activity now shows the best 3 teams whose scores add up to the stage total, and how many points they still need.",

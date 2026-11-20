@@ -1559,7 +1559,7 @@ describe("Tier 4 — Real-World End-to-End Scenarios (1–9)", () => {
     vi.setSystemTime(ALERT_BASE_NOW_MS);
     resetMockState({
       jamassist_settings_v2: buildAlertTrackerUserSettings(),
-      "gallery_v6:pjampjam": {
+      "gallery_v7:pjampjam": {
         value: buildPjampjamGalleryResult({
           cards: buildPricedGalleryForAlertTests(),
         }),
@@ -1599,7 +1599,7 @@ describe("Tier 4 — Real-World End-to-End Scenarios (1–9)", () => {
           cooldownMinutes: 60,
         },
       }),
-      "gallery_v6:pjampjam": {
+      "gallery_v7:pjampjam": {
         value: buildPjampjamGalleryResult({
           cards: buildPricedGalleryForAlertTests(),
         }),

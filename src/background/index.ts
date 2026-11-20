@@ -998,7 +998,7 @@ async function fetchGalleryForLineups(
     throw new Error("Enter a Sorare username or slug first.");
   }
 
-  const cacheKey = `gallery_v6:${cleanUser}`;
+  const cacheKey = `gallery_v7:${cleanUser}`;
   if (!forceRefresh) {
     const cached = await getCached<GalleryResult>(cacheKey);
     if (cached) {
@@ -1609,7 +1609,7 @@ async function handleMessage(
           fromCache: false,
         };
         if (!controller.signal.aborted) {
-          await setCached(`gallery_v6:${cleanUser}`, updatedGallery);
+          await setCached(`gallery_v7:${cleanUser}`, updatedGallery);
           broadcastProgress({
             phase: "done",
             completed: 1,

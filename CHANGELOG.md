@@ -2,10 +2,12 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
-## 2.7.0 (in testing as 2.7.0-exp.M10, branch v2.7.0-wip)
+## 2.7.0 (2026-11-20)
 
 Added:
-- Set Solo timing: Today only / Today first (fast finish) / Best (today + tomorrow), with today-only finish odds.
+- Duplicate Sell Advisor: keep 1-3 copies per player (Set default 2), hold extras of injured or young / rookie players.
+- Current lineups sorted from highest to lowest potential.
+- Set Solo game days: Only today / Prioritize today (fast finish) / Best of today + tomorrow, with today-only finish odds.
 - Duplicate Sell Advisor (Gallery).
 - Pro Progress Tracker: live rank vs reward / cash places and Game Week history.
 - Pack & Mission Advisor (Set): Daily Pack, Bronze+ progress, Live Today packs, 3★+ / 4★+ odds per pack.
@@ -30,6 +32,7 @@ Changed:
 - Classic Limited entry limit is 3 (live); Arena / In-Season up to 5.
 
 Fixed:
+- Gallery loaded only the first 100 Set cards with an API key (now up to 600 Set / 500 Pro), so duplicates were missed. Vault & Sealing guide hidden for Set cards.
 - Set Essence was stored as Limited Essence on Set pages. Scan not-owned failed (Sorare rejects a duplicated `team` root field).
 - Daily Picker silently showed the next day's slate after today's games tipped off; it now says so. Not-owned players were empty after a background restart (API key not loaded).
 - League Collect quests used one shared milestone ladder (Non Playoffs showed 20 / 25 instead of 20 / 35); each quest now uses Sorare's live ladder and rewards.

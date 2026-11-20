@@ -317,6 +317,7 @@ export function LineupsTab({
       (l) => l.cardSlugs.length > 0 || (l.playerNames?.length ?? 0) > 0,
     );
     if (nonEmpty.length === 0) return [];
+    // Highest potential first: best current projection on top (ties: bigger possible gain first).
     return compareCurrentVsOptimalLineups(nonEmpty, gallery.cards, {
       rarityFilter: rarityScope,
       projectionSource,
@@ -332,7 +333,11 @@ export function LineupsTab({
       captainBonusPct: 0,
       benchmarks: gallery.leaderboardBenchmarks,
       benchmarkSeasonScope,
-    });
+    }).sort(
+      (a, b) =>
+        Math.max(b.currentProjected, b.optimalProjected ?? 0) - Math.max(a.currentProjected, a.optimalProjected ?? 0) ||
+        b.currentProjected - a.currentProjected,
+    );
   }, [
     benchmarkSeasonScope,
     customProjectionsRaw,
@@ -1360,16 +1365,16 @@ export function LineupsTab({
 
             {setBuildMode === "solo" && (
               <div className="flex flex-wrap items-center gap-1 text-[10px]">
-                <span className="text-slate-400">Players who play:</span>
+                <span className="text-slate-400">Game days:</span>
                 {(
                   [
-                    ["today_only", "Today only", "Only players with a game before the next 07:00 UTC reset"],
+                    ["today_only", "Only today", "Only players with a game today (before the 07:00 UTC reset)"],
                     [
                       "today_first",
-                      "Today first (fast finish)",
+                      "Prioritize today (fast finish)",
                       "A Solo stage completes as soon as your players' scores reach the target, even if others play later. Ranks today's players first and fills with tomorrow's.",
                     ],
-                    ["any_day", "Best (today + tomorrow)", "Highest projection across today's and tomorrow's games"],
+                    ["any_day", "Best of today + tomorrow", "Highest projection across today's and tomorrow's games, no preference"],
                   ] as Array<[SetSoloTiming, string, string]>
                 ).map(([id, label, hint]) => (
                   <button

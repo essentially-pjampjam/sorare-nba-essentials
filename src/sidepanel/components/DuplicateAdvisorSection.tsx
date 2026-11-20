@@ -8,7 +8,8 @@ const projection = (c: { sorareClassicProjected: number | null; l10: number | nu
 
 /** Duplicate Sell Advisor: which extra copies to sell (Pro) or scrap (Set), and which to keep. */
 export function DuplicateAdvisorSection({ gallery, currency }: { gallery: GalleryResult | null; currency: Currency }) {
-  const [pool, setPool] = useState<"pro" | "common">("pro");
+  const [pool, setPool] = useState<"pro" | "common">("common");
+  const [keepN, setKeepN] = useState<Record<"pro" | "common", number>>({ pro: 1, common: 2 });
   const groups = useMemo(() => {
     if (!gallery) return [];
     const cards = pool === "pro" ? gallery.cards : gallery.commonCards;
@@ -20,10 +21,17 @@ export function DuplicateAdvisorSection({ gallery, currency }: { gallery: Galler
         .filter((s, i, arr) => arr.indexOf(s) === i)
         .slice(0, 15),
     );
-    return buildDuplicateAdvice(cards, { lineupPlayerSlugs: best, currentLineups: gallery.currentLineups });
-  }, [gallery, pool]);
+    return buildDuplicateAdvice(cards, {
+      lineupPlayerSlugs: best,
+      currentLineups: gallery.currentLineups,
+      keepPerPlayer: keepN[pool],
+      injuriesByName: gallery.injuriesByName,
+    });
+  }, [gallery, keepN, pool]);
 
   const flagged = groups.reduce((s, g) => s + g.extras, 0);
+  const held = groups.reduce((s, g) => s + g.held, 0);
+  const cardCount = gallery ? (pool === "pro" ? gallery.cards.length : gallery.commonCards.length) : 0;
   const sellValue = groups.reduce((s, g) => s + g.sellValueCents, 0);
 
   return (
@@ -35,7 +43,7 @@ export function DuplicateAdvisorSection({ gallery, currency }: { gallery: Galler
           Duplicate Sell Advisor
         </span>
         <span className="text-[10px] text-slate-400">
-          {flagged} extra{flagged === 1 ? "" : "s"}
+          {flagged} to {pool === "pro" ? "sell" : "scrap"} • {held} hold
           {sellValue > 0 ? ` • ~${formatMoney(sellValue, currency)} at floor` : ""}
         </span>
       </summary>
@@ -53,10 +61,24 @@ export function DuplicateAdvisorSection({ gallery, currency }: { gallery: Galler
               {p === "pro" ? "Pro cards (sell)" : "Set cards (scrap)"}
             </button>
           ))}
+          <span className="ml-2 text-[10px] text-slate-400">Keep per player:</span>
+          {[1, 2, 3].map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => setKeepN((k) => ({ ...k, [pool]: n }))}
+              className={`rounded-md border px-1.5 text-[10px] font-semibold ${
+                keepN[pool] === n ? "border-amber-300/60 bg-amber-500/20 text-amber-100" : "border-white/10 text-slate-400"
+              }`}
+            >
+              {n}
+            </button>
+          ))}
         </div>
         <div className="text-[10px] text-slate-400">
-          Keeps the best copy of each player, every Shiny / Holo, sealed and in-lineup cards, and a 2nd copy of your top
-          players. Prices are the lowest Instant Buy listing (refresh prices in the Gallery first).
+          Keeps the best {keepN[pool]} cop{keepN[pool] === 1 ? "y" : "ies"} of each player plus every Shiny / Holo, sealed and
+          in-lineup card. Extra copies of injured or young / rookie players are on <span className="text-sky-300">Hold</span> (their
+          value may rise; scrap later if you have too many). Checked {cardCount} cards. Prices are the lowest Instant Buy listing.
         </div>
         {!gallery ? (
           <div className="text-slate-400">Load your gallery first.</div>
@@ -70,10 +92,11 @@ export function DuplicateAdvisorSection({ gallery, currency }: { gallery: Galler
                   <span>
                     {g.playerName} <span className="font-normal text-slate-400">x{g.cards.length}</span>
                   </span>
-                  {g.extras > 0 ? (
+                  {g.extras > 0 || g.held > 0 ? (
                     <span className="text-amber-300">
-                      {g.extras} to {g.rarity === "common" ? "scrap" : "sell"}
+                      {g.extras > 0 ? `${g.extras} to ${g.rarity === "common" ? "scrap" : "sell"}` : ""}
                       {g.sellValueCents > 0 ? ` (~${formatMoney(g.sellValueCents, currency)})` : ""}
+                      {g.held > 0 ? <span className="text-sky-300">{g.extras > 0 ? " • " : ""}{g.held} hold</span> : null}
                     </span>
                   ) : (
                     <span className="text-emerald-300">keep all</span>
@@ -84,9 +107,9 @@ export function DuplicateAdvisorSection({ gallery, currency }: { gallery: Galler
                     <span
                       key={a.card.slug}
                       title={a.reason}
-                      className={a.action === "keep" ? "text-slate-300" : "text-amber-200"}
+                      className={a.action === "keep" ? "text-slate-300" : a.action === "hold" ? "text-sky-300" : "text-amber-200"}
                     >
-                      {a.action === "keep" ? "Keep" : a.action === "sell" ? "Sell" : "Scrap"}: {editionLabel(a.card)}
+                      {a.action === "keep" ? "Keep" : a.action === "hold" ? "Hold" : a.action === "sell" ? "Sell" : "Scrap"}: {editionLabel(a.card)}
                       {a.card.inSeasonEligible ? " in-season" : ""} {a.card.powerMultiplier > 1 ? `+${Math.round((a.card.powerMultiplier - 1) * 100)}%` : ""}
                     </span>
                   ))}

@@ -1213,7 +1213,7 @@ describe("Tier 3 — Pairwise Cross-Feature Integration (F1–F16)", () => {
     const userSettings = buildAlertTrackerUserSettings();
     resetSharedMockState({
       jamassist_settings_v2: userSettings,
-      "gallery_v6:pjampjam": {
+      "gallery_v7:pjampjam": {
         value: buildPjampjamGalleryResult({
           cards: buildPricedGalleryForAlertTests(),
         }),

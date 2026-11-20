@@ -212,7 +212,7 @@ export function GalleryTab({
         if (formFilter === "cold" && (fd === null || fd > -3.5)) return false;
         if (formFilter === "proj" && (pe === null || pe < 3.0)) return false;
         if (formFilter === "shift" && st.direction === "stable") return false;
-        if (formFilter === "seal" && !isSealCandidate(c, vaultContext(c))) return false;
+        if (formFilter === "seal" && poolMode === "pro" && !isSealCandidate(c, vaultContext(c))) return false;
       }
       if (q) {
         const hay = `${c.playerName} ${c.teamName ?? ""} ${c.cardEditionName ?? ""}`.toLowerCase();
@@ -628,6 +628,7 @@ export function GalleryTab({
             <TrendingUp className="h-2.5 w-2.5 text-sky-300" />
             ★ Shift ({formCounts.shift})
           </button>
+          {poolMode === "pro" && (
           <button
             type="button"
             onClick={() => setFormFilter((v) => (v === "seal" ? "all" : "seal"))}
@@ -640,6 +641,7 @@ export function GalleryTab({
             <ShieldCheck className="h-2.5 w-2.5 text-violet-300" />
             Vault ({formCounts.seal})
           </button>
+          )}
           <button
             type="button"
             onClick={() => setInSeasonOnly((v) => !v)}
@@ -679,7 +681,8 @@ export function GalleryTab({
         </div>
       </div>
 
-      {gallery && (
+      {/* Sorare has no Common Vault: the sealing guide is for Pro cards only. */}
+      {gallery && poolMode === "pro" && (
         <VaultGuide
           cards={gallery.cards}
           candidates={gallery.cards.filter((c) => !c.sealed && isSealCandidate(c, vaultContext(c)))}
@@ -687,7 +690,7 @@ export function GalleryTab({
       )}
 
       {/* Vault vs. Sell ROI Summary Banner */}
-      {formFilter === "seal" && (
+      {formFilter === "seal" && poolMode === "pro" && (
         <div className="rounded-2xl border border-violet-400/30 bg-[#111726] px-3 py-2 text-[11px]">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="font-semibold text-violet-200">

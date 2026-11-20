@@ -78,7 +78,7 @@ interface CachedGalleryLike {
 /** Last snapshot, else the last cached gallery for the user (expired TTL is fine here). */
 async function readSnapshot(username: string, currency: "EUR" | "USD"): Promise<TrackerSnapshot | null> {
   const galleryKeys = username
-    ? [`jamassist_cache:gallery_v6:${username}`, `gallery_v6:${username}`]
+    ? [`jamassist_cache:gallery_v7:${username}`, `gallery_v7:${username}`]
     : [];
   const raw = await chrome.storage.local.get([SNAPSHOT_KEY, ...galleryKeys]);
   const snap = raw[SNAPSHOT_KEY] as TrackerSnapshot | undefined;
