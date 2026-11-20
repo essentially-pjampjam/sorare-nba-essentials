@@ -146,6 +146,8 @@ can sit in two lineups in the same GW (editor's "Used in another lineup" filter 
 | Daily pickers rotate | Pro missions page (`/nba/play/missions/play/limited`) Apollo cache: `DecisivePlayerPickerTask` {title, description, mode SCORE / DECISIVE, taskConfigSlug, maxAppearancesCount (picks), target, aasmState}. 2026-11-20: "Daily Picker" (SCORE, 3 picks, 100 XP) + "Double Double Picker" (DECISIVE, 3 picks, $2 market credit per hit, $15 if all). Set page: "Daily Picker" (1 pick). Private (logged-in) | LIVE-VERIFIED 2026-11-20 |
 | Sealing Points on the market | `anyCard(slug).sealableFor` is public (no login) for any card; cheapest Limited Instant Buys (€0.49) give 1-5 points | LIVE-VERIFIED 2026-11-20 |
 | ESPN season counts | `statistics/byathlete`: general `doubleDouble`, `tripleDouble`; offensive `avgAssists`; defensive `avgSteals`, `avgBlocks` | LIVE-VERIFIED 2026-11-20 |
+| Sealed state on pages | Sorare page Apollo cache `NBACard:{slug}` has `sealed` (e.g. Gallery `/nba/my-cards/cards/limited` showed `john-konchar-...-limited-531` sealed right after sealing) | LIVE-VERIFIED 2026-11-20 |
+| Inactive this season | ESPN `statistics/byathlete` lists only players with games this season (473 on 2026-11-20); John Konchar and Kristaps Porzingis absent while Sorare L10 still shows last-season games | LIVE-VERIFIED 2026-11-20 |
 | Root fields | Sorare rejects the same root field twice in one query, even aliased ("Duplicated root field: team"); aliases inside `market { }` are fine | LIVE-VERIFIED 2026-11-20 |
 | `team.activePlayers` | One team with 6 fields is complexity ~505-520 without a key; `activePlayers(first: 18)` fits under 500 | LIVE-VERIFIED 2026-11-20 |
 

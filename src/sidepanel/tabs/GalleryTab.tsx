@@ -22,6 +22,7 @@ import {
   evaluateVaultVsSellRoi,
   resolveSyncedLineupCardSlugs,
   type VaultAdviceContext,
+  isInactiveThisSeason,
 } from "../../calculators/lineupOptimizerMath";
 import { evaluateSealCandidates } from "../../calculators/vaultSealingMath";
 import {
@@ -55,7 +56,8 @@ type GallerySortBy =
   | "sell_priority";
 
 function getFormDelta(c: GalleryCard): number | null {
-  if (c.l5 === null || c.l10 === null) return null;
+  // No games this season: L5 / L10 are last season's, so there is no current form.
+  if (c.l5 === null || c.l10 === null || isInactiveThisSeason(c)) return null;
   return Math.round((c.l5 - c.l10) * 10) / 10;
 }
 
@@ -163,7 +165,7 @@ export function GalleryTab({
     for (const c of sourceCards) {
       const fd = getFormDelta(c);
       const pe = getProjEdge(c);
-      const st = evaluateStarTierShift(c.l10, c.l5);
+      const st = evaluateStarTierShift(c.l10, isInactiveThisSeason(c) ? null : c.l5);
       if (fd !== null && fd >= 3.5) hot += 1;
       if (fd !== null && fd <= -3.5) cold += 1;
       if (pe !== null && pe >= 3.0) proj += 1;
@@ -208,7 +210,7 @@ export function GalleryTab({
       if (formFilter !== "all") {
         const fd = getFormDelta(c);
         const pe = getProjEdge(c);
-        const st = evaluateStarTierShift(c.l10, c.l5);
+        const st = evaluateStarTierShift(c.l10, isInactiveThisSeason(c) ? null : c.l5);
         if (formFilter === "hot" && (fd === null || fd < 3.5)) return false;
         if (formFilter === "cold" && (fd === null || fd > -3.5)) return false;
         if (formFilter === "proj" && (pe === null || pe < 3.0)) return false;
@@ -744,7 +746,7 @@ export function GalleryTab({
             c.sorareClassicProjected ?? c.sorareDailyProjected ?? null;
           const isOnFire = formDelta !== null && formDelta >= 3.5;
           const isCold = formDelta !== null && formDelta <= -3.5;
-          const tierShift = evaluateStarTierShift(c.l10, c.l5);
+          const tierShift = evaluateStarTierShift(c.l10, isInactiveThisSeason(c) ? null : c.l5);
           const vaultAdvice = evaluateVaultVsSellRoi(c, vaultContext(c));
           const showVaultBadge =
             !c.inSeasonEligible &&
@@ -777,6 +779,14 @@ export function GalleryTab({
               }
               statusBadge={
                 <div className="flex flex-wrap items-center gap-1">
+                  {isInactiveThisSeason(c) && (
+                    <span
+                      className="rounded border border-slate-500/50 bg-slate-600/30 px-1 text-[9px] font-bold text-slate-300"
+                      title="No NBA games this season: L10 / L5 are from last season, so he is left out of lineup suggestions."
+                    >
+                      No games this season
+                    </span>
+                  )}
                   {isOnFire && (
                     <span className="inline-flex items-center gap-0.5 rounded border border-amber-400/45 bg-amber-400/20 px-1 text-[9px] font-bold text-amber-200">
                       <Flame className="h-2.5 w-2.5" />

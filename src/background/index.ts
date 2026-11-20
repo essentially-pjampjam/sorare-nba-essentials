@@ -1,5 +1,5 @@
 import { buildMarketPriceKey } from "../calculators/collectionEssenceMath";
-import { evaluateStarTierShift } from "../calculators/lineupOptimizerMath";
+import { annotateSeasonActivity, evaluateStarTierShift, isInactiveThisSeason } from "../calculators/lineupOptimizerMath";
 import { selectOpenGameWeek } from "../calculators/countdownMath";
 import { selectDailyPickerWindow } from "../calculators/dailySlateMath";
 import { mergeProProgressHistory } from "../calculators/proProgressMath";
@@ -66,6 +66,7 @@ import { SorareClient } from "./sorareClient";
 import { getSavedSquadSnapshot, scanSquadFromOpenTab } from "./squadScanner";
 import { getSavedShopStatus, scanShopStatusFromOpenTab } from "./shopScanner";
 import { getSavedPickerMissions, scanPickerMissionsFromOpenTabs, watchMissionPages } from "./missionScanner";
+import { applySealedOverrides, syncSealedStatesFromOpenTabs, watchSealedStates } from "./cardStateScanner";
 
 const SETTINGS_KEY = "jamassist_settings_v2";
 const LEGACY_SETTINGS_KEY = "jamassist_settings_v1";
@@ -186,6 +187,8 @@ const queue = new RateLimitQueue({
 const sorareClient = new SorareClient(queue);
 // Keep the Daily Play pickers in sync with Sorare whenever its missions page is opened.
 watchMissionPages();
+// Cards sealed on sorare.com drop out of lineup suggestions right away (no refresh needed).
+watchSealedStates();
 
 function applyNetworkMode(settings: UserSettings): void {
   const key = settings.sorareApiKey?.trim() ?? "";
@@ -1007,8 +1010,10 @@ async function fetchGalleryForLineups(
     if (cached) {
       void syncOverlayLookup(cached.value.cards);
       const domLineups = await readStoredDomLineups();
+      await syncSealedStatesFromOpenTabs();
       return {
         ...cached.value,
+        cards: await applySealedOverrides(cached.value.cards, cached.value.fetchedAt),
         currentLineups: mergeCurrentLineups(
           cached.value.currentLineups ?? [],
           domLineups,
@@ -1048,10 +1053,12 @@ async function fetchGalleryForLineups(
     openGw ? { startIso: openGw.fixture.cutOffDate, endIso: openGw.fixture.endDate } : null,
   );
 
+  // Players with no NBA game this season (L10 from last season) are never suggested or "hot".
+  const seasonStats = await fetchPlayerSeasonStats().catch(() => ({}));
   const result: GalleryResult = {
     username: cleanUser,
-    cards,
-    commonCards,
+    cards: annotateSeasonActivity(cards, seasonStats),
+    commonCards: annotateSeasonActivity(commonCards, seasonStats),
     fixtures,
     currentLineups: mergeCurrentLineups(currentLineups, domLineups, openGw?.fixture.slug ?? null),
     leaderboardBenchmarks,
@@ -1098,6 +1105,7 @@ async function syncOverlayLookup(cards: GalleryCard[]): Promise<void> {
     const hotByPlayerSlug: Record<string, string> = {};
     for (const c of cards) {
       if (hotByPlayerSlug[c.playerSlug]) continue;
+      if (isInactiveThisSeason(c)) continue;
       const shift = evaluateStarTierShift(c.l10, c.l5);
       if (shift.direction === "value_lock" && shift.label) {
         hotByPlayerSlug[c.playerSlug] = shift.label;

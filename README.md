@@ -5,7 +5,7 @@
 <h1 align="center">pjampjam's Sorare NBA Essentials</h1>
 
 <p align="center">
-  <strong>v2.7.2</strong> - Unofficial Chrome Side Panel & Dashboard for Sorare NBA
+  <strong>v2.7.3</strong> - Unofficial Chrome Side Panel & Dashboard for Sorare NBA
 </p>
 
 <p align="center">
@@ -26,7 +26,7 @@ Hey - welcome! I originally put this Chrome extension together for myself becaus
 
 ## Install in 1 Minute (no coding)
 
-1. Download `pjampjams-sorare-nba-essentials-v2.7.2.zip` from the [latest release](https://github.com/essentially-pjampjam/sorare-nba-essentials/releases/latest) and unzip it.
+1. Download `pjampjams-sorare-nba-essentials-v2.7.3.zip` from the [latest release](https://github.com/essentially-pjampjam/sorare-nba-essentials/releases/latest) and unzip it.
 2. Open `chrome://extensions` and turn on **Developer mode** (top right).
 3. Click **Load unpacked** and pick the unzipped folder.
 4. Open `sorare.com/nba`, click the extension icon, type your Sorare username and press **Scan**.

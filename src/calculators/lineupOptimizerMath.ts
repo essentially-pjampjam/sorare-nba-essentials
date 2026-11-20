@@ -198,6 +198,26 @@ export interface StarTierShiftInfo {
 /**
  * Predicts upcoming ★ star-tier shifts by comparing current L10 star tier against recent L5 momentum.
  */
+/**
+ * True when the player hasn't played an NBA game this season (ESPN season stats). His L10 / L5 can
+ * be last season's, so he is never projected, suggested or tagged as in form.
+ */
+export function isInactiveThisSeason(card: Pick<GalleryCard, "seasonGamesPlayed">): boolean {
+  return card.seasonGamesPlayed === 0;
+}
+
+/**
+ * Marks each card with its games played this season. Only applied when the season stats look
+ * complete (200+ players), so an ESPN outage or the first days of a season never bench everyone.
+ */
+export function annotateSeasonActivity<T extends GalleryCard>(
+  cards: T[],
+  gamesByName: Record<string, { gamesPlayed: number }>,
+): T[] {
+  if (Object.keys(gamesByName).length < 200) return cards;
+  return cards.map((c) => ({ ...c, seasonGamesPlayed: gamesByName[normalizePlayerName(c.playerName)]?.gamesPlayed ?? 0 }));
+}
+
 export function evaluateStarTierShift(
   l10: number | null,
   l5: number | null,
@@ -462,8 +482,8 @@ export function evaluateCardForLineup(
   const injury = injuriesByName[normName] ?? null;
   const injuryStatus: InjuryStatus = injury?.status ?? "ACTIVE";
   const hasSchedule = Object.keys(gamesPerTeam).length > 0;
-  const gamesInSlate =
-    hasSchedule && card.teamSlug ? (gamesPerTeam[card.teamSlug] ?? 0) : 1;
+  // With a known schedule, a player without a team (free agent) has no game.
+  const gamesInSlate = hasSchedule ? (card.teamSlug ? (gamesPerTeam[card.teamSlug] ?? 0) : 0) : 1;
 
   const sorareProj =
     card.sorareClassicProjected && card.sorareClassicProjected > 0
@@ -524,7 +544,8 @@ export function evaluateCardForLineup(
   const noGame = hasSchedule && gamesInSlate === 0;
   const sched = card.teamSlug ? scheduleByTeam?.[card.teamSlug] : undefined;
   const context = slateContextAdjustments(sched);
-  const injuryAdjustedBase = noGame ? 0 : baseProjection * mult;
+  // No game this slate, or no NBA game at all this season (L10 is last season's): cannot score.
+  const injuryAdjustedBase = noGame || isInactiveThisSeason(card) ? 0 : baseProjection * mult;
   const effectiveScore =
     injuryAdjustedBase * card.powerMultiplier * context.vegasMultiplier * context.restMultiplier;
   const analytics = buildCardAnalytics({
@@ -3069,6 +3090,10 @@ export function buildLineupOverlay(
     const sched = scheduleByTeam?.[ev.card.teamSlug ?? ""];
     if (ev.injuryStatus !== "ACTIVE") {
       riskFlags.push(`${name}: ${describeInjury(ev.injuryStatus)}`);
+    }
+    if (isInactiveThisSeason(ev.card)) {
+      riskFlags.push(`${name}: no NBA games this season`);
+      continue;
     }
     if (ev.gamesInSlate === 0) riskFlags.push(`${name}: 0G (no game this slate)`);
     if (sched?.hasBackToBack) riskFlags.push(`${name}: B2B (rest risk)`);

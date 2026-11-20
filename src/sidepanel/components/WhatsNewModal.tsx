@@ -20,6 +20,15 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.3",
+    title: "v2.7.3: Sealed Cards & Inactive Players Fix",
+    items: [
+      "Cards you seal on sorare.com drop out of lineup suggestions right away (the extension reads the sealed state from your open Sorare tabs).",
+      "Players with no NBA games this season (their L10 is from last season) are no longer suggested and lose the hot-form / On Fire tags; the Gallery marks them \"No games this season\".",
+      "Players without a team (free agents) no longer count as having a game.",
+    ],
+  },
+  {
     version: "2.7.2",
     title: "v2.7.2: Live Daily Pickers, Double-Double Odds, Sealing Deal Finder",
     items: [

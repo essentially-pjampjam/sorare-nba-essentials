@@ -301,6 +301,11 @@ export interface GalleryCard {
   gameplayTier?: string | null;
   /** "live" when starCost comes from Sorare's gameplay tier, else the L10 estimate. */
   starSource?: "live" | "estimated";
+  /**
+   * NBA games played this season (ESPN season stats). 0 = hasn't played this season (L10 / L5 may
+   * be last season's), null / undefined = unknown.
+   */
+  seasonGamesPlayed?: number | null;
   teamName: string | null;
   teamSlug: string | null;
   playerSlug: string;

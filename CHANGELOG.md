@@ -2,6 +2,13 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
+## 2.7.3 (2026-11-21)
+
+Fixed:
+- Sealed cards were still suggested for lineups until the next refresh; sealed states are now read live from open sorare.com tabs.
+- Players with no NBA games this season (L10 from last season, e.g. John Konchar) were projected and tagged as hot; now 0 projection, no form tags, "No games this season" badge (ESPN season stats).
+- Free agents (no team) counted as having a game in the slate.
+
 ## 2.7.2 (2026-11-20)
 
 Added:
