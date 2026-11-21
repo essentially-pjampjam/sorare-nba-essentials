@@ -31,3 +31,4 @@ docs/LIVE_TESTS.md
 EXPERIMENTAL.md
 *.local.md
 .preview/
+scripts/ship-helper.mjs

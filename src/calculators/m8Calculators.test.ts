@@ -5,7 +5,7 @@ import type { SquadSnapshot } from "../shared/types";
 const u = (slug: string) => ({ slug, nickname: slug.toUpperCase() });
 
 const snapshot: SquadSnapshot = {
-  squadName: "Lazy Goats",
+  squadName: "Test Squad",
   membersCount: 4,
   maxMembersCount: 10,
   captainSlug: "cap",

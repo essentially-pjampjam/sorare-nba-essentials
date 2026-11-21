@@ -217,14 +217,14 @@ export function buildSetArcadePlayHtml(): string {
 
 /**
  * Screenshot 7 (`/nba/series/squad`):
- * Set Squad (`LAZY GOATS`, `580+ PTS`, Daily Picker mission).
+ * Set Squad (`TEST SQUAD`, `580+ PTS`, Daily Picker mission).
  */
 export function buildSetSquadHtml(): string {
   return renderSorareShell(
     "Sorare NBA - Set Squad",
     `
       <section class="squad-header">
-        <h1>LAZY GOATS</h1>
+        <h1>TEST SQUAD</h1>
         <span>10 members</span>
         <span>LAST GAME 5H 42M</span>
         <p>Score more than 580+ PTS</p>
