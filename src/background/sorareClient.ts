@@ -1358,29 +1358,28 @@ export class SorareClient {
       `set_shop_packs_v2:${slugs.join(",")}`,
       signal,
     );
-    const rawPacks = Object.values(plain.market ?? {}).filter((p): p is RawPack => p !== null);
+    // Only packs you can buy: Squad / mission reward packs (price 0) are rewards, not shop offers.
+    const rawPacks = Object.values(plain.market ?? {}).filter(
+      (p): p is RawPack => p !== null && Number(p.price ?? 0) > 0 && Boolean(p.currency),
+    );
     if (withOdds && rawPacks.length > 0) {
-      // Only ask for slots the pack has (Live Today packs have 3 cards, standard packs 4).
-      const oddsBlocks = rawPacks
-        .map((p, i) => {
-          const n = Math.min(5, Math.max(1, Number(p.cardsCount ?? 4) || 4));
-          const slots = Array.from({ length: n }, (_, s) => `s${s}: slotGameplayTierOdds(slotIndex: ${s}) { gameplayTier probabilityBasisPoint }`);
-          return `p${i}: cardPack(slug: "${p.slug}") { slug ${slots.join(" ")} }`;
-        })
-        .join(" ");
-      try {
-        const odds = await this.postGraphQL<{ market?: Record<string, RawPack | null> | null }>(
-          `query SetShopPackOdds { market { ${oddsBlocks} } }`,
-          {},
-          `set_shop_odds_v1:${rawPacks.map((p) => p.slug).join(",")}`,
-          signal,
-        );
-        for (const o of Object.values(odds.market ?? {})) {
-          const target = o ? rawPacks.find((p) => p.slug === o.slug) : undefined;
-          if (target && o) Object.assign(target, { s0: o.s0, s1: o.s1, s2: o.s2, s3: o.s3, s4: o.s4 });
+      // One query per pack (~1000 complexity per slot): a single combined query for 8+ packs went
+      // over Sorare's limit and lost the odds of every pack. Each pack is cached on its own.
+      for (const p of rawPacks) {
+        const n = Math.min(5, Math.max(1, Number(p.cardsCount ?? 4) || 4));
+        const slots = Array.from({ length: n }, (_, s) => `s${s}: slotGameplayTierOdds(slotIndex: ${s}) { gameplayTier probabilityBasisPoint }`);
+        try {
+          const odds = await this.postGraphQL<{ market?: { cardPack?: RawPack | null } | null }>(
+            `query SetShopPackOdds { market { cardPack(slug: "${p.slug}") { slug ${slots.join(" ")} } } }`,
+            {},
+            `set_shop_odds_v2:${p.slug}`,
+            signal,
+          );
+          const o = odds.market?.cardPack;
+          if (o) Object.assign(p, { s0: o.s0, s1: o.s1, s2: o.s2, s3: o.s3, s4: o.s4 });
+        } catch {
+          // Odds are optional: price and timing still show for this pack.
         }
-      } catch {
-        // Odds are optional: prices and Live Today timing still show.
       }
     }
     const packs: SetPackInfo[] = [];

@@ -2,6 +2,26 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
+## 2.7.4-exp3 (experimental, 2026-11-21)
+
+Added:
+- Quick-jump bar under the header on Lineups (Pro and Set), Gallery and Deals: one tap scrolls to a section (and opens it).
+
+Changed:
+- Header: the logo carries a lightning bolt (blue = API key active, gray = public mode; click opens Settings) instead of the FAST chip. All header controls share one height, and Essence is a fifth equal column next to the rarities.
+- Rewards are green everywhere: "In rewards" is a green outline, "In the cash" a solid green chip; blue stays for buttons and info.
+- Duplicate Sell Advisor: Pro cards blue, Set cards violet; Hold is neutral gray.
+- Sealing Deal Finder moved from Gallery to Deals.
+- Dim gray text is a step brighter (contrast).
+
+Fixed:
+- Pack & Mission Advisor listed Squad reward packs (LVL 1-5, 0 Essence) as new special packs; reward packs are no longer treated as shop offers.
+- Pack odds failed for every pack once more than a few packs were listed (one oversized request); odds now load per pack.
+
+Security:
+- The Sorare API key is encrypted at rest (AES-GCM, with a key that cannot be exported and that pages and content scripts cannot reach). Existing keys are encrypted on first load.
+- The side panel never receives the full key, only a masked one (e.g. ••••abcd).
+
 ## 2.7.4-exp2 (experimental, 2026-11-21)
 
 Changed:

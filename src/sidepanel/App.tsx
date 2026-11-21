@@ -2,6 +2,7 @@ import { mergeApiAndDomLineups } from "../shared/domLineupMerge";
 import {
   AlertCircle,
   AlignJustify,
+  Zap,
   Heart,
   KeyRound,
   Layers,
@@ -121,6 +122,17 @@ export function App() {
   const [showSupport, setShowSupport] = useState<boolean>(false);
   const [showWhatsNew, setShowWhatsNew] = useState<boolean>(false);
   const [showHeaderMenu, setShowHeaderMenu] = useState<boolean>(false);
+  // The sticky header's height feeds --jam-header-h so the quick-jump bars stick right below it.
+  const stickyHeaderRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = stickyHeaderRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() =>
+      document.documentElement.style.setProperty("--jam-header-h", `${Math.round(el.getBoundingClientRect().height)}px`),
+    );
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const [editingUsername, setEditingUsername] = useState<boolean>(false);
   const [hasUnseenWhatsNew, setHasUnseenWhatsNew] = useState<boolean>(() => {
     try {
@@ -818,52 +830,54 @@ export function App() {
       data-density={settings.density ?? "cozy"}
     >
       <div className={isDashboardMode ? "jam-dashboard-mode" : ""}>
-      <div className="jam-sticky-wrap sticky top-0 z-30 px-2.5 pb-1.5 pt-2.5">
+      <div ref={stickyHeaderRef} className="jam-sticky-wrap sticky top-0 z-30 px-2.5 pb-1.5 pt-2.5">
         <header className="glass-chrome rounded-2xl px-3 py-2.5">
           {/* Row 1: identity, username, Refresh, overflow menu */}
           <div className="flex items-center gap-2">
-            <img
-              src="/logo.png"
-              alt="pjampjam's Sorare NBA Essentials"
-              className="h-7 w-7 shrink-0 rounded-lg object-contain"
-            />
-            <div className="flex shrink-0 flex-col items-start leading-tight">
-              <h1 className="text-[11px] font-semibold tracking-tight text-slate-100">Sorare NBA</h1>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowWhatsNew(true);
-                    setHasUnseenWhatsNew(false);
-                    try {
-                      window.localStorage.setItem("jamassist_last_seen_version", version);
-                    } catch {
-                      // Ignore
-                    }
-                  }}
-                  className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded px-1 font-mono text-[9px] font-medium transition ${
-                    isExperimentalBuild
-                      ? "border border-rose-400/50 bg-rose-500/15 text-rose-300 hover:bg-rose-500/25"
-                      : "bg-white/8 text-amber-300 hover:bg-amber-400/20"
-                  }`}
-                  title={`${isExperimentalBuild ? "Experimental build " : ""}v${version} • What's New & Send Feedback`}
-                >
-                  <span>{versionBadgeLabel}</span>
-                  {hasUnseenWhatsNew && <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />}
-                </button>
-                <span
-                  className={`rounded px-1 text-[9px] font-semibold ${
-                    settings.sorareApiKey ? "bg-sky-500/15 text-sky-300" : "bg-slate-800 text-slate-400"
-                  }`}
-                  title={
-                    settings.sorareApiKey
-                      ? "Fast Mode active using your local Sorare APIKEY"
-                      : "Safe Public Mode (add a Sorare API Key in Settings for 60x speed)"
+            {/* Logo with the connection bolt: blue = API key active (Fast Mode), gray = public mode. */}
+            <button
+              type="button"
+              onClick={() => setShowSettings(true)}
+              className="relative h-8 w-8 shrink-0"
+              title={
+                settings.sorareApiKey
+                  ? "Fast Mode: your Sorare API key is active (click for Settings)"
+                  : "Public mode, no API key: click to add one in Settings for faster, fuller data"
+              }
+              aria-label={settings.sorareApiKey ? "Fast Mode active, open Settings" : "No API key, open Settings to add one"}
+            >
+              <img src="/logo.png" alt="pjampjam's Sorare NBA Essentials" className="h-8 w-8 rounded-lg object-contain" />
+              <span
+                className={`absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full border-2 border-[var(--jam-chrome-bot)] ${
+                  settings.sorareApiKey ? "bg-sky-400 text-slate-950" : "bg-slate-600 text-slate-200"
+                }`}
+              >
+                <Zap className="h-2.5 w-2.5" fill="currentColor" />
+              </span>
+            </button>
+            <div className="flex min-w-0 shrink-0 flex-col justify-center gap-0.5 leading-none">
+              <h1 className="whitespace-nowrap text-xs font-semibold tracking-tight text-slate-100">Sorare NBA</h1>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowWhatsNew(true);
+                  setHasUnseenWhatsNew(false);
+                  try {
+                    window.localStorage.setItem("jamassist_last_seen_version", version);
+                  } catch {
+                    // Ignore
                   }
-                >
-                  {settings.sorareApiKey ? "FAST" : "SAFE"}
-                </span>
-              </div>
+                }}
+                className={`inline-flex w-fit items-center gap-1 whitespace-nowrap rounded px-1 py-px font-mono text-[9px] font-medium transition ${
+                  isExperimentalBuild
+                    ? "border border-rose-400/50 bg-rose-500/15 text-rose-300 hover:bg-rose-500/25"
+                    : "bg-white/8 text-amber-300 hover:bg-amber-400/20"
+                }`}
+                title={`${isExperimentalBuild ? "Experimental build " : ""}v${version} • What's New & Send Feedback`}
+              >
+                <span>{versionBadgeLabel}</span>
+                {hasUnseenWhatsNew && <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />}
+              </button>
             </div>
 
             <div className="min-w-0 flex-1">
@@ -871,7 +885,7 @@ export function App() {
                 <button
                   type="button"
                   onClick={() => setEditingUsername(true)}
-                  className="glass-pill inline-flex max-w-full items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-100 hover:border-sky-400/50"
+                  className="glass-pill inline-flex h-7 max-w-full items-center gap-1 rounded-lg px-2 text-[11px] font-semibold text-slate-100 hover:border-sky-400/50"
                   title="Change the Sorare manager"
                 >
                   <span className="truncate">@{settings.username}</span>
@@ -913,7 +927,7 @@ export function App() {
                   !(settings.username || usernameDraft).trim())
               }
               onClick={handleRefreshActiveTab}
-              className="jam-btn-primary inline-flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+              className="jam-btn-primary inline-flex h-7 shrink-0 items-center gap-1 rounded-lg px-2.5 text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
               title="Fetch fresh live data"
             >
               <RefreshCw className={`h-3 w-3 ${anyLoading ? "animate-spin" : ""}`} />
@@ -924,7 +938,7 @@ export function App() {
               <button
                 type="button"
                 onClick={() => setShowHeaderMenu((v) => !v)}
-                className="glass-pill rounded-lg p-1.5 text-slate-300 transition hover:border-sky-400/50 hover:text-slate-100"
+                className="glass-pill flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 transition hover:border-sky-400/50 hover:text-slate-100"
                 title="Search, currency, density, support, pop-out, settings"
                 aria-label="More options"
                 aria-expanded={showHeaderMenu}
@@ -991,8 +1005,7 @@ export function App() {
           {/* Craft context: only where rarity and Essence matter (Collections, Craft, Deals) */}
           {(activeTab === "collections" || activeTab === "craft" || activeTab === "bargains") && (
             <div className="mt-2 space-y-1">
-              <div className="flex items-center gap-1.5">
-                <div className="grid flex-1 grid-cols-4 gap-0.5 rounded-lg border border-white/8 bg-white/[0.03] p-0.5">
+              <div className="grid grid-cols-5 gap-1">
                   {RARITIES.map((rarity) => {
                     const meta = RARITY_META[rarity];
                     const active = rarity === activeRarity;
@@ -1001,17 +1014,16 @@ export function App() {
                         key={rarity}
                         type="button"
                         onClick={() => void handleSelectRarity(rarity)}
-                        className={`truncate rounded-md px-1 py-0.5 text-[10.5px] font-medium transition ${
-                          active ? `${meta.badgeClass} font-semibold` : "text-slate-400 hover:text-slate-200"
+                        className={`h-7 truncate rounded-lg border px-1 text-[10.5px] font-medium transition ${
+                          active ? `${meta.badgeClass} font-semibold` : "border-white/8 bg-white/[0.03] text-slate-400 hover:text-slate-200"
                         }`}
                       >
                         {meta.label}
                       </button>
                     );
                   })}
-                </div>
                 <div
-                  className="glass-pill flex w-24 shrink-0 items-center gap-1 rounded-lg px-1.5 py-0.5"
+                  className="glass-pill flex h-7 min-w-0 items-center gap-1 rounded-lg px-1.5"
                   title="Your Sorare Essence (auto-syncs from sorare.com sidebar, or click to type)"
                 >
                   <Sparkles className="h-3 w-3 shrink-0 text-amber-400" />
@@ -1434,6 +1446,7 @@ export function App() {
               rarity={activeRarity}
               currency={settings.currency}
               isLoading={isBargainsLoading}
+              gallery={galleryResult}
               watchlist={settings.watchlist ?? []}
               watchlistAlerts={settings.watchlistAlerts ?? []}
               onUpdateWatchlist={(next) => void updateSettings({ watchlist: next })}

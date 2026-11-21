@@ -41,8 +41,8 @@ import { openInActiveTab } from "../api";
 import { HeadToHeadCompareBox } from "../components/HeadToHeadCompareBox";
 import { PlayerCardRow } from "../components/PlayerCardRow";
 import { formatMoney } from "../utils/format";
+import { JumpBar } from "../components/JumpBar";
 import { DuplicateAdvisorSection } from "../components/DuplicateAdvisorSection";
-import { SealDealsSection } from "../components/SealDealsSection";
 
 type GallerySortBy =
   | "stars_desc"
@@ -404,8 +404,17 @@ export function GalleryTab({
 
   return (
     <div className="space-y-3">
+      <JumpBar
+        items={[
+          { id: "sec-g-value", label: "Value" },
+          { id: "sec-g-duplicates", label: "Duplicates" },
+          { id: "sec-g-filters", label: "Filters" },
+          ...(poolMode === "pro" ? [{ id: "sec-g-vault", label: "Vault" }] : []),
+          { id: "sec-g-cards", label: "Cards" },
+        ]}
+      />
       {/* Portfolio & Wallet Liquidity Overview */}
-      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+      <div id="sec-g-value" className="grid grid-cols-2 gap-2 lg:grid-cols-4">
         <div className="rounded-xl border border-white/8 bg-[#111726] p-2.5">
           <div className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
             {poolMode === "pro" ? `${rarityMeta.label} Cards` : "Common / Set"}
@@ -506,10 +515,12 @@ export function GalleryTab({
         </div>
       )}
 
-      <DuplicateAdvisorSection gallery={gallery} currency={currency} />
+      <div id="sec-g-duplicates">
+        <DuplicateAdvisorSection gallery={gallery} currency={currency} />
+      </div>
 
       {/* Pool, Actions, Filters & Sorting */}
-      <div className="space-y-2 rounded-2xl border border-white/8 bg-[#111726] p-3">
+      <div id="sec-g-filters" className="space-y-2 rounded-2xl border border-white/8 bg-[#111726] p-3">
         <div className="flex flex-wrap items-center justify-between gap-1.5">
           <div className="grid grid-cols-2 gap-1 rounded-xl border border-white/8 bg-[#0b101b] p-0.5 text-[11px]">
             <button
@@ -715,13 +726,14 @@ export function GalleryTab({
 
       {/* Sorare has no Common Vault: the sealing guide is for Pro cards only. */}
       {gallery && poolMode === "pro" && (
+        <div id="sec-g-vault">
         <VaultGuide
           cards={gallery.cards}
           candidates={gallery.cards.filter((c) => !c.sealed && isSealCandidate(c, vaultContext(c)))}
         />
+        </div>
       )}
 
-      {poolMode === "pro" && <SealDealsSection gallery={gallery} rarity={rarity} currency={currency} />}
 
       {/* Vault vs. Sell ROI Summary Banner */}
       {formFilter === "seal" && poolMode === "pro" && (
@@ -758,7 +770,7 @@ export function GalleryTab({
       />
 
       {/* Cards Grid / List */}
-      <div className="grid grid-cols-1 gap-1.5 xl:grid-cols-2">
+      <div id="sec-g-cards" className="grid grid-cols-1 gap-1.5 xl:grid-cols-2">
         {filteredAndSorted.map((c) => {
           const posLabel =
             c.positions.map((p) => NBA_POSITION_LABELS[p]).join("/") || "--";

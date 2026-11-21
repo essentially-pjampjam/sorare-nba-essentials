@@ -17,6 +17,7 @@ const currencyLabel = (c: string) => (c === "COMMON_ESSENCE" ? "Essence" : c ===
 export function PackAdvisorCard() {
   const [data, setData] = useState<SetPackAdvisorData | null>(null);
   const [commonEssence, setCommonEssence] = useState<number | null>(null);
+  const [hasKey, setHasKey] = useState(false);
   const [busy, setBusy] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
 
@@ -26,6 +27,7 @@ export function PackAdvisorCard() {
       .then(([advisor, settings]) => {
         setData(advisor);
         setCommonEssence(typeof settings.commonEssence === "number" ? settings.commonEssence : null);
+        setHasKey(Boolean(settings.sorareApiKey));
       })
       .catch(() => {})
       .finally(() => setBusy(false));
@@ -96,7 +98,7 @@ export function PackAdvisorCard() {
             {a.pack.endDate ? ` • ends in ${formatTimeLeft(a.pack.endDate)}` : ""}
             {a.pack.slots.length > 0
               ? ` • 3★+ ${a.chance3StarPct}%, 4★+ ${a.chance4StarPct}%, avg ${a.expectedStars}★ per pack`
-              : " • odds load with an API key"}
+              : hasKey ? " • odds not loaded yet" : " • odds load with an API key"}
           </div>
         ))}
       {analyses.length > 0 && (
@@ -142,7 +144,11 @@ export function PackAdvisorCard() {
         </table>
       )}
       {analyses.length > 0 && !hasOdds && (
-        <div className="mt-1 text-[10px] text-slate-400">Pack odds need an API key (Sorare's limit without one is too low).</div>
+        <div className="mt-1 text-[10px] text-slate-400">
+          {hasKey
+            ? "Pack odds did not load from Sorare this time. Press Refresh in a minute."
+            : "Pack odds need an API key (Sorare's limit without one is too low)."}
+        </div>
       )}
     </div>
   );

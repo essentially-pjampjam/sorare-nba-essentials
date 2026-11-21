@@ -66,6 +66,7 @@ import {
 } from "./rateLimitQueue";
 import { SorareClient } from "./sorareClient";
 import { getSavedSquadSnapshot, scanSquadFromOpenTab } from "./squadScanner";
+import { decryptSecret, isEncryptedSecret, MASK_PREFIX, maskSecret, sealForStorage } from "./secretStore";
 import { openPageLineupsAsEntries, syncLineupsFromOpenTabs, watchLineupPages } from "./lineupScanner";
 import { getDiscoveredPacks, getSavedShopStatus, scanShopStatusFromOpenTab, syncPacksFromOpenTabs, watchShopPages } from "./shopScanner";
 import { getSavedPickerMissions, scanPickerMissionsFromOpenTabs, watchMissionPages } from "./missionScanner";
@@ -329,13 +330,21 @@ async function loadSettings(): Promise<UserSettings> {
     await chrome.storage.local.set({ [SETTINGS_KEY]: stored });
   }
 
-  // Isolate API key into dedicated storage key never accessed by content scripts
-  let isolatedApiKey =
-    typeof raw[API_KEY_STORAGE] === "string" ? raw[API_KEY_STORAGE] : "";
+  // API key: its own storage key, encrypted at rest (secretStore.ts). Older builds stored it as
+  // plain text: it is encrypted on the first load.
+  const storedKey = raw[API_KEY_STORAGE];
+  let isolatedApiKey = isEncryptedSecret(storedKey)
+    ? await decryptSecret(storedKey)
+    : typeof storedKey === "string"
+      ? storedKey
+      : "";
+  if (typeof storedKey === "string" && storedKey) {
+    await chrome.storage.local.set({ [API_KEY_STORAGE]: await sealForStorage(storedKey) });
+  }
   if (stored?.sorareApiKey && typeof stored.sorareApiKey === "string") {
     if (!isolatedApiKey) {
       isolatedApiKey = stored.sorareApiKey;
-      await chrome.storage.local.set({ [API_KEY_STORAGE]: isolatedApiKey });
+      await chrome.storage.local.set({ [API_KEY_STORAGE]: await sealForStorage(isolatedApiKey) });
     }
     const { sorareApiKey: _stripped, ...rest } = stored;
     stored = rest;
@@ -385,8 +394,9 @@ async function saveSettings(
   patch: Partial<UserSettings>,
 ): Promise<UserSettings> {
   const current = await loadSettings();
+  // The panel only ever sees a masked key ("••••abcd"): a masked value means "unchanged".
   const nextApiKey =
-    typeof patch.sorareApiKey === "string"
+    typeof patch.sorareApiKey === "string" && !patch.sorareApiKey.startsWith(MASK_PREFIX)
       ? patch.sorareApiKey.trim()
       : current.sorareApiKey;
   const next: UserSettings = {
@@ -502,7 +512,7 @@ async function saveSettings(
   const { sorareApiKey: _omitSecret, ...publicSettings } = next;
   await chrome.storage.local.set({
     [SETTINGS_KEY]: publicSettings,
-    [API_KEY_STORAGE]: nextApiKey,
+    [API_KEY_STORAGE]: await sealForStorage(nextApiKey),
     [CONTENT_FLAGS_KEY]: {
       autoOpenOnCraft: next.autoOpenOnCraft,
       autoOpenOnSorare: next.autoOpenOnSorare,
@@ -1368,11 +1378,11 @@ async function handleMessage(
     switch (msg.type) {
       case "GET_SETTINGS": {
         const settings = await loadSettings();
-        return { ok: true, data: settings };
+        return { ok: true, data: { ...settings, sorareApiKey: maskSecret(settings.sorareApiKey) } };
       }
       case "SAVE_SETTINGS": {
         const settings = await saveSettings(msg.settings);
-        return { ok: true, data: settings };
+        return { ok: true, data: { ...settings, sorareApiKey: maskSecret(settings.sorareApiKey) } };
       }
       case "GET_DETECTED_USERNAME": {
         const raw = await chrome.storage.local.get(DETECTED_USER_KEY);

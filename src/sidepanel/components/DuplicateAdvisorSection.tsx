@@ -55,7 +55,11 @@ export function DuplicateAdvisorSection({ gallery, currency }: { gallery: Galler
               type="button"
               onClick={() => setPool(p)}
               className={`rounded-lg border px-2 py-0.5 text-[10px] font-semibold ${
-                pool === p ? "border-amber-300/60 bg-amber-500/20 text-amber-100" : "border-white/10 text-slate-400"
+                pool === p
+                  ? p === "pro"
+                    ? "border-sky-300/60 bg-sky-500/20 text-sky-100"
+                    : "border-violet-300/60 bg-violet-500/20 text-violet-100"
+                  : "border-white/10 text-slate-400"
               }`}
             >
               {p === "pro" ? "Pro cards (sell)" : "Set cards (scrap)"}
@@ -68,7 +72,11 @@ export function DuplicateAdvisorSection({ gallery, currency }: { gallery: Galler
               type="button"
               onClick={() => setKeepN((k) => ({ ...k, [pool]: n }))}
               className={`rounded-md border px-1.5 text-[10px] font-semibold ${
-                keepN[pool] === n ? "border-amber-300/60 bg-amber-500/20 text-amber-100" : "border-white/10 text-slate-400"
+                keepN[pool] === n
+                  ? pool === "pro"
+                    ? "border-sky-300/60 bg-sky-500/20 text-sky-100"
+                    : "border-violet-300/60 bg-violet-500/20 text-violet-100"
+                  : "border-white/10 text-slate-400"
               }`}
             >
               {n}
@@ -77,7 +85,7 @@ export function DuplicateAdvisorSection({ gallery, currency }: { gallery: Galler
         </div>
         <div className="text-[10px] text-slate-400">
           Keeps the best {keepN[pool]} cop{keepN[pool] === 1 ? "y" : "ies"} of each player plus every Shiny / Holo, sealed and
-          in-lineup card. Extra copies of injured or young / rookie players are on <span className="text-sky-300">Hold</span> (their
+          in-lineup card. Extra copies of injured or young / rookie players are on <span className="font-semibold text-slate-200">Hold</span> (their
           value may rise; scrap later if you have too many). Checked {cardCount} cards. Prices are the lowest Instant Buy listing.
         </div>
         {!gallery ? (
@@ -87,7 +95,10 @@ export function DuplicateAdvisorSection({ gallery, currency }: { gallery: Galler
         ) : (
           <ul className="space-y-1.5">
             {groups.map((g) => (
-              <li key={`${g.rarity}:${g.playerSlug}`} className="rounded-lg border border-white/6 bg-[#111726] px-2 py-1.5">
+              <li
+                key={`${g.rarity}:${g.playerSlug}`}
+                className={`rounded-lg border border-white/6 bg-[#111726] px-2 py-1.5 ${g.rarity === "common" ? "jam-attn-set" : "jam-attn-info"}`}
+              >
                 <div className="flex items-center justify-between font-semibold text-slate-100">
                   <span>
                     {g.playerName} <span className="font-normal text-slate-400">x{g.cards.length}</span>
@@ -96,7 +107,7 @@ export function DuplicateAdvisorSection({ gallery, currency }: { gallery: Galler
                     <span className="text-amber-300">
                       {g.extras > 0 ? `${g.extras} to ${g.rarity === "common" ? "scrap" : "sell"}` : ""}
                       {g.sellValueCents > 0 ? ` (~${formatMoney(g.sellValueCents, currency)})` : ""}
-                      {g.held > 0 ? <span className="text-sky-300">{g.extras > 0 ? " • " : ""}{g.held} hold</span> : null}
+                      {g.held > 0 ? <span className="text-slate-300">{g.extras > 0 ? " • " : ""}{g.held} hold</span> : null}
                     </span>
                   ) : (
                     <span className="text-emerald-300">keep all</span>
@@ -107,7 +118,7 @@ export function DuplicateAdvisorSection({ gallery, currency }: { gallery: Galler
                     <span
                       key={a.card.slug}
                       title={a.reason}
-                      className={a.action === "keep" ? "text-slate-300" : a.action === "hold" ? "text-sky-300" : "text-amber-200"}
+                      className={a.action === "keep" ? "text-slate-300" : a.action === "hold" ? "text-slate-400 italic" : "text-amber-200"}
                     >
                       {a.action === "keep" ? "Keep" : a.action === "hold" ? "Hold" : a.action === "sell" ? "Sell" : "Scrap"}: {editionLabel(a.card)}
                       {a.card.inSeasonEligible ? " in-season" : ""} {a.card.powerMultiplier > 1 ? `+${Math.round((a.card.powerMultiplier - 1) * 100)}%` : ""}

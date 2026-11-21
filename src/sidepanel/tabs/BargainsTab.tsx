@@ -1,3 +1,6 @@
+import type { GalleryResult } from "../../shared/types";
+import { JumpBar } from "../components/JumpBar";
+import { SealDealsSection } from "../components/SealDealsSection";
 import {
   Bell,
   ChevronRight,
@@ -40,6 +43,8 @@ interface BargainsTabProps {
   onUpdateWatchlist?: (next: WatchlistEntry[]) => void;
   onRunWatchlistCheck?: () => void;
   onClearWatchlistAlerts?: () => void;
+  /** For the Sealing Deal Finder (moved here from Gallery in 2.7.4-exp3). */
+  gallery?: GalleryResult | null;
 }
 
 const SORT_OPTIONS: Array<{ id: BargainSortBy; label: string }> = [
@@ -62,6 +67,7 @@ export function BargainsTab({
   onUpdateWatchlist,
   onRunWatchlistCheck,
   onClearWatchlistAlerts,
+  gallery = null,
 }: BargainsTabProps) {
   const [mode, setMode] = useState<BargainMode>("instant_value");
   const [sortBy, setSortBy] = useState<BargainSortBy>("value_score");
@@ -365,9 +371,16 @@ export function BargainsTab({
 
   return (
     <div className="space-y-3">
-      {sniperWatchlistPanel}
+      <JumpBar
+        items={[
+          { id: "sec-deals", label: "Deals" },
+          { id: "sec-watchlist", label: "Watchlist" },
+          { id: "sec-seal-deals", label: "Sealing deals" },
+        ]}
+      />
+      <div id="sec-watchlist">{sniperWatchlistPanel}</div>
       {/* Mode & Filters */}
-      <div className="space-y-2 rounded-2xl border border-white/8 bg-[#111726] p-3">
+      <div id="sec-deals" className="space-y-2 rounded-2xl border border-white/8 bg-[#111726] p-3">
         <div className="flex items-center justify-between gap-2">
           <div className="grid flex-1 grid-cols-3 gap-1">
             <button
@@ -646,6 +659,9 @@ export function BargainsTab({
             );
           })
         )}
+      </div>
+      <div id="sec-seal-deals">
+        <SealDealsSection gallery={gallery} rarity={rarity} currency={currency} />
       </div>
     </div>
   );

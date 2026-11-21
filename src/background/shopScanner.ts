@@ -23,7 +23,9 @@ function readPacksFromPage(): FoundPack[] {
     if (!key.startsWith("CardPack:")) continue;
     const slug = typeof v.slug === "string" ? v.slug : "";
     const title = typeof v.title === "string" ? v.title : "";
-    if (!slug || !title || !slug.startsWith("divination-")) continue;
+    // Reward packs (Squad / mission rewards) have no price: they are not shop offers.
+    const price = typeof v.price === "number" ? v.price : 0;
+    if (!slug || !title || !slug.startsWith("divination-") || price <= 0) continue;
     out.push({ slug, title, endDate: typeof v.endDate === "string" ? v.endDate : null });
   }
   return out;

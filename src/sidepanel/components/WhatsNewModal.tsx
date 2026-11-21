@@ -20,6 +20,17 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.4-exp3",
+    title: "v2.7.4-exp3 (test build): Quick Jumps & Safer Key",
+    items: [
+      "Quick-jump bar on Lineups, Gallery and Deals: tap a chip to go straight to that section.",
+      "Tidier header: the lightning bolt on the logo shows your API key status (click it for Settings).",
+      "Rewards are green, cash places solid green. Sealing Deal Finder now lives in Deals.",
+      "Squad reward packs no longer show up as shop packs, and pack odds load again.",
+      "Your API key is now encrypted on this device and never shown in full.",
+    ],
+  },
+  {
     version: "2.7.4-exp2",
     title: "v2.7.4-exp2 (test build): Cleaner Layout",
     items: [

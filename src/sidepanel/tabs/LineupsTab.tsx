@@ -23,6 +23,7 @@ import {
   Wand2,
   Zap,
 } from "lucide-react";
+import { JumpBar } from "../components/JumpBar";
 import { StatusStrip } from "../components/StatusStrip";
 import { DailyPlayHub } from "../components/DailyPlayHub";
 import { SquadActivityCard } from "../components/SquadActivityCard";
@@ -751,7 +752,7 @@ export function LineupsTab({
         onToggleReminder={onToggleCutoffReminder}
         onShowProgress={() => {
           setArenaMode("pro");
-          setTimeout(() => document.getElementById("pro-progress")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+          setTimeout(() => document.getElementById("sec-progress")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
         }}
       />
 
@@ -781,9 +782,32 @@ export function LineupsTab({
         </button>
       </div>
 
+      <JumpBar
+        items={
+          arenaMode === "pro"
+            ? [
+                { id: "sec-progress", label: "Progress" },
+                { id: "sec-swaps", label: "Upgrade swaps" },
+                { id: "sec-entry", label: "Best contest" },
+                { id: "sec-pro-daily", label: "Daily Play" },
+                { id: "sec-builder", label: "Lineup builder" },
+                { id: "sec-market", label: "Market buys" },
+                { id: "sec-schedule", label: "Schedule" },
+                { id: "sec-guides", label: "Guides" },
+              ]
+            : [
+                { id: "sec-set-packs", label: "Packs" },
+                { id: "sec-set-squad", label: "Squad" },
+                { id: "sec-set-builder", label: "Team builder" },
+                { id: "sec-set-daily", label: "Daily Play" },
+                { id: "sec-set-guide", label: "Guide" },
+              ]
+        }
+      />
+
       {arenaMode === "pro" && (
         <>
-          <div id="pro-progress" className="scroll-mt-40">
+          <div id="sec-progress">
             <ProProgressCard gallery={gallery} />
           </div>
         </>
@@ -791,7 +815,7 @@ export function LineupsTab({
 
       {/* Current Submitted/Open Lineups & Upgrade Swaps */}
       {arenaMode === "pro" && gallery && (
-        <details
+        <details id="sec-swaps"
           open={currentLineupComparisons.length > 0}
           className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]"
         >
@@ -1124,7 +1148,7 @@ export function LineupsTab({
 
       {/* Optimal Entry Disclosure + Recommended Competition Priority */}
       {arenaMode === "pro" && formatRec && (
-        <div className="rounded-2xl border border-white/8 bg-[#101829] p-3">
+        <div id="sec-entry" className="rounded-2xl border border-white/8 bg-[#101829] p-3">
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-start gap-2">
               <div className="mt-0.5 rounded-lg bg-sky-500/20 p-1.5 text-sky-300">
@@ -1240,20 +1264,20 @@ export function LineupsTab({
 
       {/* Pro Daily Play pickers */}
       {arenaMode === "pro" && (
-        <DailyPlayHub gallery={gallery} pool={dailyPool} poolLoading={dailyPoolLoading} onRefreshPool={() => loadDailyPool(true)} missions={["pro_daily", "double_double", "rebounds"]} />
+        <div id="sec-pro-daily"><DailyPlayHub gallery={gallery} pool={dailyPool} poolLoading={dailyPoolLoading} onRefreshPool={() => loadDailyPool(true)} missions={["pro_daily", "double_double", "rebounds"]} /></div>
       )}
 
       {/* SET / COMMON MODE WORKSPACE */}
       {arenaMode === "set_common" && (
         <div className="space-y-3">
           {/* Set packs: Daily Pack, Bronze+, Live Today, 3★+ odds */}
-          <PackAdvisorCard />
+          <div id="sec-set-packs"><PackAdvisorCard /></div>
 
           {/* Set Squad: who has a team in the live stage */}
-          <SquadActivityCard mySlug={gallery?.username ?? null} />
+          <div id="sec-set-squad"><SquadActivityCard mySlug={gallery?.username ?? null} /></div>
 
           {/* Configurable N Teams Auto-Builder for Solo / Squad */}
-          <div className="space-y-2.5 rounded-2xl border border-white/8 bg-[#111726] p-3">
+          <div id="sec-set-builder" className="space-y-2.5 rounded-2xl border border-white/8 bg-[#111726] p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="grid grid-cols-2 gap-1 rounded-xl border border-white/8 bg-[#0b101b] p-0.5">
                 <button
@@ -1483,10 +1507,10 @@ export function LineupsTab({
           </div>
 
           {/* Daily Play: Set Daily Picker (best / safe / risk picks, owned vs not owned) */}
-          <DailyPlayHub gallery={gallery} pool={dailyPool} poolLoading={dailyPoolLoading} onRefreshPool={() => loadDailyPool(true)} missions={["set_daily"]} />
+          <div id="sec-set-daily"><DailyPlayHub gallery={gallery} pool={dailyPool} poolLoading={dailyPoolLoading} onRefreshPool={() => loadDailyPool(true)} missions={["set_daily"]} /></div>
 
           {/* Set Quests & Arcade Guide */}
-          <details className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
+          <details id="sec-set-guide" className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
             <summary className="flex w-full items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
               <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
                 <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-emerald-400" />
@@ -1524,7 +1548,7 @@ export function LineupsTab({
       {/* PRO MODE: Format & Projection Reference Controls */}
       {arenaMode === "pro" && (
         <>
-          <div className="space-y-2 rounded-2xl border border-white/8 bg-[#111726] p-3">
+          <div id="sec-builder" className="space-y-2 rounded-2xl border border-white/8 bg-[#111726] p-3">
         <div className="grid grid-cols-3 gap-1 sm:grid-cols-5">
           {FORMAT_OPTIONS.map((opt) => {
             const active = format === opt.id;
@@ -2191,7 +2215,7 @@ export function LineupsTab({
       </div>
 
       {/* Dual Lineup Market Buy Advisor (Out-of-Season 1-Slot Classic vs. In-Season) */}
-      <details
+      <details id="sec-market"
         open={Boolean(dualBuyAdvisor)}
         className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]"
       >
@@ -2448,7 +2472,7 @@ export function LineupsTab({
       </details>
       {/* Multi-Competition Portfolio Optimizer (Joint 3-Lineup Slate) */}
       {portfolio && portfolio.lineups.length > 0 && (
-        <details className="cascade-section overflow-hidden rounded-2xl border border-white/8 jam-attn-set bg-[#111726]">
+        <details className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
           <summary className="flex w-full items-center justify-between px-3 py-2.5 text-left text-xs hover:bg-white/[0.03]">
             <span className="inline-flex items-center gap-1.5 font-semibold text-slate-100">
               <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-violet-400" />
@@ -2741,7 +2765,7 @@ export function LineupsTab({
 
       {/* 4-Day Gameweek Schedule & Matchups */}
       {arenaMode === "pro" && sortedSchedule.length > 0 && (
-        <details className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
+        <details id="sec-schedule" className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
           <summary className="flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
             <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
               <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-emerald-400" />
@@ -2812,7 +2836,7 @@ export function LineupsTab({
       )}
 
       {/* Collapsible Boosting & Multiplier Guide (2026-27 Verified Rules) */}
-      <details className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
+      <details id="sec-guides" className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
         <summary className="flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
           <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
             <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-amber-400" />

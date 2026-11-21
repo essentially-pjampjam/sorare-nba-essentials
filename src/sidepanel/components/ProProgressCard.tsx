@@ -14,8 +14,9 @@ import { getProProgressHistory, openInActiveTab, syncPageLineups } from "../api"
 import { formatRelativeAge } from "../utils/format";
 
 const STATUS: Record<ProLineupStatus, { label: string; cls: string }> = {
-  cash: { label: "In the cash", cls: "border-emerald-400/40 bg-emerald-400/10 text-emerald-300" },
-  rewarded: { label: "In rewards", cls: "border-sky-400/40 bg-sky-400/10 text-sky-300" },
+  // Green = rewards; a solid fill marks the cash places so they stand out from Essence / XP rewards.
+  cash: { label: "In the cash", cls: "border-emerald-300 bg-emerald-400 text-slate-950" },
+  rewarded: { label: "In rewards", cls: "border-emerald-400/50 bg-emerald-400/10 text-emerald-300" },
   outside: { label: "Outside rewards", cls: "border-amber-400/40 bg-amber-400/10 text-amber-300" },
   unranked: { label: "Submitted", cls: "border-white/10 bg-white/5 text-slate-300" },
   ranked: { label: "Live rank", cls: "border-white/10 bg-white/5 text-slate-300" },
@@ -182,8 +183,8 @@ export function ProProgressCard({ gallery }: { gallery: GalleryResult | null }) 
                 <tr key={w.fixtureSlug} className="border-t border-white/5 text-slate-200">
                   <td className="py-0.5">{w.fixtureSlug.replace(/^nba-/, "")}</td>
                   <td>{w.lineups}</td>
-                  <td className="text-sky-300">{w.rewarded}</td>
-                  <td className="text-emerald-300">{w.cash}</td>
+                  <td className="text-emerald-300">{w.rewarded}</td>
+                  <td className="font-semibold text-emerald-200">{w.cash}</td>
                   <td>{w.bestTopPct !== null ? `top ${w.bestTopPct}%` : "--"}</td>
                 </tr>
               ))}

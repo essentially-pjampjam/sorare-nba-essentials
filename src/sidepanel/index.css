@@ -307,6 +307,7 @@ details.cascade-section:not([open])::details-content {
 .jam-chip-muted { color: #cbd5e1; border-color: rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.04); }
 
 /* Neutral card border everywhere; a colored left edge only when the card needs attention. */
+.jam-attn-info { box-shadow: inset 3px 0 0 var(--jam-info); }
 .jam-attn-money { box-shadow: inset 3px 0 0 var(--jam-money); }
 .jam-attn-warn { box-shadow: inset 3px 0 0 var(--jam-warn); }
 .jam-attn-live { box-shadow: inset 3px 0 0 var(--jam-live); }
@@ -318,3 +319,16 @@ main .text-\[9\.5px\] { font-size: 10px; }
 main .text-\[10px\] { font-size: 10.5px; }
 main .tabular,
 main td { font-variant-numeric: tabular-nums; }
+
+/* Quick-jump bar: sticks right under the sticky header (its height is measured into --jam-header-h). */
+.jam-jumpbar {
+  background: linear-gradient(180deg, var(--jam-bg) 70%, transparent);
+  scrollbar-width: none;
+}
+.jam-jumpbar::-webkit-scrollbar { display: none; }
+[id^="sec-"] {
+  scroll-margin-top: calc(var(--jam-header-h, 0px) + 44px);
+}
+
+/* Contrast: slate-500 on the dark cards is ~3.7:1 (below WCAG AA 4.5:1); lift it to slate-400. */
+main .text-slate-500 { color: #94a3b8; }
