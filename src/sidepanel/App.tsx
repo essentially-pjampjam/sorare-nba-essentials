@@ -122,6 +122,24 @@ export function App() {
   const [showSupport, setShowSupport] = useState<boolean>(false);
   const [showWhatsNew, setShowWhatsNew] = useState<boolean>(false);
   const [showHeaderMenu, setShowHeaderMenu] = useState<boolean>(false);
+  // Global Set | Pro mode (mirrors Sorare's own Set / Pro switch). Per-device convenience.
+  const [playMode, setPlayMode] = useState<"pro" | "set">(() => {
+    try {
+      return localStorage.getItem("jamassist_play_mode") === "set" ? "set" : "pro";
+    } catch {
+      return "pro";
+    }
+  });
+  const selectPlayMode = (next: "pro" | "set") => {
+    setPlayMode(next);
+    try {
+      localStorage.setItem("jamassist_play_mode", next);
+    } catch {
+      // per-device convenience only
+    }
+    // Collections, Craft and Deals are Pro-only (Limited and up).
+    if (next === "set") setActiveTab((t) => (t === "collections" || t === "craft" || t === "bargains" ? "lineups" : t));
+  };
   // The sticky header's height feeds --jam-header-h so the quick-jump bars stick right below it.
   const stickyHeaderRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -1002,26 +1020,58 @@ export function App() {
               </div>
             )}
 
-          {/* Craft context: only where rarity and Essence matter (Collections, Craft, Deals) */}
-          {(activeTab === "collections" || activeTab === "craft" || activeTab === "bargains") && (
-            <div className="mt-2 space-y-1">
-              <div className="grid grid-cols-5 gap-1">
-                  {RARITIES.map((rarity) => {
-                    const meta = RARITY_META[rarity];
-                    const active = rarity === activeRarity;
-                    return (
-                      <button
-                        key={rarity}
-                        type="button"
-                        onClick={() => void handleSelectRarity(rarity)}
-                        className={`h-7 truncate rounded-lg border px-1 text-[10.5px] font-medium transition ${
-                          active ? `${meta.badgeClass} font-semibold` : "border-white/8 bg-white/[0.03] text-slate-400 hover:text-slate-200"
-                        }`}
-                      >
-                        {meta.label}
-                      </button>
-                    );
-                  })}
+          {/* Mode bar on every tab: Set (Common) | Limited | Rare | Super Rare | Unique | Essence */}
+          <div className="mt-2 space-y-1">
+            <div className="grid grid-cols-6 gap-1">
+              <button
+                type="button"
+                onClick={() => selectPlayMode("set")}
+                title="Set (Common cards): Set lineups, packs, Squad, Set gallery and duplicates"
+                className={`h-7 truncate rounded-lg border px-1 text-[10.5px] font-medium transition ${
+                  playMode === "set"
+                    ? "border-violet-400/60 bg-violet-500/20 font-semibold text-violet-100"
+                    : "border-white/8 bg-white/[0.03] text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Set
+              </button>
+              {RARITIES.map((rarity) => {
+                const meta = RARITY_META[rarity];
+                const active = playMode === "pro" && rarity === activeRarity;
+                return (
+                  <button
+                    key={rarity}
+                    type="button"
+                    onClick={() => {
+                      selectPlayMode("pro");
+                      void handleSelectRarity(rarity);
+                    }}
+                    className={`h-7 truncate rounded-lg border px-1 text-[10.5px] font-medium transition ${
+                      active ? `${meta.badgeClass} font-semibold` : "border-white/8 bg-white/[0.03] text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    {rarity === "super_rare" ? (
+                      <>
+                        <span className="min-[440px]:hidden">S. Rare</span>
+                        <span className="hidden min-[440px]:inline">{meta.label}</span>
+                      </>
+                    ) : (
+                      meta.label
+                    )}
+                  </button>
+                );
+              })}
+              {playMode === "set" ? (
+                <div
+                  className="glass-pill flex h-7 min-w-0 items-center gap-1 rounded-lg px-1.5"
+                  title="Set Essence (synced from sorare.com Set pages)"
+                >
+                  <Sparkles className="h-3 w-3 shrink-0 text-violet-300" />
+                  <span className="truncate text-[11px] font-semibold tabular-nums text-slate-100">
+                    {typeof settings.commonEssence === "number" ? settings.commonEssence.toLocaleString() : "--"}
+                  </span>
+                </div>
+              ) : (
                 <div
                   className="glass-pill flex h-7 min-w-0 items-center gap-1 rounded-lg px-1.5"
                   title="Your Sorare Essence (auto-syncs from sorare.com sidebar, or click to type)"
@@ -1037,7 +1087,9 @@ export function App() {
                     aria-label="Current Essence balance"
                   />
                 </div>
-              </div>
+              )}
+            </div>
+            {playMode === "pro" && (activeTab === "collections" || activeTab === "craft" || activeTab === "bargains") && (
               <div className="flex items-center gap-2 text-[10px]">
                 <div className="h-1 flex-1 overflow-hidden rounded-full bg-slate-950/70">
                   <div
@@ -1048,9 +1100,7 @@ export function App() {
                 {essenceGap === 0 ? (
                   <span className="shrink-0 font-semibold text-emerald-300">Craft ready</span>
                 ) : (
-                  <span className="shrink-0 tabular-nums text-slate-400">
-                    {essenceGap.toLocaleString()} Essence to craft
-                  </span>
+                  <span className="shrink-0 tabular-nums text-slate-400">{essenceGap.toLocaleString()} Essence to craft</span>
                 )}
                 {settings.walletBalance?.cashAmount !== null && settings.walletBalance?.cashAmount !== undefined && (
                   <span className="shrink-0 tabular-nums text-emerald-300" title="Auto-synced from sorare.com sidebar wallet">
@@ -1058,8 +1108,8 @@ export function App() {
                   </span>
                 )}
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Accessible Tablist + Scan Age */}
           <div className="mt-2 flex items-center justify-between gap-1 border-t border-white/8 pt-1.5 text-[11px]">
@@ -1096,7 +1146,12 @@ export function App() {
                 aria-controls="panel-collections"
                 aria-selected={activeTab === "collections"}
                 tabIndex={activeTab === "collections" ? 0 : -1}
-                onClick={() => setActiveTab("collections")}
+                onClick={() => {
+                  if (playMode === "set") selectPlayMode("pro");
+                  setActiveTab("collections");
+                }}
+                data-pro-only={playMode === "set" ? "true" : undefined}
+                title={playMode === "set" ? "Pro only (Limited and up): click to switch to Pro" : undefined}
                 className={`px-2 py-1 font-medium transition ${
                   activeTab === "collections"
                     ? "text-slate-50 shadow-[inset_0_-2px_0_var(--jam-info)]"
@@ -1112,7 +1167,12 @@ export function App() {
                 aria-controls="panel-craft"
                 aria-selected={activeTab === "craft"}
                 tabIndex={activeTab === "craft" ? 0 : -1}
-                onClick={() => setActiveTab("craft")}
+                onClick={() => {
+                  if (playMode === "set") selectPlayMode("pro");
+                  setActiveTab("craft");
+                }}
+                data-pro-only={playMode === "set" ? "true" : undefined}
+                title={playMode === "set" ? "Pro only (Limited and up): click to switch to Pro" : undefined}
                 className={`inline-flex items-center gap-1 px-2 py-1 font-medium transition ${
                   activeTab === "craft"
                     ? "text-slate-50 shadow-[inset_0_-2px_0_var(--jam-info)]"
@@ -1146,7 +1206,12 @@ export function App() {
                 aria-controls="panel-bargains"
                 aria-selected={activeTab === "bargains"}
                 tabIndex={activeTab === "bargains" ? 0 : -1}
-                onClick={() => setActiveTab("bargains")}
+                onClick={() => {
+                  if (playMode === "set") selectPlayMode("pro");
+                  setActiveTab("bargains");
+                }}
+                data-pro-only={playMode === "set" ? "true" : undefined}
+                title={playMode === "set" ? "Pro only (Limited and up): click to switch to Pro" : undefined}
                 className={`inline-flex items-center gap-1 px-2 py-1 font-medium transition ${
                   activeTab === "bargains"
                     ? "text-slate-50 shadow-[inset_0_-2px_0_var(--jam-info)]"
@@ -1385,6 +1450,8 @@ export function App() {
             tabIndex={0}
           >
             <LineupsTab
+              mode={playMode === "set" ? "set_common" : "pro"}
+              onModeChange={(m) => selectPlayMode(m === "set_common" ? "set" : "pro")}
               gallery={galleryResult}
               bargains={bargainsResult}
               allScannedBargains={allScannedBargains}
@@ -1483,6 +1550,7 @@ export function App() {
             tabIndex={0}
           >
             <GalleryTab
+              pool={playMode === "set" ? "common" : "pro"}
               gallery={galleryResult}
               walletBalance={settings.walletBalance}
               rarity={activeRarity}

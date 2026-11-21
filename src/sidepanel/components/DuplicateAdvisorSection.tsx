@@ -7,8 +7,18 @@ import { formatMoney } from "../utils/format";
 const projection = (c: { sorareClassicProjected: number | null; l10: number | null }) => c.sorareClassicProjected ?? c.l10 ?? 0;
 
 /** Duplicate Sell Advisor: which extra copies to sell (Pro) or scrap (Set), and which to keep. */
-export function DuplicateAdvisorSection({ gallery, currency }: { gallery: GalleryResult | null; currency: Currency }) {
-  const [pool, setPool] = useState<"pro" | "common">("common");
+export function DuplicateAdvisorSection({
+  gallery,
+  currency,
+  pool: forcedPool,
+}: {
+  gallery: GalleryResult | null;
+  currency: Currency;
+  /** Global Set | Pro switch; hides the own Pro / Set toggle. */
+  pool?: "pro" | "common";
+}) {
+  const [localPool, setPool] = useState<"pro" | "common">("common");
+  const pool = forcedPool ?? localPool;
   const [keepN, setKeepN] = useState<Record<"pro" | "common", number>>({ pro: 1, common: 2 });
   const groups = useMemo(() => {
     if (!gallery) return [];
@@ -49,7 +59,7 @@ export function DuplicateAdvisorSection({ gallery, currency }: { gallery: Galler
       </summary>
       <div className="space-y-2 border-t border-white/8 bg-[#0b101b] p-3 text-[10.5px]">
         <div className="flex items-center gap-1">
-          {(["pro", "common"] as const).map((p) => (
+          {forcedPool === undefined && (["pro", "common"] as const).map((p) => (
             <button
               key={p}
               type="button"

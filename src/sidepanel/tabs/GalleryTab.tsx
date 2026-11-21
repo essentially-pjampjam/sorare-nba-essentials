@@ -73,6 +73,8 @@ function isSealCandidate(c: GalleryCard, ctx: VaultAdviceContext): boolean {
 
 interface GalleryTabProps {
   gallery: GalleryResult | null;
+  /** Global Set | Pro switch: "common" shows Set cards. When set, the tab's own toggle is hidden. */
+  pool?: "pro" | "common";
   walletBalance?: WalletBalanceInfo;
   rarity: Rarity;
   currency: Currency;
@@ -111,8 +113,10 @@ export function GalleryTab({
   isPricingGallery,
   onRefreshGallery,
   onPriceGallery,
+  pool,
 }: GalleryTabProps) {
-  const [poolMode, setPoolMode] = useState<"pro" | "common">("pro");
+  const [localPoolMode, setPoolMode] = useState<"pro" | "common">("pro");
+  const poolMode = pool ?? localPoolMode;
   const [sortBy, setSortBy] = useState<GallerySortBy>("stars_desc");
   const [inSeasonOnly, setInSeasonOnly] = useState<boolean>(false);
   const [firstOwnerOnly, setFirstOwnerOnly] = useState<boolean>(false);
@@ -516,12 +520,13 @@ export function GalleryTab({
       )}
 
       <div id="sec-g-duplicates">
-        <DuplicateAdvisorSection gallery={gallery} currency={currency} />
+        <DuplicateAdvisorSection gallery={gallery} currency={currency} pool={pool} />
       </div>
 
       {/* Pool, Actions, Filters & Sorting */}
       <div id="sec-g-filters" className="space-y-2 rounded-2xl border border-white/8 bg-[#111726] p-3">
         <div className="flex flex-wrap items-center justify-between gap-1.5">
+          {pool === undefined ? (
           <div className="grid grid-cols-2 gap-1 rounded-xl border border-white/8 bg-[#0b101b] p-0.5 text-[11px]">
             <button
               type="button"
@@ -546,6 +551,11 @@ export function GalleryTab({
               Common / Set
             </button>
           </div>
+          ) : (
+            <span className={`jam-chip ${pool === "common" ? "jam-chip-set" : "jam-chip-info"}`}>
+              {pool === "common" ? "Set cards" : `${rarityMeta.label} cards`}
+            </span>
+          )}
 
           <div className="flex items-center gap-1">
             {poolMode === "pro" && (

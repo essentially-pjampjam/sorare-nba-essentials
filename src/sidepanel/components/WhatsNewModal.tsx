@@ -20,6 +20,15 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.4-exp4",
+    title: "v2.7.4-exp4 (test build): Set | Pro Switch",
+    items: [
+      "New Set button left of Limited: one tap and Lineups, Gallery and duplicates show your Set cards, packs and Squad.",
+      "The Set / rarity bar now stays on every tab.",
+      "Quick-jump chips wrap instead of getting cut off in a narrow panel.",
+    ],
+  },
+  {
     version: "2.7.4-exp3",
     title: "v2.7.4-exp3 (test build): Quick Jumps & Safer Key",
     items: [

@@ -2,6 +2,19 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
+## 2.7.4-exp4 (experimental, 2026-11-21)
+
+Added:
+- Set | Pro switch in the top bar, like Sorare's own: Set (Common) sits left of Limited. Set mode turns Lineups into Set teams, packs and Squad, and Gallery and the Duplicate Sell Advisor into your Set cards; it shows Set Essence. Collections, Craft and Deals are Pro-only (Limited and up), dim in Set mode and switch back to Pro when clicked. The choice is remembered.
+
+Changed:
+- The Set / rarity / Essence bar shows on every tab (it no longer disappears on Lineups and Gallery); the craft progress line stays on Collections, Craft and Deals.
+- The old Pro / Set switches inside Lineups, Gallery and the Duplicate Sell Advisor are gone (the top bar drives them).
+- "Super Rare" reads "S. Rare" in a narrow panel.
+
+Fixed:
+- Quick-jump chips were cut off on the right in a narrow panel; they now wrap onto a second row, and sections land below it.
+
 ## 2.7.4-exp3 (experimental, 2026-11-21)
 
 Added:

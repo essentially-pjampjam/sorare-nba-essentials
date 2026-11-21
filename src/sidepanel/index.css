@@ -327,8 +327,11 @@ main td { font-variant-numeric: tabular-nums; }
 }
 .jam-jumpbar::-webkit-scrollbar { display: none; }
 [id^="sec-"] {
-  scroll-margin-top: calc(var(--jam-header-h, 0px) + 44px);
+  scroll-margin-top: calc(var(--jam-header-h, 0px) + var(--jam-jump-h, 44px));
 }
 
 /* Contrast: slate-500 on the dark cards is ~3.7:1 (below WCAG AA 4.5:1); lift it to slate-400. */
 main .text-slate-500 { color: #94a3b8; }
+
+/* Pro-only tabs while Set mode is on. */
+[data-pro-only="true"] { opacity: 0.45; }

@@ -98,6 +98,9 @@ interface LineupsTabProps {
   cutoffReminderEnabled?: boolean;
   /** Starting view (tests, deep links). */
   initialArenaMode?: "pro" | "set_common";
+  /** Global Set | Pro switch (top bar). When set, the tab's own switch is hidden. */
+  mode?: "pro" | "set_common";
+  onModeChange?: (mode: "pro" | "set_common") => void;
   initialFormat?: LineupFormat;
   onToggleCutoffReminder?: (enabled: boolean) => void;
 }
@@ -196,10 +199,14 @@ export function LineupsTab({
   onScanMarketForBudget,
   cutoffReminderEnabled = false,
   initialArenaMode = "pro",
+  mode,
+  onModeChange,
   initialFormat = "contender_11",
   onToggleCutoffReminder,
 }: LineupsTabProps) {
-  const [arenaMode, setArenaMode] = useState<"pro" | "set_common">(initialArenaMode);
+  const [localArenaMode, setLocalArenaMode] = useState<"pro" | "set_common">(initialArenaMode);
+  const arenaMode = mode ?? localArenaMode;
+  const setArenaMode = (next: "pro" | "set_common") => (onModeChange ? onModeChange(next) : setLocalArenaMode(next));
   const [format, setFormat] = useState<LineupFormat>(initialFormat);
   const [ageFilter, setAgeFilter] = useState<LineupAgeFilter>("all");
   const [rarityScope, setRarityScope] = useState<Rarity | "ALL">(activeRarity);
@@ -756,7 +763,8 @@ export function LineupsTab({
         }}
       />
 
-      {/* Pro vs Set/Common Mode Switcher */}
+      {/* Pro vs Set/Common Mode Switcher (only when the top bar does not drive it) */}
+      {mode === undefined && (
       <div className="grid grid-cols-2 gap-1 rounded-2xl border border-white/8 bg-[#111726] p-1.5">
         <button
           type="button"
@@ -781,6 +789,7 @@ export function LineupsTab({
           Set / Common ({commonPool.length})
         </button>
       </div>
+      )}
 
       <JumpBar
         items={
