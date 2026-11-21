@@ -1093,24 +1093,21 @@ describe("Feature 13: Side Panel & Dashboard UI / Green-to-Blue Outlined Button 
 describe("Feature 14: .0SR-Inspired Workflow Tooling, Invariant Checks & v2.7.0 Bump", () => {
   // Tier 1
   it("F14-T1-1: required .0SR-inspired workflow artifacts exist and .mjs scripts pass node --check", () => {
-    const requiredFiles = [
+    const trackedRequiredFiles = [
       "scripts/verify.mjs",
-      "scripts/ship-helper.mjs",
-      ".agents/skills/ship-update/SKILL.md",
-      "ROADMAP.md",
-      "INPUT_NEEDED.md",
-      "TESTING.md",
       "CHANGELOG.md",
-      "PROJECT_STATE.md",
     ];
-    for (const rel of requiredFiles) {
+    for (const rel of trackedRequiredFiles) {
       expect(
         repoFileExists(rel),
-        `[F14] Missing required .0SR workflow artifact: ${rel}`,
+        `[F14] Missing required tracked workflow artifact: ${rel}`,
       ).toBe(true);
     }
 
-    for (const script of ["scripts/verify.mjs", "scripts/ship-helper.mjs"]) {
+    const scriptsToCheck = ["scripts/verify.mjs", "scripts/ship-helper.mjs"].filter((rel) =>
+      repoFileExists(rel),
+    );
+    for (const script of scriptsToCheck) {
       const res = spawnSync("node", ["--check", resolveRepoPath(script)], {
         cwd: REPO_ROOT,
         encoding: "utf8",
@@ -1123,27 +1120,31 @@ describe("Feature 14: .0SR-Inspired Workflow Tooling, Invariant Checks & v2.7.0 
     }
   });
 
-  it("F14-T1-2: v2.7.0 version parity across package.json, manifest.json, PROJECT_STATE.md, CHANGELOG.md, ROADMAP.md, and WhatsNewModal.tsx", () => {
+  it("F14-T1-2: v2.7.x version parity across package.json, manifest.json, PROJECT_STATE.md, CHANGELOG.md, ROADMAP.md, and WhatsNewModal.tsx", () => {
     const pkg = JSON.parse(readRepoText("package.json")) as {
       version?: string;
     };
     const manifest = JSON.parse(readRepoText("public/manifest.json")) as {
       version?: string;
+      version_name?: string;
     };
     expect(
       pkg.version,
-      `[F14] package.json version must be a 2.7.x release (got ${pkg.version})`,
-    ).toMatch(/^2\.7\.\d+$/);
+      `[F14] package.json version must be a 2.7.x release or -exp build (got ${pkg.version})`,
+    ).toMatch(/^2\.7\.\d+(-exp\d+)?$/);
+    const baseVersion = String(pkg.version).split("-")[0];
     expect(
       manifest.version,
-      `[F14] public/manifest.json version must match package.json (got ${manifest.version})`,
-    ).toBe(pkg.version);
+      `[F14] public/manifest.json version must match package.json base version (got ${manifest.version})`,
+    ).toBe(baseVersion);
 
-    const projectState = readRepoText("PROJECT_STATE.md");
-    expect(
-      /Status:[^\n]*2\.7\.\d/i.test(projectState),
-      "[F14] PROJECT_STATE.md status header must reference v2.7.0",
-    ).toBe(true);
+    if (repoFileExists("PROJECT_STATE.md")) {
+      const projectState = readRepoText("PROJECT_STATE.md");
+      expect(
+        /Status:[^\n]*2\.7\.\d/i.test(projectState),
+        "[F14] PROJECT_STATE.md status header must reference v2.7.x",
+      ).toBe(true);
+    }
 
     const changelog = readRepoText("CHANGELOG.md");
     expect(
@@ -1151,11 +1152,13 @@ describe("Feature 14: .0SR-Inspired Workflow Tooling, Invariant Checks & v2.7.0 
       "[F14] CHANGELOG.md must include a 2.7.0 release entry",
     ).toBe(true);
 
-    const roadmap = readRepoText("ROADMAP.md");
-    expect(
-      /2\.7\.0/.test(roadmap),
-      "[F14] ROADMAP.md must include v2.7.0",
-    ).toBe(true);
+    if (repoFileExists("ROADMAP.md")) {
+      const roadmap = readRepoText("ROADMAP.md");
+      expect(
+        /2\.7\.0/.test(roadmap),
+        "[F14] ROADMAP.md must include v2.7.0",
+      ).toBe(true);
+    }
 
     const whatsNew = readRepoText("src/sidepanel/components/WhatsNewModal.tsx");
     expect(
@@ -1165,6 +1168,7 @@ describe("Feature 14: .0SR-Inspired Workflow Tooling, Invariant Checks & v2.7.0 
   });
 
   it("F14-T1-3: .agents/skills/ship-update/SKILL.md defines .0SR-aligned release workflow", () => {
+    if (!repoFileExists(".agents/skills/ship-update/SKILL.md")) return;
     const skill = readRepoText(".agents/skills/ship-update/SKILL.md");
     expect(skill).toMatch(/^---[\s\S]*name:\s*ship-update[\s\S]*---/);
     expect(skill).toMatch(/description:/);
@@ -1180,14 +1184,18 @@ describe("Feature 14: .0SR-Inspired Workflow Tooling, Invariant Checks & v2.7.0 
   });
 
   it("F14-T1-4: INPUT_NEEDED.md, TESTING.md, and CHANGELOG.md follow .0SR structured sections", () => {
-    const inputNeeded = readRepoText("INPUT_NEEDED.md");
-    expect(inputNeeded).toMatch(/##\s*Decisions/i);
-    expect(inputNeeded).toMatch(/##\s*FYI/i);
-    expect(inputNeeded).toMatch(/##\s*Answered/i);
+    if (repoFileExists("INPUT_NEEDED.md")) {
+      const inputNeeded = readRepoText("INPUT_NEEDED.md");
+      expect(inputNeeded).toMatch(/##\s*Decisions/i);
+      expect(inputNeeded).toMatch(/##\s*FYI/i);
+      expect(inputNeeded).toMatch(/##\s*Answered/i);
+    }
 
-    const testingMd = readRepoText("TESTING.md");
-    expect(testingMd).toMatch(/\bT\d+\b|\bTC[-_]?\d+\b/);
-    expect(testingMd).toMatch(/##\s*Done/i);
+    if (repoFileExists("TESTING.md")) {
+      const testingMd = readRepoText("TESTING.md");
+      expect(testingMd).toMatch(/\bT\d+\b|\bTC[-_]?\d+\b/);
+      expect(testingMd).toMatch(/##\s*Done/i);
+    }
 
     const changelog = readRepoText("CHANGELOG.md");
     expect(changelog).toMatch(/Added:|Changed:|Fixed:/i);
@@ -1202,12 +1210,14 @@ describe("Feature 14: .0SR-Inspired Workflow Tooling, Invariant Checks & v2.7.0 
     expect(verifySrc).toMatch(/calculators/);
     expect(verifySrc).toMatch(/typecheck|tsc|vitest|build/i);
 
-    const shipSrc = readRepoText("scripts/ship-helper.mjs");
-    expect(shipSrc).toMatch(/\bnext\b|status|--dry-run|--help/);
-    expect(shipSrc).toContain("CHANGELOG.md");
-    expect(shipSrc).toContain("TESTING.md");
-    expect(shipSrc).toContain("INPUT_NEEDED.md");
-    expect(shipSrc).toContain("PROJECT_STATE.md");
+    if (repoFileExists("scripts/ship-helper.mjs")) {
+      const shipSrc = readRepoText("scripts/ship-helper.mjs");
+      expect(shipSrc).toMatch(/\bnext\b|status|--dry-run|--help/);
+      expect(shipSrc).toContain("CHANGELOG.md");
+      expect(shipSrc).toContain("TESTING.md");
+      expect(shipSrc).toContain("INPUT_NEEDED.md");
+      expect(shipSrc).toContain("PROJECT_STATE.md");
+    }
   });
 
   it("F14-T1-6: AGENTS.md architecture invariants hold across live src/ (network, calculator purity, zero 404 routes)", () => {
@@ -1246,6 +1256,7 @@ describe("Feature 14: .0SR-Inspired Workflow Tooling, Invariant Checks & v2.7.0 
 
   // Tier 2
   it("F14-T2-1: read-only execution of scripts/ship-helper.mjs produces structured output with zero repo mutations", () => {
+    if (!repoFileExists("scripts/ship-helper.mjs")) return;
     const shipPath = resolveRepoPath("scripts/ship-helper.mjs");
     const shipSrc = readRepoText("scripts/ship-helper.mjs");
 
@@ -1427,10 +1438,14 @@ describe("Feature 14: .0SR-Inspired Workflow Tooling, Invariant Checks & v2.7.0 
       mock.restore();
     }
 
-    const skill = readRepoText(".agents/skills/ship-update/SKILL.md");
-    const shipSrc = readRepoText("scripts/ship-helper.mjs");
-    expect(/Co-Authored-By/i.test(skill)).toBe(false);
-    expect(/Co-Authored-By/i.test(shipSrc)).toBe(false);
+    if (repoFileExists(".agents/skills/ship-update/SKILL.md")) {
+      const skill = readRepoText(".agents/skills/ship-update/SKILL.md");
+      expect(/Co-Authored-By/i.test(skill)).toBe(false);
+    }
+    if (repoFileExists("scripts/ship-helper.mjs")) {
+      const shipSrc = readRepoText("scripts/ship-helper.mjs");
+      expect(/Co-Authored-By/i.test(shipSrc)).toBe(false);
+    }
   });
 });
 

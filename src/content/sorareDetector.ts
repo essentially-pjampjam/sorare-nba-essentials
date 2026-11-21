@@ -193,7 +193,7 @@ import {
         btn.querySelector('linearGradient[id*="essence" i], path[fill*="green-400" i]'),
       );
       if (!hasEssenceIcon) continue;
-      const numMatch = (btn.textContent || "").replace(/,/g, "").trim().match(/^(\d{1,5})$/);
+      const numMatch = (btn.textContent || "").replace(/[\s,\u00a0]+/g, "").match(/^(\d{1,5})$/);
       // Sorare reuses the gradient id `essence-gradient-purple` on BOTH counters (checked live
       // 2026-11-21): the colors tell them apart. Limited Essence is filled with --c-green-400,
       // Set Essence with purple #8567C9. The URL is only a fallback when no color is readable.
@@ -201,7 +201,7 @@ import {
         (n.getAttribute("stop-color") || n.getAttribute("fill") || "").toLowerCase(),
       );
       const green = fills.some((f) => f.includes("green"));
-      const purple = fills.some((f) => f === "#8567c9");
+      const purple = fills.some((f) => f === "#8567c9" || f.includes("purple") || f.includes("violet"));
       if (numMatch) {
         const val = Number(numMatch[1]);
         if (Number.isFinite(val) && val >= 0 && val <= 50000) {
@@ -222,12 +222,12 @@ import {
         el.getAttribute("href") ||
         ""
       ).toLowerCase();
-      const rawText = (el.textContent || "").replace(/,/g, "").trim();
+      const rawText = (el.textContent || "").replace(/[\s,\u00a0]+/g, "");
       if (rawText.length > 24 || rawText.includes("/")) continue;
       const m = rawText.match(/^(\d{1,5})$/);
       if (!m) continue;
       const num = Number(m[1]);
-      if (!Number.isFinite(num) || num <= 0 || num > 50000) continue;
+      if (!Number.isFinite(num) || num < 0 || num > 50000) continue;
 
       if (label.includes("unique")) {
         out.unique = num;

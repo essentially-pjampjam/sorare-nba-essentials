@@ -1,5 +1,5 @@
 import { ChevronRight, ExternalLink, Lock, RefreshCw } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { planSealBudget, rankSealDeals } from "../../calculators/sealDealsMath";
 import type { BargainListing, Currency, GalleryResult, Rarity } from "../../shared/types";
 import { getSealDeals, openInActiveTab } from "../api";
@@ -22,6 +22,11 @@ export function SealDealsSection({ gallery, rarity, currency }: { gallery: Galle
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [budget, setBudget] = useState(500);
+
+  useEffect(() => {
+    setListings(null);
+    setError(null);
+  }, [rarity, currency]);
 
   const scan = () => {
     setBusy(true);

@@ -258,7 +258,7 @@ export function connectProgressPort(
   onSwitchTab?: (
     tab: "collections" | "craft" | "lineups" | "bargains" | "gallery",
   ) => void,
-  onEssenceUpdated?: (balances: EssenceBalances) => void,
+  onEssenceUpdated?: (balances: EssenceBalances, commonEssence?: number) => void,
   onWalletUpdated?: (wallet: WalletBalanceInfo) => void,
   onWatchlistAlerts?: (alerts: WatchlistAlert[]) => void,
   onLineupsUpdated?: (lineups: CurrentLineupEntry[]) => void,
@@ -274,6 +274,7 @@ export function connectProgressPort(
     result?: ScanResult;
     tab?: "collections" | "craft" | "lineups" | "bargains" | "gallery";
     essenceByRarity?: EssenceBalances;
+    commonEssence?: number;
     walletBalance?: WalletBalanceInfo;
     alerts?: WatchlistAlert[];
     lineups?: CurrentLineupEntry[];
@@ -294,7 +295,7 @@ export function connectProgressPort(
       msg.essenceByRarity &&
       onEssenceUpdated
     ) {
-      onEssenceUpdated(msg.essenceByRarity);
+      onEssenceUpdated(msg.essenceByRarity, msg.commonEssence);
     } else if (
       msg.type === "WALLET_UPDATED" &&
       msg.walletBalance &&

@@ -90,7 +90,17 @@ export function App() {
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
   const [usernameDraft, setUsernameDraft] = useState<string>("");
   const [detectedUsername, setDetectedUsername] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<ActiveTab>("collections");
+  // Global Set | Pro mode (mirrors Sorare's own Set / Pro switch). Per-device convenience.
+  const [playMode, setPlayMode] = useState<"pro" | "set">(() => {
+    try {
+      return localStorage.getItem("jamassist_play_mode") === "set" ? "set" : "pro";
+    } catch {
+      return "pro";
+    }
+  });
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() =>
+    playMode === "set" ? "lineups" : "collections",
+  );
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [craftPool, setCraftPool] = useState<CraftPoolResult | null>(null);
   const [galleryResult, setGalleryResult] = useState<GalleryResult | null>(
@@ -122,14 +132,6 @@ export function App() {
   const [showSupport, setShowSupport] = useState<boolean>(false);
   const [showWhatsNew, setShowWhatsNew] = useState<boolean>(false);
   const [showHeaderMenu, setShowHeaderMenu] = useState<boolean>(false);
-  // Global Set | Pro mode (mirrors Sorare's own Set / Pro switch). Per-device convenience.
-  const [playMode, setPlayMode] = useState<"pro" | "set">(() => {
-    try {
-      return localStorage.getItem("jamassist_play_mode") === "set" ? "set" : "pro";
-    } catch {
-      return "pro";
-    }
-  });
   const selectPlayMode = (next: "pro" | "set") => {
     setPlayMode(next);
     try {
@@ -139,6 +141,17 @@ export function App() {
     }
     // Collections, Craft and Deals are Pro-only (Limited and up).
     if (next === "set") setActiveTab((t) => (t === "collections" || t === "craft" || t === "bargains" ? "lineups" : t));
+  };
+  const navigateTab = (tab: ActiveTab) => {
+    if (tab === "collections" || tab === "craft" || tab === "bargains") {
+      setPlayMode("pro");
+      try {
+        localStorage.setItem("jamassist_play_mode", "pro");
+      } catch {
+        // per-device convenience only
+      }
+    }
+    setActiveTab(tab);
   };
   // The sticky header's height feeds --jam-header-h so the quick-jump bars stick right below it.
   const stickyHeaderRef = useRef<HTMLDivElement | null>(null);
@@ -422,12 +435,13 @@ export function App() {
         setScanResult(partial);
       },
       (tab) => {
-        setActiveTab(tab);
+        navigateTab(tab);
       },
-      (essenceByRarity) => {
+      (essenceByRarity, commonEssence) => {
         setSettings((prev) => ({
           ...prev,
           essenceByRarity,
+          ...(typeof commonEssence === "number" ? { commonEssence } : {}),
         }));
       },
       (walletBalance) => {
@@ -485,7 +499,7 @@ export function App() {
           resolvedTab === "bargains" ||
           resolvedTab === "gallery"
         ) {
-          setActiveTab(resolvedTab);
+          navigateTab(resolvedTab);
           if (pendingTab) {
             void chrome.storage.local.remove("jamassist_pending_tab");
           }
@@ -749,6 +763,7 @@ export function App() {
   }, [activeRarity, settings.currency, settings.username, usernameDraft]);
 
   const essenceTimerRef = useRef<number | null>(null);
+  const commonEssenceTimerRef = useRef<number | null>(null);
 
   const handleEssenceChange = (val: string) => {
     const parsed = Math.max(0, Math.floor(Number(val) || 0));
@@ -771,6 +786,22 @@ export function App() {
           [targetRarity]: parsed,
         },
       }).catch(() => {});
+    }, 250);
+  };
+
+  const handleCommonEssenceChange = (val: string) => {
+    const trimmed = val.trim();
+    const parsed = trimmed === "" ? 0 : Math.max(0, Math.min(50000, Math.floor(Number(trimmed) || 0)));
+    setSettings((prev) => ({
+      ...prev,
+      commonEssence: parsed,
+    }));
+    if (commonEssenceTimerRef.current !== null) {
+      window.clearTimeout(commonEssenceTimerRef.current);
+    }
+    commonEssenceTimerRef.current = window.setTimeout(() => {
+      commonEssenceTimerRef.current = null;
+      void saveSettings({ commonEssence: parsed }).catch(() => {});
     }, 250);
   };
 
@@ -1064,12 +1095,20 @@ export function App() {
               {playMode === "set" ? (
                 <div
                   className="glass-pill flex h-7 min-w-0 items-center gap-1 rounded-lg px-1.5"
-                  title="Set Essence (synced from sorare.com Set pages)"
+                  title="Set Essence (auto-syncs from sorare.com Set pages, or click to type)"
                 >
                   <Sparkles className="h-3 w-3 shrink-0 text-set-300" />
-                  <span className="truncate text-[11px] font-semibold tabular-nums text-slate-100">
-                    {typeof settings.commonEssence === "number" ? settings.commonEssence.toLocaleString() : "--"}
-                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={50000}
+                    step={1}
+                    placeholder="--"
+                    value={typeof settings.commonEssence === "number" ? settings.commonEssence : ""}
+                    onChange={(e) => handleCommonEssenceChange(e.target.value)}
+                    className="w-full min-w-0 bg-transparent text-[11px] font-semibold tabular-nums text-slate-100 placeholder-slate-400 focus:outline-none"
+                    aria-label="Current Set Essence balance"
+                  />
                 </div>
               ) : (
                 <div
@@ -1128,12 +1167,12 @@ export function App() {
                 if (e.key === "ArrowRight") {
                   e.preventDefault();
                   const next = order[(idx + 1) % order.length];
-                  setActiveTab(next);
+                  navigateTab(next);
                   document.getElementById(`tab-${next}`)?.focus();
                 } else if (e.key === "ArrowLeft") {
                   e.preventDefault();
                   const prev = order[(idx - 1 + order.length) % order.length];
-                  setActiveTab(prev);
+                  navigateTab(prev);
                   document.getElementById(`tab-${prev}`)?.focus();
                 }
               }}
@@ -1452,6 +1491,7 @@ export function App() {
             <LineupsTab
               mode={playMode === "set" ? "set_common" : "pro"}
               onModeChange={(m) => selectPlayMode(m === "set_common" ? "set" : "pro")}
+              commonEssence={settings.commonEssence}
               gallery={galleryResult}
               bargains={bargainsResult}
               allScannedBargains={allScannedBargains}
@@ -1582,11 +1622,14 @@ export function App() {
 
       {showCmdPalette && (
         <CommandPaletteModal
-          galleryCards={galleryResult?.cards ?? []}
+          galleryCards={[
+            ...(galleryResult?.cards ?? []),
+            ...(galleryResult?.commonCards ?? []),
+          ]}
           collections={scanResult?.collections ?? []}
           deals={allScannedBargains}
           currency={settings.currency}
-          onSwitchTab={(t) => setActiveTab(t)}
+          onSwitchTab={(t) => navigateTab(t)}
           onOpenSettings={() => setShowSettings(true)}
           onOpenDashboard={() => void openDashboardTab(activeTab)}
           onClose={() => setShowCmdPalette(false)}

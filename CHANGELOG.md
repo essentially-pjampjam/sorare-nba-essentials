@@ -2,6 +2,18 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
+## 2.7.5-exp1 (2026-11-21)
+
+Fixed:
+- Set (Common) Essence now persists in storage, broadcasts live to the top-right Essence pill and Pack & Mission Advisor, handles space/NBSP thousands separators on sorare.com, and is editable by hand just like Pro Essence.
+- Set mode vs. Pro-only tab state: opening the panel in Set mode starts on Lineups instead of Collections; keyboard tab arrows, Command Palette, and external tab switches automatically switch to Pro when navigating to Collections, Craft, or Deals.
+- Command Palette now includes Set (Common) cards in search results.
+- Reading a partial Sorare board/lineup page now upserts by lineup ID instead of wiping sibling lineups in the same Game Week (full /nba/lineups overview pages still replace the week).
+- Sealing Deal Finder clears stale listings when switching rarity or currency.
+- Pack & Mission Advisor checks odds per pack row so a single pack without odds shows "--" instead of "0%".
+- Daily mission auto-sync now triggers on Sorare SPA route changes, not only full page reloads.
+- Settings API key input no longer traps pastes behind the masked placeholder; AES-GCM key creation deduplicates concurrent first-run calls; Set shop packs fall back cleanly on NBA off-days.
+
 ## 2.7.4 (2026-11-21)
 
 Added:

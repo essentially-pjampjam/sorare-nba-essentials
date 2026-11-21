@@ -40,7 +40,9 @@ export function SettingsModal({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const apiKeyInputRef = useRef<HTMLInputElement>(null);
   const backupInputRef = useRef<HTMLInputElement>(null);
-  const [apiKeyDraft, setApiKeyDraft] = useState(settings.sorareApiKey ?? "");
+  const [apiKeyDraft, setApiKeyDraft] = useState(() =>
+    settings.sorareApiKey?.startsWith("••••") ? "" : (settings.sorareApiKey ?? ""),
+  );
   const [showKey, setShowKey] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
   const [backupStatus, setBackupStatus] = useState<string | null>(null);
@@ -90,10 +92,17 @@ export function SettingsModal({
   }, [focusApiKey, onClose]);
 
   const handleSaveApiKey = () => {
+    const trimmed = apiKeyDraft.trim();
+    if (!trimmed && settings.sorareApiKey) {
+      setSavedToast(true);
+      window.setTimeout(() => setSavedToast(false), 1800);
+      return;
+    }
     onUpdateSettings({
-      sorareApiKey: apiKeyDraft.trim(),
+      sorareApiKey: trimmed,
       apiKeyPromptDismissed: true,
     });
+    setApiKeyDraft("");
     setSavedToast(true);
     window.setTimeout(() => setSavedToast(false), 1800);
   };
@@ -233,7 +242,11 @@ export function SettingsModal({
               spellCheck={false}
               aria-label="Personal Sorare API key"
               onChange={(e) => setApiKeyDraft(e.target.value)}
-              placeholder="Paste personal Sorare APIKEY..."
+              placeholder={
+                settings.sorareApiKey
+                  ? `Saved (${settings.sorareApiKey}) - paste new key to replace`
+                  : "Paste personal Sorare APIKEY..."
+              }
               className="w-full rounded-lg border border-white/10 bg-[#141c2f] py-1.5 pl-2.5 pr-7 text-xs text-slate-100 placeholder-slate-500 focus:border-amber-400 focus:outline-none"
             />
             <button

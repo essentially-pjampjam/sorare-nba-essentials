@@ -89,28 +89,43 @@ function pruneFinished(lineups: PageLineup[], nowMs: number): PageLineup[] {
   });
 }
 
+/** True only on full /nba/lineups overview pages where all lineups of a Game Week are shown. */
+export function isFullLineupsOverviewUrl(url: string | undefined): boolean {
+  return Boolean(url && /^https:\/\/sorare\.com\/nba\/lineups(\/|$)/i.test(url));
+}
+
 /**
- * Merges a fresh page read into the saved snapshot. A Game Week the tab showed replaces the
- * saved lineups of that Game Week (so deleted lineups disappear); other weeks are kept.
+ * Merges a fresh page read into the saved snapshot.
+ * On full /nba/lineups overview pages (replaceWholeWeek = true), a Game Week the tab showed
+ * replaces the saved lineups of that Game Week (so deleted lineups disappear); other weeks are kept.
+ * On partial board / single-lineup pages (replaceWholeWeek = false), lineups are upserted by id
+ * so sibling lineups in the same Game Week are never wiped.
  */
 export function mergePageLineups(
   previous: PageLineupSnapshot | null,
   read: { userSlug: string; lineups: PageLineup[] },
   nowMs: number,
+  replaceWholeWeek = true,
 ): PageLineupSnapshot {
   const base = previous && previous.userSlug === read.userSlug ? previous.lineups : [];
-  const freshWeeks = new Set(read.lineups.map((l) => l.fixtureSlug));
-  const kept = base.filter((l) => !freshWeeks.has(l.fixtureSlug));
+  let kept: PageLineup[];
+  if (replaceWholeWeek) {
+    const freshWeeks = new Set(read.lineups.map((l) => l.fixtureSlug));
+    kept = base.filter((l) => !freshWeeks.has(l.fixtureSlug));
+  } else {
+    const freshIds = new Set(read.lineups.map((l) => l.id));
+    kept = base.filter((l) => !freshIds.has(l.id));
+  }
   return { userSlug: read.userSlug, lineups: pruneFinished([...kept, ...read.lineups], nowMs), scannedAt: nowMs };
 }
 
-async function readTab(tabId: number): Promise<PageLineupSnapshot | null> {
+async function readTab(tabId: number, tabUrl?: string): Promise<PageLineupSnapshot | null> {
   const [result] = await chrome.scripting.executeScript({ target: { tabId }, world: "MAIN", func: readLineupsFromPage });
   const data = result?.result as PageReadResult | undefined;
   if (!data || "error" in data) return null;
   // An empty read on a non-lineup page says nothing about the manager's lineups.
   if (data.lineups.length === 0) return null;
-  const next = mergePageLineups(await getSavedPageLineups(), data, Date.now());
+  const next = mergePageLineups(await getSavedPageLineups(), data, Date.now(), isFullLineupsOverviewUrl(tabUrl));
   await chrome.storage.local.set({ [PAGE_LINEUPS_KEY]: next });
   return next;
 }
@@ -120,7 +135,7 @@ export async function syncLineupsFromOpenTabs(username?: string): Promise<PageLi
   if (chrome.scripting && chrome.tabs?.query) {
     const tabs = await chrome.tabs.query({ url: ["https://sorare.com/nba/*"] }).catch(() => []);
     for (const t of tabs) {
-      if (t.id) await readTab(t.id).catch(() => null);
+      if (t.id) await readTab(t.id, t.url).catch(() => null);
     }
   }
   return getSavedPageLineups(username);
@@ -132,9 +147,10 @@ export function watchLineupPages(onUpdate: (snap: PageLineupSnapshot) => void): 
   chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
     if (!tab.url || !tab.url.startsWith("https://sorare.com/nba")) return;
     if (info.status !== "complete" && !info.url) return;
+    const currentUrl = tab.url;
     for (const delay of [3000, 8000]) {
       setTimeout(() => {
-        void readTab(tabId)
+        void readTab(tabId, currentUrl)
           .then((snap) => {
             if (snap) onUpdate(snap);
           })

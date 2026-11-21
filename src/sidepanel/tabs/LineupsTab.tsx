@@ -101,6 +101,7 @@ interface LineupsTabProps {
   /** Global Set | Pro switch (top bar). When set, the tab's own switch is hidden. */
   mode?: "pro" | "set_common";
   onModeChange?: (mode: "pro" | "set_common") => void;
+  commonEssence?: number;
   initialFormat?: LineupFormat;
   onToggleCutoffReminder?: (enabled: boolean) => void;
 }
@@ -201,6 +202,7 @@ export function LineupsTab({
   initialArenaMode = "pro",
   mode,
   onModeChange,
+  commonEssence,
   initialFormat = "contender_11",
   onToggleCutoffReminder,
 }: LineupsTabProps) {
@@ -1280,7 +1282,7 @@ export function LineupsTab({
       {arenaMode === "set_common" && (
         <div className="space-y-3">
           {/* Set packs: Daily Pack, Bronze+, Live Today, 3★+ odds */}
-          <div id="sec-set-packs"><PackAdvisorCard /></div>
+          <div id="sec-set-packs"><PackAdvisorCard commonEssence={commonEssence} /></div>
 
           {/* Set Squad: who has a team in the live stage */}
           <div id="sec-set-squad"><SquadActivityCard mySlug={gallery?.username ?? null} /></div>

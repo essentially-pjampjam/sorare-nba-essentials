@@ -1327,7 +1327,10 @@ export class SorareClient {
       .flatMap((s) => s.cardPacks ?? [])
       .map((p) => p.slug)
       .filter((slug) => /^[a-z0-9-]+$/.test(slug));
-    const setPrefix = liveSlugs[0]?.split("-nba-")[0] ?? "";
+    const setPrefix =
+      liveSlugs[0]?.split("-nba-")[0] ??
+      discovered[0]?.slug.split("-nba-")[0] ??
+      "divination";
     const standard = setPrefix ? ["gold", "silver", "bronze"].map((q) => `${setPrefix}-nba-${q}-pack`) : [];
     // Special offers (e.g. "Emirates Cup Platinum") are only listed for logged-in users: the
     // extension finds them on the user's Shop page, then reads price and odds publicly by slug.

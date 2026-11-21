@@ -14,19 +14,21 @@ const SHOP_URL = "https://sorare.com/nba/series/market";
 const currencyLabel = (c: string) => (c === "COMMON_ESSENCE" ? "Essence" : c === "COMMON_GEM" ? "gems" : c.toLowerCase());
 
 /** Set Pack & Mission Advisor: Daily Pack, Bronze+ progress, Live Today packs and per-pack 3★+ odds. */
-export function PackAdvisorCard() {
+export function PackAdvisorCard({ commonEssence: commonEssenceProp }: { commonEssence?: number } = {}) {
   const [data, setData] = useState<SetPackAdvisorData | null>(null);
-  const [commonEssence, setCommonEssence] = useState<number | null>(null);
+  const [loadedCommonEssence, setLoadedCommonEssence] = useState<number | null>(null);
   const [hasKey, setHasKey] = useState(false);
   const [busy, setBusy] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
+  const commonEssence =
+    typeof commonEssenceProp === "number" ? commonEssenceProp : loadedCommonEssence;
 
   const load = useCallback(() => {
     setBusy(true);
     Promise.all([getSetPackAdvisor(), getSettings()])
       .then(([advisor, settings]) => {
         setData(advisor);
-        setCommonEssence(typeof settings.commonEssence === "number" ? settings.commonEssence : null);
+        setLoadedCommonEssence(typeof settings.commonEssence === "number" ? settings.commonEssence : null);
         setHasKey(Boolean(settings.sorareApiKey));
       })
       .catch(() => {})
@@ -129,8 +131,8 @@ export function PackAdvisorCard() {
                 <td>
                   {a.pack.price} {currencyLabel(a.pack.currency)}
                 </td>
-                <td className="font-semibold text-emerald-300">{hasOdds ? `${a.chance3StarPct}%` : "--"}</td>
-                <td>{hasOdds ? `${a.chance4StarPct}%` : "--"}</td>
+                <td className="font-semibold text-emerald-300">{a.pack.slots.length > 0 ? `${a.chance3StarPct}%` : "--"}</td>
+                <td>{a.pack.slots.length > 0 ? `${a.chance4StarPct}%` : "--"}</td>
                 <td className="truncate text-slate-400">
                   {a.lastSlotTop
                     .slice(0, 3)

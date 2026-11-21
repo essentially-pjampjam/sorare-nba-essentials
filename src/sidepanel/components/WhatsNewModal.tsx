@@ -20,6 +20,17 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.5-exp1",
+    title: "v2.7.5-exp1: Set Essence Sync & Reliability Fixes",
+    items: [
+      "Fixed Set (Common) Essence persistence and live sync: Set Essence now saves across restarts, broadcasts live to the top-right pill and Pack Advisor, and can also be typed manually.",
+      "Fixed Set mode vs. Pro-only tab desync: restoring in Set mode opens on Lineups, and keyboard arrows, Command Palette, and deep links switch cleanly to Pro when opening Collections, Craft, or Deals.",
+      "Command Palette now searches your Set (Common) cards as well as Pro cards.",
+      "Partial board/lineup pages no longer wipe sibling lineups in the same Game Week; full /nba/lineups overview pages still replace the week cleanly.",
+      "Fixed Seal Deals stale listings on rarity/currency switch, per-pack odds display in Pack Advisor, SPA mission tab auto-sync, and pasting a new API key over a masked key in Settings.",
+    ],
+  },
+  {
     version: "2.7.4",
     title: "v2.7.4: Set | Pro Switch, Your Lineups & New Look",
     items: [

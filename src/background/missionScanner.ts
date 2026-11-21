@@ -61,7 +61,7 @@ export async function scanPickerMissionsFromOpenTabs(): Promise<PickerMissionsBy
 export function watchMissionPages(): void {
   if (!chrome.tabs?.onUpdated || !chrome.scripting) return;
   chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
-    if (info.status !== "complete" || !tab.url || !/missions|series\/play/.test(tab.url) || !MISSION_PAGE.test(tab.url)) return;
+    if ((info.status !== "complete" && !info.url) || !tab.url || !/missions|series\/play/.test(tab.url) || !MISSION_PAGE.test(tab.url)) return;
     let tries = 0;
     const attempt = () => {
       tries += 1;

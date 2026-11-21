@@ -489,6 +489,10 @@ async function saveSettings(
       ...current.essenceByRarity,
       ...(patch.essenceByRarity ?? {}),
     },
+    commonEssence:
+      typeof patch.commonEssence === "number" && Number.isFinite(patch.commonEssence)
+        ? Math.max(0, Math.min(50000, Math.floor(patch.commonEssence)))
+        : current.commonEssence,
     milestoneRulesByRarity: {
       ...current.milestoneRulesByRarity,
       ...(patch.milestoneRulesByRarity ?? {}),
@@ -1478,14 +1482,20 @@ async function handleMessage(
           }
         }
         const common = incoming.common;
-        if (typeof common === "number" && Number.isFinite(common) && common >= 0 && common <= 50000 && common !== current.commonEssence) {
-          await saveSettings({ commonEssence: common });
-        }
-        if (changed) {
-          await saveSettings({ essenceByRarity: nextBalances });
+        const nextCommon =
+          typeof common === "number" && Number.isFinite(common) && common >= 0 && common <= 50000
+            ? Math.floor(common)
+            : undefined;
+        const commonChanged = nextCommon !== undefined && nextCommon !== current.commonEssence;
+        if (changed || commonChanged) {
+          await saveSettings({
+            ...(changed ? { essenceByRarity: nextBalances } : {}),
+            ...(commonChanged ? { commonEssence: nextCommon } : {}),
+          });
           broadcastMessage({
             type: "ESSENCE_UPDATED",
             essenceByRarity: nextBalances,
+            ...(commonChanged ? { commonEssence: nextCommon } : {}),
           });
         }
         return { ok: true, data: nextBalances };

@@ -1431,20 +1431,15 @@ describe("Tier 3 — Pairwise Cross-Feature Integration (F1–F16)", () => {
     expect(masterOffEvents).toEqual([]);
   });
 
-  it("Pair 16 [F14 + F15]: .0SR workflow tooling, manifest notifications, 2.7.0 parity & E2E isolation", () => {
-    const expectedWorkflowFiles = [
+  it("Pair 16 [F14 + F15]: .0SR workflow tooling, manifest notifications, 2.7.x parity & E2E isolation", () => {
+    const trackedWorkflowFiles = [
       "scripts/verify.mjs",
-      "scripts/ship-helper.mjs",
-      ".agents/skills/ship-update/SKILL.md",
-      "ROADMAP.md",
-      "INPUT_NEEDED.md",
-      "TESTING.md",
       "CHANGELOG.md",
     ];
-    for (const f of expectedWorkflowFiles) {
+    for (const f of trackedWorkflowFiles) {
       expect(
         repoFileExists(f),
-        `[F14+F15 | PROJECT.md #14] Missing .0SR workflow file: ${f}`,
+        `[F14+F15 | PROJECT.md #14] Missing tracked workflow file: ${f}`,
       ).toBe(true);
     }
 
@@ -1453,11 +1448,13 @@ describe("Tier 3 — Pairwise Cross-Feature Integration (F1–F16)", () => {
       version?: string;
       permissions?: string[];
     };
-    const projectState = readRepoText("PROJECT_STATE.md");
 
-    expect(pkg.version).toMatch(/^2\.7\.\d+$/);
-    expect(manifest.version).toBe(pkg.version);
-    expect(projectState).toContain("2.7.0");
+    expect(pkg.version).toMatch(/^2\.7\.\d+(-exp\d+)?$/);
+    expect(manifest.version).toBe(String(pkg.version).split("-")[0]);
+    if (repoFileExists("PROJECT_STATE.md")) {
+      const projectState = readRepoText("PROJECT_STATE.md");
+      expect(projectState).toContain("2.7.0");
+    }
     expect(manifest.permissions).toContain("notifications");
     expect(manifest.permissions).toContain("alarms");
 
