@@ -3,7 +3,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { analyzePack, buildPackAdvice } from "../../calculators/packAdvisorMath";
 import type { SetPackAdvisorData } from "../../shared/types";
 import { getSetPackAdvisor, getSettings, scanSetShopStatus } from "../api";
+import { formatTimeLeft } from "../utils/format";
 import { GoButton } from "./GoButton";
+
+/** Special packs the extension first saw in the last 48 hours. */
+const isNewPack = (firstSeen: number | null | undefined) => typeof firstSeen === "number" && Date.now() - firstSeen < 48 * 3600_000;
 
 const SHOP_URL = "https://sorare.com/nba/series/market";
 
@@ -83,6 +87,18 @@ export function PackAdvisorCard() {
         </div>
       )}
 
+      {analyses
+        .filter((a) => a.pack.special)
+        .map((a) => (
+          <div key={`sp-${a.pack.slug}`} className="mb-1.5 rounded-lg border border-violet-400/35 bg-violet-500/10 px-2 py-1.5 text-[10.5px] text-slate-200">
+            <span className="font-semibold text-violet-200">{isNewPack(a.pack.firstSeen) ? "New special pack: " : "Special pack: "}</span>
+            {a.pack.title} • {a.pack.price} {currencyLabel(a.pack.currency)} • {a.pack.cardsCount} cards
+            {a.pack.endDate ? ` • ends in ${formatTimeLeft(a.pack.endDate)}` : ""}
+            {a.pack.slots.length > 0
+              ? ` • 3★+ ${a.chance3StarPct}%, 4★+ ${a.chance4StarPct}%, avg ${a.expectedStars}★ per pack`
+              : " • odds load with an API key"}
+          </div>
+        ))}
       {analyses.length > 0 && (
         <table className="w-full text-[10px]">
           <thead>
@@ -94,14 +110,21 @@ export function PackAdvisorCard() {
               </th>
               <th className="font-medium">4★+</th>
               <th className="font-medium" title="Best tiers in the last card slot (#4 carries the best tier)">
-                Slot #{analyses[0]?.pack.slots.length || 4} top
+                Last slot top
               </th>
             </tr>
           </thead>
           <tbody>
             {analyses.map((a) => (
               <tr key={a.pack.slug} className={`border-t border-white/5 ${a.affordable === false ? "text-slate-500" : "text-slate-200"}`}>
-                <td className="py-0.5">{a.pack.title}</td>
+                <td className="py-0.5">
+                  {a.pack.title}
+                  {a.pack.special && (
+                    <span className="ml-1 rounded border border-violet-400/40 bg-violet-500/15 px-1 text-[9px] font-bold text-violet-200">
+                      {isNewPack(a.pack.firstSeen) ? "NEW" : "SPECIAL"}
+                    </span>
+                  )}
+                </td>
                 <td>
                   {a.pack.price} {currencyLabel(a.pack.currency)}
                 </td>

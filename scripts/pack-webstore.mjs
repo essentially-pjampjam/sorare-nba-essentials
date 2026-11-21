@@ -13,6 +13,11 @@ if (!existsSync(manifestPath)) {
 
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 const version = manifest.version ?? "0.0.0";
+// Experimental builds are tested unpacked from dist/ and never packed for the store.
+if (/-exp/i.test(String(manifest.version_name ?? "")) && !process.argv.includes("--allow-exp")) {
+  console.error(`dist is an experimental build (${manifest.version_name}). Release it first (drop version_name), or pass --allow-exp.`);
+  process.exit(1);
+}
 const releasesDir = resolve(rootDir, "releases");
 mkdirSync(releasesDir, { recursive: true });
 

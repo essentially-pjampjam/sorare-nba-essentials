@@ -2,6 +2,19 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
+## 2.7.4-exp1 (experimental, 2026-11-21)
+
+Fixed:
+- Pro lineups never showed up: Sorare keeps lineups private, so the public API returns none, and live Game Week lineups were filtered out. Lineups are now read from your logged-in Sorare tab (live and upcoming Game Weeks) with rank, score, projected rank and field size; Refresh and the new Sync button re-read them.
+
+Changed:
+- "Pro Progress" is now "Current Pro Progress": lineups grouped by Game Week (LIVE / Before cutoff) with reward status estimated from last week's field.
+- "Current Open Lineups & Upgrade Swaps" is now "Upcoming Lineups & Upgrade Swaps" with a correct explanation.
+- Gallery hides sealed cards by default; untick "Hide sealed" to show them.
+
+Added:
+- Special Set shop packs (for example "Emirates Cup Platinum") are detected from your Sorare Shop tab and analyzed like the standard packs (price, 3★+ / 4★+ odds, NEW badge, time left).
+
 ## 2.7.3 (2026-11-21)
 
 Fixed:

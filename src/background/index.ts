@@ -41,6 +41,8 @@ import type {
   CraftPoolResult,
   Currency,
   CurrentLineupEntry,
+  PageLineup,
+  PageLineupSnapshot,
   DailyPickerPool,
   GalleryCard,
   GalleryResult,
@@ -64,7 +66,8 @@ import {
 } from "./rateLimitQueue";
 import { SorareClient } from "./sorareClient";
 import { getSavedSquadSnapshot, scanSquadFromOpenTab } from "./squadScanner";
-import { getSavedShopStatus, scanShopStatusFromOpenTab } from "./shopScanner";
+import { openPageLineupsAsEntries, syncLineupsFromOpenTabs, watchLineupPages } from "./lineupScanner";
+import { getDiscoveredPacks, getSavedShopStatus, scanShopStatusFromOpenTab, syncPacksFromOpenTabs, watchShopPages } from "./shopScanner";
 import { getSavedPickerMissions, scanPickerMissionsFromOpenTabs, watchMissionPages } from "./missionScanner";
 import { applySealedOverrides, syncSealedStatesFromOpenTabs, watchSealedStates } from "./cardStateScanner";
 
@@ -189,6 +192,11 @@ const sorareClient = new SorareClient(queue);
 watchMissionPages();
 // Cards sealed on sorare.com drop out of lineup suggestions right away (no refresh needed).
 watchSealedStates();
+watchShopPages();
+watchLineupPages((snap) => {
+  broadcastMessage({ type: "PAGE_LINEUPS_UPDATED", snapshot: snap });
+  void recordProProgress(pageLineupsForHistory(snap.lineups), []);
+});
 
 function applyNetworkMode(settings: UserSettings): void {
   const key = settings.sorareApiKey?.trim() ?? "";
@@ -967,6 +975,37 @@ function mergeCurrentLineups(
   return mergeApiAndDomLineups(apiLineups, current, "load");
 }
 
+/**
+ * Lineups read from Sorare's own page data are authoritative for the open Game Week: they replace
+ * heuristic DOM captures and the API lineups they match.
+ */
+function withPageLineups(base: CurrentLineupEntry[], snap: PageLineupSnapshot | null): CurrentLineupEntry[] {
+  const page = openPageLineupsAsEntries(snap);
+  if (page.length === 0) return base;
+  const uuids = page.map((p) => p.sorareLineupId ?? "").filter(Boolean);
+  const keep = base.filter((b) => b.source !== "dom" && b.source !== "page" && !uuids.some((u) => b.id.endsWith(u)));
+  return [...page, ...keep];
+}
+
+/** Page lineups with a rank, as history records (field size comes from the page). */
+function pageLineupsForHistory(lineups: PageLineup[]): CurrentLineupEntry[] {
+  return lineups
+    .filter((l) => l.rank != null && l.leaderboardSlug)
+    .map((l) => ({
+      id: l.id,
+      name: l.name,
+      leaderboardSlug: l.leaderboardSlug,
+      leaderboardName: l.leaderboardName,
+      draft: false,
+      cardSlugs: l.cardSlugs,
+      captainCardSlug: null,
+      source: "page" as const,
+      rank: l.rank,
+      score: l.score,
+      totalEntries: l.totalEntries,
+    }));
+}
+
 async function readStoredDomLineups(): Promise<CurrentLineupEntry[]> {
   try {
     const raw = await chrome.storage.local.get(DETECTED_LINEUPS_KEY);
@@ -1011,13 +1050,15 @@ async function fetchGalleryForLineups(
       void syncOverlayLookup(cached.value.cards);
       const domLineups = await readStoredDomLineups();
       await syncSealedStatesFromOpenTabs();
+      const pageLineups = await syncLineupsFromOpenTabs(cleanUser);
       return {
         ...cached.value,
         cards: await applySealedOverrides(cached.value.cards, cached.value.fetchedAt),
-        currentLineups: mergeCurrentLineups(
-          cached.value.currentLineups ?? [],
-          domLineups,
+        currentLineups: withPageLineups(
+          mergeCurrentLineups(cached.value.currentLineups ?? [], domLineups),
+          pageLineups,
         ),
+        pageLineups,
         fromCache: true,
       };
     }
@@ -1043,9 +1084,11 @@ async function fetchGalleryForLineups(
   const [
     { cards, commonCards, fixtures, currentLineups, leaderboardBenchmarks },
     domLineups,
+    pageLineups,
   ] = await Promise.all([
     sorareClient.fetchUserGalleryAndFixtures(cleanUser, controller.signal),
     readStoredDomLineups(),
+    syncLineupsFromOpenTabs(cleanUser),
   ]);
   // Count ESPN games inside the opened Game Week (cutoff -> end), not a rolling window.
   const openGw = selectOpenGameWeek(fixtures, Date.now());
@@ -1060,8 +1103,12 @@ async function fetchGalleryForLineups(
     cards: annotateSeasonActivity(cards, seasonStats),
     commonCards: annotateSeasonActivity(commonCards, seasonStats),
     fixtures,
-    currentLineups: mergeCurrentLineups(currentLineups, domLineups, openGw?.fixture.slug ?? null),
+    currentLineups: withPageLineups(
+      mergeCurrentLineups(currentLineups, domLineups, openGw?.fixture.slug ?? null),
+      pageLineups,
+    ),
     leaderboardBenchmarks,
+    pageLineups,
     injuriesByName: external.injuriesByName,
     gamesPerTeam: external.gamesPerTeam,
     scheduleByTeam: external.scheduleByTeam,
@@ -1084,7 +1131,10 @@ async function fetchGalleryForLineups(
       injuriesByName: result.injuriesByName,
     });
     await syncOverlayLookup(result.cards);
-    await recordProProgress(currentLineups, leaderboardBenchmarks ?? []);
+    await recordProProgress(
+      [...currentLineups, ...pageLineupsForHistory(pageLineups?.lineups ?? [])],
+      leaderboardBenchmarks ?? [],
+    );
     broadcastProgress({
       phase: "done",
       completed: 1,
@@ -1732,6 +1782,11 @@ async function handleMessage(
       case "GET_ALERT_FEED": {
         return { ok: true, data: await getAlertFeed() };
       }
+      case "SYNC_PAGE_LINEUPS": {
+        const snap = await syncLineupsFromOpenTabs(msg.username);
+        if (snap) void recordProProgress(pageLineupsForHistory(snap.lineups), []);
+        return { ok: true, data: snap };
+      }
       case "SCAN_SQUAD_ACTIVITY": {
         return { ok: true, data: await scanSquadFromOpenTab() };
       }
@@ -1740,7 +1795,8 @@ async function handleMessage(
         let packs: SetPackAdvisorData["packs"] = [];
         let error: string | undefined;
         try {
-          packs = await sorareClient.fetchSetPacks();
+          await syncPacksFromOpenTabs().catch(() => undefined);
+          packs = await sorareClient.fetchSetPacks(await getDiscoveredPacks());
         } catch (err) {
           error = err instanceof Error ? err.message : String(err);
         }

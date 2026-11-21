@@ -327,7 +327,7 @@ export interface CurrentLineupEntry {
   cardSlugs: string[];
   captainCardSlug: string | null;
   playerNames?: string[];
-  source?: "api" | "dom";
+  source?: "api" | "dom" | "page";
   /** DOM-synced extras (from the content script parser). */
   contestKind?: "arena" | "pro";
   seasonScope?: "in_season" | "classic";
@@ -340,6 +340,37 @@ export interface CurrentLineupEntry {
   /** Live rank / score in its leaderboard (`So5Lineup.so5Rankings`, API key only). */
   rank?: number | null;
   score?: number | null;
+  /** Lineups in its leaderboard, when the source knows it (page data). */
+  totalEntries?: number | null;
+}
+
+/** One lineup read from Sorare's own page data (Apollo cache) on a logged-in sorare.com tab. */
+export interface PageLineup {
+  id: string;
+  name: string;
+  leaderboardSlug: string;
+  leaderboardName: string;
+  fixtureSlug: string;
+  /** "Game Week 10" */
+  fixtureName: string;
+  /** Sorare fixture state: "opened" (before cutoff), "started" (live), "closed". */
+  fixtureState: string;
+  cutOffDate: string | null;
+  endDate: string | null;
+  cardSlugs: string[];
+  playerNames: string[];
+  rank: number | null;
+  liveProjectedRank: number | null;
+  score: number | null;
+  /** Lineups in that leaderboard. */
+  totalEntries: number | null;
+  canEdit: boolean;
+}
+
+export interface PageLineupSnapshot {
+  userSlug: string;
+  lineups: PageLineup[];
+  scannedAt: number;
 }
 
 /** One Pro lineup result kept locally per Game Week for the progress tracker. */
@@ -521,6 +552,10 @@ export interface SetPackInfo {
   cardsCount: number;
   /** Per slot (#1..#4) tier odds. */
   slots: PackTierOdds[][];
+  /** Special offer found on the user's Shop page (not a standard or Live Today pack). */
+  special?: boolean;
+  /** When the extension first saw this special pack (ms). */
+  firstSeen?: number | null;
 }
 
 /** Private Set shop status read from the user's open sorare.com Shop tab. */
@@ -571,6 +606,8 @@ export interface GalleryResult {
   fixtures: So5FixtureSummary[];
   currentLineups: CurrentLineupEntry[];
   leaderboardBenchmarks?: LeaderboardBenchmark[];
+  /** The manager's own lineups read from open sorare.com Lineups tabs (live + upcoming Game Weeks). */
+  pageLineups?: PageLineupSnapshot | null;
   injuriesByName: Record<string, InjuryReportEntry>;
   gamesPerTeam: Record<string, number>;
   scheduleByTeam?: Record<string, TeamSlateSchedule>;
@@ -822,6 +859,7 @@ export type BackgroundRequest =
   | { type: "GET_ALERT_FEED" }
   | { type: "GET_DAILY_PICKER_POOL"; refresh?: boolean }
   | { type: "SCAN_SQUAD_ACTIVITY" }
+  | { type: "SYNC_PAGE_LINEUPS"; username?: string }
   | { type: "GET_PICKER_MISSIONS" }
   | { type: "GET_SEAL_DEALS"; rarity: Rarity }
   | { type: "SCAN_PICKER_MISSIONS" }

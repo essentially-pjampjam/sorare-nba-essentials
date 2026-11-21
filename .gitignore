@@ -18,3 +18,15 @@ scripts/generate-promos.mjs
 
 # AI session handoff notes and screenshots (local only)
 docs/handoff/
+
+# AI agent files and build-process notes (local only, never public)
+.agents/
+.claude/
+.codex/
+.cursor/
+GEMINI.md
+INPUT_NEEDED.md
+TESTING.md
+docs/LIVE_TESTS.md
+EXPERIMENTAL.md
+*.local.md

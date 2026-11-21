@@ -20,6 +20,15 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.4-exp1",
+    title: "v2.7.4-exp1 (test build): Your Lineups Show Up",
+    items: [
+      "Current Pro Progress now shows your real lineups: live Game Week with rank, points and projected rank, plus lineups submitted for the next Game Week. They are read from your logged-in Sorare tab, and Refresh or Sync re-reads them.",
+      "Gallery hides sealed cards by default. Untick Hide sealed to see them.",
+      "Special Set shop packs (like Emirates Cup Platinum) are spotted automatically and get the same odds breakdown as the other packs.",
+    ],
+  },
+  {
     version: "2.7.3",
     title: "v2.7.3: Sealed Cards & Inactive Players Fix",
     items: [

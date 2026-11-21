@@ -117,6 +117,22 @@ export function GalleryTab({
   const [inSeasonOnly, setInSeasonOnly] = useState<boolean>(false);
   const [firstOwnerOnly, setFirstOwnerOnly] = useState<boolean>(false);
   const [unlockedOnly, setUnlockedOnly] = useState<boolean>(false);
+  // Sealed cards sit in the Vault and cannot play or sell: hidden unless the user unticks it.
+  const [hideSealed, setHideSealed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("gallery_hide_sealed") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const toggleHideSealed = (next: boolean) => {
+    setHideSealed(next);
+    try {
+      localStorage.setItem("gallery_hide_sealed", next ? "1" : "0");
+    } catch {
+      // per-viewer convenience only
+    }
+  };
   const [formFilter, setFormFilter] = useState<
     "all" | "hot" | "cold" | "proj" | "shift" | "seal"
   >("all");
@@ -201,9 +217,12 @@ export function GalleryTab({
     };
   }, [sourceCards, vaultContextBySlug]);
 
+  const sealedCount = useMemo(() => sourceCards.filter((c) => c.sealed).length, [sourceCards]);
+
   const filteredAndSorted = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const filtered = sourceCards.filter((c) => {
+      if (hideSealed && c.sealed) return false;
       if (inSeasonOnly && !c.inSeasonEligible) return false;
       if (firstOwnerOnly && !c.isFirstOwner) return false;
       if (unlockedOnly && (c.openedLineupIds?.length ?? 0) > 0) return false;
@@ -254,6 +273,7 @@ export function GalleryTab({
   }, [
     firstOwnerOnly,
     formFilter,
+    hideSealed,
     inSeasonOnly,
     searchQuery,
     sortBy,
@@ -678,6 +698,15 @@ export function GalleryTab({
           >
             Unlocked Only
           </button>
+          <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-white/8 bg-[#0b101b] px-2 py-0.5 font-medium text-slate-300">
+            <input
+              type="checkbox"
+              checked={hideSealed}
+              onChange={(e) => toggleHideSealed(e.target.checked)}
+              className="h-3 w-3 accent-violet-400"
+            />
+            Hide sealed ({sealedCount})
+          </label>
           <span className="ml-auto text-slate-400">
             Showing {filteredAndSorted.length} of {sourceCards.length}
           </span>

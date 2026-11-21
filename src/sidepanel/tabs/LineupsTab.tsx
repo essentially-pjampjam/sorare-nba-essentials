@@ -934,7 +934,7 @@ export function LineupsTab({
             <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
               <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-sky-400" />
               <SlidersHorizontal className="h-3.5 w-3.5 text-sky-400" />
-              Current Open Lineups &amp; Upgrade Swaps
+              Upcoming Lineups &amp; Upgrade Swaps
             </span>
             <span className="text-[10px] text-slate-400">
               {currentLineupComparisons.length} submitted
@@ -945,7 +945,7 @@ export function LineupsTab({
             {currentLineupComparisons.length === 0 ? (
               <div className="space-y-2 text-slate-400">
                 <p className="leading-relaxed">
-                  No pre-lock SO5 lineups returned by Sorare&apos;s public API yet. Open your Sorare Arena or Play page in Chrome while this extension is active to sync your live open lineups automatically.
+                  No lineups for the upcoming Game Week yet. Sorare keeps lineups private (the public API never returns them), so they are read from your logged-in Sorare tab: open the upcoming Game Week&apos;s Lineups page once and press Refresh. Live Game Week lineups show in Current Pro Progress.
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   <button

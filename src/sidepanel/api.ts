@@ -13,6 +13,7 @@ import type {
   CraftPoolResult,
   Currency,
   CurrentLineupEntry,
+  PageLineupSnapshot,
   EssenceBalances,
   GalleryResult,
   Rarity,
@@ -261,6 +262,7 @@ export function connectProgressPort(
   onWalletUpdated?: (wallet: WalletBalanceInfo) => void,
   onWatchlistAlerts?: (alerts: WatchlistAlert[]) => void,
   onLineupsUpdated?: (lineups: CurrentLineupEntry[]) => void,
+  onPageLineups?: (snapshot: PageLineupSnapshot) => void,
 ): () => void {
   let activePort: chrome.runtime.Port | null = null;
   let disposed = false;
@@ -275,6 +277,7 @@ export function connectProgressPort(
     walletBalance?: WalletBalanceInfo;
     alerts?: WatchlistAlert[];
     lineups?: CurrentLineupEntry[];
+    snapshot?: PageLineupSnapshot;
   }) => {
     if (msg.type === "SCAN_PROGRESS" && msg.progress) {
       onProgress(msg.progress);
@@ -310,6 +313,8 @@ export function connectProgressPort(
       onLineupsUpdated
     ) {
       onLineupsUpdated(msg.lineups);
+    } else if (msg.type === "PAGE_LINEUPS_UPDATED" && msg.snapshot && onPageLineups) {
+      onPageLineups(msg.snapshot);
     }
   };
 
@@ -381,6 +386,11 @@ export function scanPickerMissions(): Promise<PickerMissionsByMode> {
 
 export function getProProgressHistory(): Promise<ProProgressRecord[]> {
   return sendBackground<ProProgressRecord[]>({ type: "GET_PRO_PROGRESS_HISTORY" });
+}
+
+/** Re-reads the manager's lineups from open sorare.com tabs (no network request). */
+export function syncPageLineups(username?: string): Promise<PageLineupSnapshot | null> {
+  return sendBackground<PageLineupSnapshot | null>({ type: "SYNC_PAGE_LINEUPS", username });
 }
 
 export function scanSquadActivity(): Promise<SquadSnapshot> {

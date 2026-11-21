@@ -1310,7 +1310,10 @@ export class SorareClient {
    * standard Gold / Silver / Bronze packs (slug pattern `<set>-nba-<quality>-pack`, set taken from
    * the Live Today slug). Slot odds (`slotGameplayTierOdds`) need an API key (complexity ~1000 per slot).
    */
-  async fetchSetPacks(signal?: AbortSignal): Promise<SetPackInfo[]> {
+  async fetchSetPacks(
+    discovered: Array<{ slug: string; firstSeen: number }> = [],
+    signal?: AbortSignal,
+  ): Promise<SetPackInfo[]> {
     interface Sections {
       market?: { setSections?: Array<{ __typename?: string; cardPacks?: Array<{ slug: string }> | null }> | null } | null;
     }
@@ -1326,7 +1329,10 @@ export class SorareClient {
       .filter((slug) => /^[a-z0-9-]+$/.test(slug));
     const setPrefix = liveSlugs[0]?.split("-nba-")[0] ?? "";
     const standard = setPrefix ? ["gold", "silver", "bronze"].map((q) => `${setPrefix}-nba-${q}-pack`) : [];
-    const slugs = Array.from(new Set([...liveSlugs, ...standard])).slice(0, 8);
+    // Special offers (e.g. "Emirates Cup Platinum") are only listed for logged-in users: the
+    // extension finds them on the user's Shop page, then reads price and odds publicly by slug.
+    const special = discovered.map((d) => d.slug).filter((slug) => /^[a-z0-9-]+$/.test(slug));
+    const slugs = Array.from(new Set([...special, ...liveSlugs, ...standard])).slice(0, 10);
     if (slugs.length === 0) return [];
     const withOdds = this.hasApiKey();
     type Odds = Array<{ gameplayTier: string; probabilityBasisPoint: number }> | null;
@@ -1342,6 +1348,7 @@ export class SorareClient {
       s1?: Odds;
       s2?: Odds;
       s3?: Odds;
+      s4?: Odds;
     }
     const plain = await this.postGraphQL<{ market?: Record<string, RawPack | null> | null }>(
       `query SetShopPacks { market { ${slugs
@@ -1356,7 +1363,7 @@ export class SorareClient {
       // Only ask for slots the pack has (Live Today packs have 3 cards, standard packs 4).
       const oddsBlocks = rawPacks
         .map((p, i) => {
-          const n = Math.min(4, Math.max(1, Number(p.cardsCount ?? 4) || 4));
+          const n = Math.min(5, Math.max(1, Number(p.cardsCount ?? 4) || 4));
           const slots = Array.from({ length: n }, (_, s) => `s${s}: slotGameplayTierOdds(slotIndex: ${s}) { gameplayTier probabilityBasisPoint }`);
           return `p${i}: cardPack(slug: "${p.slug}") { slug ${slots.join(" ")} }`;
         })
@@ -1370,7 +1377,7 @@ export class SorareClient {
         );
         for (const o of Object.values(odds.market ?? {})) {
           const target = o ? rawPacks.find((p) => p.slug === o.slug) : undefined;
-          if (target && o) Object.assign(target, { s0: o.s0, s1: o.s1, s2: o.s2, s3: o.s3 });
+          if (target && o) Object.assign(target, { s0: o.s0, s1: o.s1, s2: o.s2, s3: o.s3, s4: o.s4 });
         }
       } catch {
         // Odds are optional: prices and Live Today timing still show.
@@ -1378,7 +1385,7 @@ export class SorareClient {
     }
     const packs: SetPackInfo[] = [];
     for (const raw of rawPacks) {
-      const slots = [raw.s0, raw.s1, raw.s2, raw.s3]
+      const slots = [raw.s0, raw.s1, raw.s2, raw.s3, raw.s4]
         .filter((s): s is NonNullable<Odds> => Array.isArray(s) && s.length > 0)
         .map((s) => s.map((o) => ({ tier: o.gameplayTier, basisPoints: Number(o.probabilityBasisPoint) || 0 })));
       packs.push({
@@ -1390,9 +1397,12 @@ export class SorareClient {
         endDate: raw.endDate ?? null,
         cardsCount: Number(raw.cardsCount ?? slots.length) || slots.length,
         slots,
+        special: special.includes(raw.slug),
+        firstSeen: discovered.find((d) => d.slug === raw.slug)?.firstSeen ?? null,
       });
     }
-    return packs;
+    // Special packs first, then the order Sorare lists them.
+    return packs.sort((a, b) => Number(Boolean(b.special)) - Number(Boolean(a.special)));
   }
 
   async fetchTeamRosterCards(

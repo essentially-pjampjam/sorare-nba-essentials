@@ -142,10 +142,10 @@ export function App() {
   }, []);
 
   const version = useMemo(() => getExtensionVersion(), []);
-  // "2.6.7-exp.M1.1" -> red badge "v2.6.7·M1.1" (kept on one line); stable builds stay amber.
-  const isExperimentalBuild = /-exp\b/i.test(version);
+  // "2.7.4-exp1" -> red badge "v2.7.4·exp1" (kept on one line); stable builds stay amber.
+  const isExperimentalBuild = /-exp/i.test(version);
   const versionBadgeLabel = isExperimentalBuild
-    ? `v${version.replace(/-exp\.?/i, "·")}`
+    ? `v${version.replace(/-exp\.?/i, "·exp")}`
     : `v${version}`;
   const activeRarity = settings.selectedRarity;
   const activeEssence = settings.essenceByRarity[activeRarity] ?? 0;
@@ -416,6 +416,11 @@ export function App() {
             currentLineups: mergeApiAndDomLineups(prev.currentLineups ?? [], domLineups, "live"),
           };
         });
+      },
+      (pageLineups) => {
+        setGalleryResult((prev) =>
+          prev && (!prev.username || prev.username === pageLineups.userSlug) ? { ...prev, pageLineups } : prev,
+        );
       },
     );
 
