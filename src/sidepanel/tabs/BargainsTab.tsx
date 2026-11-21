@@ -194,7 +194,7 @@ export function BargainsTab({
   const sniperWatchlistPanel = (
     <details
       open={combinedAlerts.length > 0 || watchlist.length > 0}
-      className="cascade-section overflow-hidden rounded-2xl border border-amber-400/25 bg-[#111726]"
+      className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]"
     >
       <summary className="flex w-full items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
         <span className="inline-flex items-center gap-1.5 font-semibold text-amber-200">
@@ -353,7 +353,7 @@ export function BargainsTab({
             <button
               type="button"
               onClick={() => onScanBargains(mode, false)}
-              className="rounded-xl bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-sm hover:from-emerald-300 hover:to-sky-300"
+              className="rounded-xl jam-btn-primary px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-sm"
             >
               Scan Live Market Deals
             </button>

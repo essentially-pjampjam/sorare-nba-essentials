@@ -32,7 +32,7 @@ export function SquadActivityCard({ mySlug }: { mySlug: string | null }) {
 
   const cur = summary?.current ?? null;
   return (
-    <div className="rounded-2xl border border-violet-400/25 bg-[#111726] p-3">
+    <div className="rounded-2xl border border-white/8 jam-attn-set bg-[#111726] p-3">
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <Users className="h-3.5 w-3.5 text-violet-300" />

@@ -7,7 +7,7 @@ export function GoButton({ url, title }: { url: string; title: string }) {
       type="button"
       title={title}
       onClick={() => void openInActiveTab(url)}
-      className="inline-flex shrink-0 items-center rounded-lg border border-sky-400/50 bg-gradient-to-r from-emerald-500/20 to-sky-500/20 px-2 py-0.5 text-[10px] font-bold text-sky-100 hover:border-sky-300"
+      className="inline-flex shrink-0 items-center rounded-lg jam-btn-secondary px-2 py-0.5 text-[10px] font-bold text-sky-100 hover:border-sky-300"
     >
       Go
     </button>

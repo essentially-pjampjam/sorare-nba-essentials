@@ -10,7 +10,6 @@ import {
   ExternalLink,
   FileSpreadsheet,
   Flame,
-  HeartPulse,
   Info,
   Layers,
   Lock,
@@ -18,14 +17,13 @@ import {
   SlidersHorizontal,
   Snowflake,
   Sparkles,
-  Timer,
   TrendingUp,
   Trophy,
   Wallet,
   Wand2,
   Zap,
 } from "lucide-react";
-import { CountdownTimers } from "../components/CountdownTimers";
+import { StatusStrip } from "../components/StatusStrip";
 import { DailyPlayHub } from "../components/DailyPlayHub";
 import { SquadActivityCard } from "../components/SquadActivityCard";
 import { PackAdvisorCard } from "../components/PackAdvisorCard";
@@ -77,7 +75,7 @@ import type {
 import { applyLineupHighlight, getDailyPickerPool, openInActiveTab } from "../api";
 import { HeadToHeadCompareBox } from "../components/HeadToHeadCompareBox";
 import { PlayerCardRow } from "../components/PlayerCardRow";
-import { formatMoney, formatTimeLeft } from "../utils/format";
+import { formatMoney } from "../utils/format";
 
 interface LineupsTabProps {
   gallery: GalleryResult | null;
@@ -733,7 +731,7 @@ export function LineupsTab({
           type="button"
           disabled={!hasUsername}
           onClick={() => onLoadGallery(false)}
-          className="mt-3.5 rounded-xl bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-sm hover:from-emerald-300 hover:to-sky-300 disabled:opacity-50"
+          className="mt-3.5 rounded-xl jam-btn-primary px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-sm disabled:opacity-50"
         >
           {hasUsername ? "Load Gallery & Injuries" : "Enter Username First"}
         </button>
@@ -747,33 +745,15 @@ export function LineupsTab({
 
   return (
     <div className="space-y-3">
-      <CountdownTimers
-        fixtures={gallery?.fixtures ?? null}
+      <StatusStrip
+        gallery={gallery}
         reminderEnabled={cutoffReminderEnabled}
         onToggleReminder={onToggleCutoffReminder}
+        onShowProgress={() => {
+          setArenaMode("pro");
+          setTimeout(() => document.getElementById("pro-progress")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+        }}
       />
-      {/* Upcoming Game Week & Live External Injury Bar */}
-      {gallery && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/8 bg-[#111726] px-3 py-2 text-[11px]">
-          <div className="flex items-center gap-1.5 text-slate-200">
-            <Timer className="h-3.5 w-3.5 text-amber-400" />
-            {openFixture ? (
-              <span>
-                <strong>{openFixture.displayName}</strong> • Cutoff{" "}
-                <strong className="text-amber-300">
-                  {formatTimeLeft(openFixture.cutOffDate)}
-                </strong>
-              </span>
-            ) : (
-              <span>{gallery.cards.length} Pro + {commonPool.length} Common cards</span>
-            )}
-          </div>
-          <span className="inline-flex items-center gap-1 text-[10px] text-emerald-300">
-            <HeartPulse className="h-3 w-3" />
-            ESPN ({Object.keys(gallery.injuriesByName).length})
-          </span>
-        </div>
-      )}
 
       {/* Pro vs Set/Common Mode Switcher */}
       <div className="grid grid-cols-2 gap-1 rounded-2xl border border-white/8 bg-[#111726] p-1.5">
@@ -782,7 +762,7 @@ export function LineupsTab({
           onClick={() => setArenaMode("pro")}
           className={`rounded-xl py-1.5 text-[11px] font-semibold transition ${
             arenaMode === "pro"
-              ? "bg-amber-400/20 text-amber-200 ring-1 ring-amber-400/40"
+              ? "bg-sky-500/15 text-sky-100 ring-1 ring-sky-400/40"
               : "text-slate-400 hover:text-slate-200"
           }`}
         >
@@ -793,7 +773,7 @@ export function LineupsTab({
           onClick={() => setArenaMode("set_common")}
           className={`rounded-xl py-1.5 text-[11px] font-semibold transition ${
             arenaMode === "set_common"
-              ? "bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-400/40"
+              ? "bg-violet-500/15 text-violet-100 ring-1 ring-violet-400/40"
               : "text-slate-400 hover:text-slate-200"
           }`}
         >
@@ -803,125 +783,10 @@ export function LineupsTab({
 
       {arenaMode === "pro" && (
         <>
-          <ProProgressCard gallery={gallery} />
-          <DailyPlayHub gallery={gallery} pool={dailyPool} poolLoading={dailyPoolLoading} onRefreshPool={() => loadDailyPool(true)} missions={["pro_daily", "double_double", "rebounds"]} />
-        </>
-      )}
-
-      {/* Optimal Entry Disclosure + Recommended Competition Priority */}
-      {arenaMode === "pro" && formatRec && (
-        <div className="rounded-2xl border border-sky-400/30 bg-[#101829] p-3">
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex items-start gap-2">
-              <div className="mt-0.5 rounded-lg bg-sky-500/20 p-1.5 text-sky-300">
-                <SlidersHorizontal className="h-4 w-4" />
-              </div>
-              <div>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-xs font-semibold text-sky-200">
-                    Recommended Entry:{" "}
-                    {FORMAT_OPTIONS.find((f) => f.id === formatRec.recommendedFormat)
-                      ?.label ?? formatRec.recommendedFormat}
-                  </span>
-                  <span className="rounded border border-sky-400/35 bg-sky-500/15 px-1 text-[9px] font-bold uppercase text-sky-200">
-                    Optimal EV
-                  </span>
-                  {formatRec.fieldPaidPct !== undefined && (
-                    <span className="rounded border border-emerald-400/35 bg-emerald-500/15 px-1 text-[9px] font-semibold text-emerald-200">
-                      {formatRec.fieldPaidPct}% rewarded
-                      {formatRec.paidCutoffScore
-                        ? ` • Cut ~${Math.round(formatRec.paidCutoffScore)}`
-                        : ""}
-                    </span>
-                  )}
-                </div>
-                <p className="mt-0.5 text-[11px] leading-relaxed text-slate-300">
-                  {formatRec.reason}
-                </p>
-                {formatRec.inSeasonVsClassicTip && (
-                  <p className="mt-1 text-[10px] font-medium text-amber-300">
-                    {formatRec.inSeasonVsClassicTip}
-                  </p>
-                )}
-              </div>
-            </div>
-            {format !== formatRec.recommendedFormat && (
-              <button
-                type="button"
-                onClick={() => setFormat(formatRec.recommendedFormat)}
-                className="shrink-0 rounded-lg bg-sky-400 px-2.5 py-1 text-[10px] font-semibold text-slate-950 hover:bg-sky-300"
-              >
-                Switch
-              </button>
-            )}
+          <div id="pro-progress" className="scroll-mt-40">
+            <ProProgressCard gallery={gallery} />
           </div>
-          {formatRec.candidates.length > 1 && (
-            <div className="mt-2 overflow-x-auto">
-              <table className="w-full text-[10px] tabular-nums text-slate-300">
-                <thead>
-                  <tr className="text-left text-slate-500">
-                    <th className="font-medium">Contest</th>
-                    <th className="text-right font-medium">Top</th>
-                    <th
-                      className="text-right font-medium"
-                      title="Odds of any reward: Essence or cash (XP-only ranks not counted)"
-                    >
-                      Reward
-                    </th>
-                    <th className="text-right font-medium" title="Odds of finishing in the real cash (USD) ranks">
-                      Cash $
-                    </th>
-                    <th className="text-right font-medium">Podium</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {formatRec.candidates.slice(0, 5).map((c, i) => (
-                    <tr
-                      key={`${c.format}-${c.seasonScope}`}
-                      className={i === 0 ? "text-sky-200" : c.viable ? "" : "text-slate-500"}
-                    >
-                      <td className="truncate pr-1">{c.label}</td>
-                      <td className="text-right">{c.topScore !== null ? c.topScore.toFixed(0) : "--"}</td>
-                      <td className="text-right">{c.cashProb.toFixed(0)}%</td>
-                      <td
-                        className="text-right"
-                        title={
-                          c.cashPlaces
-                            ? `Cash for the top ${c.cashPlaces}${c.topCashLabel ? `, up to ${c.topCashLabel}` : ""}`
-                            : "Cash ranks not loaded"
-                        }
-                      >
-                        {c.moneyProb !== null && c.moneyProb !== undefined ? `${c.moneyProb.toFixed(0)}%` : "--"}
-                      </td>
-                      <td className="text-right">{c.podiumProb.toFixed(0)}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {(() => {
-                const tiers = formatRec.candidates[0]?.rewardTiers ?? [];
-                if (tiers.length === 0) return null;
-                const kinds: Array<{ kind: "cash" | "essence" | "xp"; name: string }> = [
-                  { kind: "cash", name: "Cash" },
-                  { kind: "essence", name: "Essence" },
-                  { kind: "xp", name: "XP" },
-                ];
-                const parts = kinds
-                  .map(({ kind, name }) => {
-                    const t = tiers.filter((x) => x.kind === kind);
-                    if (t.length === 0) return null;
-                    return `${name} #${t[0].fromRank}-${t[t.length - 1].toRank} (${t[0].label}${t.length > 1 ? ` to ${t[t.length - 1].label}` : ""})`;
-                  })
-                  .filter(Boolean);
-                return (
-                  <div className="mt-1 text-[9.5px] text-slate-400">
-                    Rewards ({formatRec.candidates[0].label}, live from Sorare, last GW): {parts.join(" • ")}
-                  </div>
-                );
-              })()}
-            </div>
-          )}
-        </div>
+        </>
       )}
 
       {/* Current Submitted/Open Lineups & Upgrade Swaps */}
@@ -958,7 +823,7 @@ export function LineupsTab({
                         ),
                       )
                     }
-                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 px-2.5 py-1.5 text-[10px] font-bold text-slate-950 shadow-sm hover:from-emerald-300 hover:to-sky-300"
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg jam-btn-primary px-2.5 py-1.5 text-[10px] font-bold text-slate-950 shadow-sm"
                   >
                     Open Sorare Arena to Sync
                     <ExternalLink className="h-3 w-3" />
@@ -1004,7 +869,7 @@ export function LineupsTab({
                           ),
                         )
                       }
-                      className="rounded-md border border-sky-400/40 bg-gradient-to-r from-emerald-500/15 to-sky-500/15 px-1.5 py-0.5 font-semibold text-sky-100"
+                      className="rounded-md jam-btn-secondary px-1.5 py-0.5 font-semibold text-sky-100"
                     >
                       Open Sorare Lineups to refresh
                     </button>
@@ -1257,51 +1122,135 @@ export function LineupsTab({
         </details>
       )}
 
+      {/* Optimal Entry Disclosure + Recommended Competition Priority */}
+      {arenaMode === "pro" && formatRec && (
+        <div className="rounded-2xl border border-white/8 bg-[#101829] p-3">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-start gap-2">
+              <div className="mt-0.5 rounded-lg bg-sky-500/20 p-1.5 text-sky-300">
+                <SlidersHorizontal className="h-4 w-4" />
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs font-semibold text-sky-200">
+                    Recommended Entry:{" "}
+                    {FORMAT_OPTIONS.find((f) => f.id === formatRec.recommendedFormat)
+                      ?.label ?? formatRec.recommendedFormat}
+                  </span>
+                  <span className="rounded border border-sky-400/35 bg-sky-500/15 px-1 text-[9px] font-bold uppercase text-sky-200">
+                    Optimal EV
+                  </span>
+                  {formatRec.fieldPaidPct !== undefined && (
+                    <span className="rounded border border-emerald-400/35 bg-emerald-500/15 px-1 text-[9px] font-semibold text-emerald-200">
+                      {formatRec.fieldPaidPct}% rewarded
+                      {formatRec.paidCutoffScore
+                        ? ` • Cut ~${Math.round(formatRec.paidCutoffScore)}`
+                        : ""}
+                    </span>
+                  )}
+                </div>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-slate-300">
+                  {formatRec.reason}
+                </p>
+                {formatRec.inSeasonVsClassicTip && (
+                  <p className="mt-1 text-[10px] font-medium text-amber-300">
+                    {formatRec.inSeasonVsClassicTip}
+                  </p>
+                )}
+              </div>
+            </div>
+            {format !== formatRec.recommendedFormat && (
+              <button
+                type="button"
+                onClick={() => setFormat(formatRec.recommendedFormat)}
+                className="shrink-0 rounded-lg bg-sky-400 px-2.5 py-1 text-[10px] font-semibold text-slate-950 hover:bg-sky-300"
+              >
+                Switch
+              </button>
+            )}
+          </div>
+          {formatRec.candidates.length > 1 && (
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full text-[10px] tabular-nums text-slate-300">
+                <thead>
+                  <tr className="text-left text-slate-500">
+                    <th className="font-medium">Contest</th>
+                    <th className="text-right font-medium">Top</th>
+                    <th
+                      className="text-right font-medium"
+                      title="Odds of any reward: Essence or cash (XP-only ranks not counted)"
+                    >
+                      Reward
+                    </th>
+                    <th className="text-right font-medium" title="Odds of finishing in the real cash (USD) ranks">
+                      Cash $
+                    </th>
+                    <th className="text-right font-medium">Podium</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {formatRec.candidates.slice(0, 5).map((c, i) => (
+                    <tr
+                      key={`${c.format}-${c.seasonScope}`}
+                      className={i === 0 ? "text-sky-200" : c.viable ? "" : "text-slate-500"}
+                    >
+                      <td className="truncate pr-1">{c.label}</td>
+                      <td className="text-right">{c.topScore !== null ? c.topScore.toFixed(0) : "--"}</td>
+                      <td className="text-right">{c.cashProb.toFixed(0)}%</td>
+                      <td
+                        className="text-right"
+                        title={
+                          c.cashPlaces
+                            ? `Cash for the top ${c.cashPlaces}${c.topCashLabel ? `, up to ${c.topCashLabel}` : ""}`
+                            : "Cash ranks not loaded"
+                        }
+                      >
+                        {c.moneyProb !== null && c.moneyProb !== undefined ? `${c.moneyProb.toFixed(0)}%` : "--"}
+                      </td>
+                      <td className="text-right">{c.podiumProb.toFixed(0)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {(() => {
+                const tiers = formatRec.candidates[0]?.rewardTiers ?? [];
+                if (tiers.length === 0) return null;
+                const kinds: Array<{ kind: "cash" | "essence" | "xp"; name: string }> = [
+                  { kind: "cash", name: "Cash" },
+                  { kind: "essence", name: "Essence" },
+                  { kind: "xp", name: "XP" },
+                ];
+                const parts = kinds
+                  .map(({ kind, name }) => {
+                    const t = tiers.filter((x) => x.kind === kind);
+                    if (t.length === 0) return null;
+                    return `${name} #${t[0].fromRank}-${t[t.length - 1].toRank} (${t[0].label}${t.length > 1 ? ` to ${t[t.length - 1].label}` : ""})`;
+                  })
+                  .filter(Boolean);
+                return (
+                  <div className="mt-1 text-[9.5px] text-slate-400">
+                    Rewards ({formatRec.candidates[0].label}, live from Sorare, last GW): {parts.join(" • ")}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Pro Daily Play pickers */}
+      {arenaMode === "pro" && (
+        <DailyPlayHub gallery={gallery} pool={dailyPool} poolLoading={dailyPoolLoading} onRefreshPool={() => loadDailyPool(true)} missions={["pro_daily", "double_double", "rebounds"]} />
+      )}
+
       {/* SET / COMMON MODE WORKSPACE */}
       {arenaMode === "set_common" && (
         <div className="space-y-3">
-          {/* Set Quests & Arcade Guide */}
-          <details className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
-            <summary className="flex w-full items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
-              <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
-                <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-emerald-400" />
-                <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
-                Set Daily Quests, Picker &amp; Arcade Guide
-              </span>
-              <span className="text-[10px] text-slate-400">Common Mode</span>
-            </summary>
-            <div className="space-y-1.5 border-t border-white/8 bg-[#0b101b] p-3 text-[10px] text-slate-300">
-              <div>
-                <strong className="text-emerald-300">1. Daily Quests:</strong>{" "}
-                Open Daily Pack • Buy a Pack • Play Daily Picker • Collect ≥ 3★
-                player to stack Energy &amp; Set Essence.
-              </div>
-              <div>
-                <strong className="text-amber-300">2. Daily Picker:</strong>{" "}
-                Must score{" "}
-                <strong className="text-slate-100">
-                  both ≥ L10 + 7 pts AND ≥ 20 pts
-                </strong>
-                . Ideal picks are healthy high-minute starters whose L10 is
-                temporarily dipped (e.g. L10 = 12-18, projected ≥ 24).
-              </div>
-              <div>
-                <strong className="text-sky-300">3. Solo vs Squad Mode:</strong>{" "}
-                Solo Arcade prioritizes your single highest-ceiling active
-                anchor per step; Squad Mode builds multiple Cap 120 + MVP teams
-                for leaderboard checkpoints.
-              </div>
-            </div>
-          </details>
-
-          {/* Daily Play: Set Daily Picker (best / safe / risk picks, owned vs not owned) */}
-          <DailyPlayHub gallery={gallery} pool={dailyPool} poolLoading={dailyPoolLoading} onRefreshPool={() => loadDailyPool(true)} missions={["set_daily"]} />
+          {/* Set packs: Daily Pack, Bronze+, Live Today, 3★+ odds */}
+          <PackAdvisorCard />
 
           {/* Set Squad: who has a team in the live stage */}
           <SquadActivityCard mySlug={gallery?.username ?? null} />
-
-          {/* Set packs: Daily Pack, Bronze+, Live Today, 3★+ odds */}
-          <PackAdvisorCard />
 
           {/* Configurable N Teams Auto-Builder for Solo / Squad */}
           <div className="space-y-2.5 rounded-2xl border border-white/8 bg-[#111726] p-3">
@@ -1356,7 +1305,7 @@ export function LineupsTab({
             <button
               type="button"
               onClick={() => setBuildSeed((s) => s + 1)}
-              className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 py-2 text-xs font-semibold text-slate-950 shadow-sm hover:from-emerald-300 hover:to-sky-300"
+              className="flex w-full items-center justify-center gap-1.5 rounded-xl jam-btn-primary py-2 text-xs font-semibold text-slate-950 shadow-sm"
             >
               <Wand2 className="h-3.5 w-3.5" />
               Auto-Build {effectiveSetTeams}{" "}
@@ -1532,6 +1481,43 @@ export function LineupsTab({
               </div>
             )}
           </div>
+
+          {/* Daily Play: Set Daily Picker (best / safe / risk picks, owned vs not owned) */}
+          <DailyPlayHub gallery={gallery} pool={dailyPool} poolLoading={dailyPoolLoading} onRefreshPool={() => loadDailyPool(true)} missions={["set_daily"]} />
+
+          {/* Set Quests & Arcade Guide */}
+          <details className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
+            <summary className="flex w-full items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
+              <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
+                <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
+                Set Daily Quests, Picker &amp; Arcade Guide
+              </span>
+              <span className="text-[10px] text-slate-400">Common Mode</span>
+            </summary>
+            <div className="space-y-1.5 border-t border-white/8 bg-[#0b101b] p-3 text-[10px] text-slate-300">
+              <div>
+                <strong className="text-emerald-300">1. Daily Quests:</strong>{" "}
+                Open Daily Pack • Buy a Pack • Play Daily Picker • Collect ≥ 3★
+                player to stack Energy &amp; Set Essence.
+              </div>
+              <div>
+                <strong className="text-amber-300">2. Daily Picker:</strong>{" "}
+                Must score{" "}
+                <strong className="text-slate-100">
+                  both ≥ L10 + 7 pts AND ≥ 20 pts
+                </strong>
+                . Ideal picks are healthy high-minute starters whose L10 is
+                temporarily dipped (e.g. L10 = 12-18, projected ≥ 24).
+              </div>
+              <div>
+                <strong className="text-sky-300">3. Solo vs Squad Mode:</strong>{" "}
+                Solo Arcade prioritizes your single highest-ceiling active
+                anchor per step; Squad Mode builds multiple Cap 120 + MVP teams
+                for leaderboard checkpoints.
+              </div>
+            </div>
+          </details>
         </div>
       )}
 
@@ -1790,7 +1776,7 @@ export function LineupsTab({
             });
             window.setTimeout(() => setRebuildNotice(null), 2600);
           }}
-          className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 py-2 text-xs font-semibold text-slate-950 shadow-sm transition hover:from-emerald-300 hover:to-sky-300 active:scale-[0.99]"
+          className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl jam-btn-primary py-2 text-xs font-semibold text-slate-950 shadow-sm transition active:scale-[0.99]"
         >
           <Wand2 className="h-3.5 w-3.5" />
           Auto-Build Best Pro Lineups
@@ -2207,7 +2193,7 @@ export function LineupsTab({
       {/* Dual Lineup Market Buy Advisor (Out-of-Season 1-Slot Classic vs. In-Season) */}
       <details
         open={Boolean(dualBuyAdvisor)}
-        className="cascade-section overflow-hidden rounded-2xl border border-sky-400/25 bg-[#111726]"
+        className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]"
       >
         <summary className="flex w-full items-center justify-between px-3 py-2.5 text-left text-xs hover:bg-white/[0.03]">
           <span className="inline-flex items-center gap-1.5 font-semibold text-sky-200">
@@ -2263,7 +2249,7 @@ export function LineupsTab({
                   type="button"
                   disabled={isMarketLoading}
                   onClick={onScanMarketForBudget}
-                  className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 px-3 py-1.5 text-[10.5px] font-bold text-slate-950 shadow-sm transition hover:from-emerald-300 hover:to-sky-300 disabled:opacity-50"
+                  className="inline-flex cursor-pointer items-center gap-1 rounded-lg jam-btn-primary px-3 py-1.5 text-[10.5px] font-bold text-slate-950 shadow-sm transition disabled:opacity-50"
                 >
                   {isMarketLoading ? "Scanning Market..." : "Scan Market Buys"}
                 </button>
@@ -2462,7 +2448,7 @@ export function LineupsTab({
       </details>
       {/* Multi-Competition Portfolio Optimizer (Joint 3-Lineup Slate) */}
       {portfolio && portfolio.lineups.length > 0 && (
-        <details className="cascade-section overflow-hidden rounded-2xl border border-violet-400/25 bg-[#111726]">
+        <details className="cascade-section overflow-hidden rounded-2xl border border-white/8 jam-attn-set bg-[#111726]">
           <summary className="flex w-full items-center justify-between px-3 py-2.5 text-left text-xs hover:bg-white/[0.03]">
             <span className="inline-flex items-center gap-1.5 font-semibold text-slate-100">
               <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-violet-400" />
@@ -2551,7 +2537,7 @@ export function LineupsTab({
       {/* Hybrid Budget Lineup Builder (Owned Cards + Market Buys) */}
       <details
         open
-        className="cascade-section overflow-hidden rounded-2xl border border-emerald-400/25 bg-[#111726]"
+        className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]"
       >
         <summary className="flex w-full items-center justify-between px-3 py-2.5 text-left text-xs hover:bg-white/[0.03]">
           <span className="inline-flex items-center gap-1.5 font-semibold text-slate-100">

@@ -34,7 +34,8 @@ export function benchmarkFor(
   };
 }
 
-export type ProLineupStatus = "cash" | "rewarded" | "outside" | "unranked";
+/** "ranked" = has a rank but the reward places are unknown (no benchmark for that competition). */
+export type ProLineupStatus = "cash" | "rewarded" | "outside" | "ranked" | "unranked";
 
 export interface ProLineupProgress {
   lineupId: string;
@@ -56,7 +57,7 @@ function statusOf(rank: number | null, paid: number | null, cash: number | null)
   if (rank === null || rank <= 0) return "unranked";
   if (cash && rank <= cash) return "cash";
   if (paid && rank <= paid) return "rewarded";
-  return "outside";
+  return paid ? "outside" : "ranked";
 }
 
 /** Live standing of each open Pro lineup against its leaderboard's reward and cash places. */

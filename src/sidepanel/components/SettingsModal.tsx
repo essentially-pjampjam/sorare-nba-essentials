@@ -252,7 +252,7 @@ export function SettingsModal({
           <button
             type="button"
             onClick={handleSaveApiKey}
-            className="rounded-lg border border-sky-200/60 bg-gradient-to-r from-emerald-400 to-sky-400 px-2.5 py-1.5 text-xs font-semibold text-slate-950 hover:from-emerald-300 hover:to-sky-300"
+            className="rounded-lg border border-sky-200/60 jam-btn-primary px-2.5 py-1.5 text-xs font-semibold text-slate-950"
           >
             {savedToast ? "Saved" : "Save"}
           </button>
@@ -474,7 +474,7 @@ export function SettingsModal({
         <button
           type="button"
           onClick={onReloadExtension}
-          className="inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 px-3 py-1.5 text-[11px] font-semibold text-slate-950 shadow-sm hover:from-emerald-300 hover:to-sky-300"
+          className="inline-flex items-center gap-1 rounded-lg jam-btn-primary px-3 py-1.5 text-[11px] font-semibold text-slate-950 shadow-sm"
         >
           <RefreshCw className="h-3.5 w-3.5" />
           Sync / Reload Extension

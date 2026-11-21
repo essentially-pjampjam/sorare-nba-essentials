@@ -1330,7 +1330,8 @@ describe("Tier 4 — Real-World End-to-End Scenarios (1–9)", () => {
       expect(html).not.toContain("/nba/set");
     }
 
-    expect(sidepanelHtml).toContain("Open full website dashboard");
+    // 2.7.4-exp2: pop-out lives in the header "More options" menu.
+    expect(sidepanelHtml).toContain("More options");
     expect(dashboardHtml).toContain("jam-dashboard-mode");
     expect(dashboardHtml).not.toContain("Open full website dashboard");
 

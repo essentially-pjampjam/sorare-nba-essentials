@@ -615,9 +615,8 @@ describe("Feature 13: Side Panel & Dashboard UI / Green-to-Blue Outlined Button 
     });
     expect(sidePanelHtml.includes("jam-dashboard-mode")).toBe(false);
     const spControls = extractButtonsAndControls(sidePanelHtml);
-    expect(
-      spControls.some((c) => c.ariaLabel === "Open full website dashboard"),
-    ).toBe(true);
+    // 2.7.4-exp2: pop-out moved into the header "More options" menu.
+    expect(spControls.some((c) => c.ariaLabel === "More options")).toBe(true);
 
     const dashboardHtml = renderUiComponentToHtml(React.createElement(App), {
       search: "?view=dashboard",
@@ -641,7 +640,8 @@ describe("Feature 13: Side Panel & Dashboard UI / Green-to-Blue Outlined Button 
     expect(html).toContain("Sorare NBA Essentials");
     expect(html).not.toContain("Sorar...");
     const h1Match = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
-    expect(h1Match?.[1]).toContain("Sorare NBA Essentials");
+    // 2.7.4-exp2: compact two-row header shows "Sorare NBA"; the full name is the logo alt text.
+    expect(h1Match?.[1]).toContain("Sorare NBA");
     // Ensure brand block is not cramped by unwrapping single-row truncation in narrow Side Panel
     const headerRowAllowsWrap =
       /flex-wrap/.test(html) ||
@@ -687,15 +687,9 @@ describe("Feature 13: Side Panel & Dashboard UI / Green-to-Blue Outlined Button 
       "src/sidepanel/components/SettingsModal.tsx",
     );
 
-    const hasGreenToBlueWithBorder = (cls: string): boolean => {
-      const hasGreenBlue =
-        (/from-emerald-/.test(cls) && /to-(?:sky|blue)-/.test(cls)) ||
-        (/from-(?:sky|blue)-/.test(cls) && /to-emerald-/.test(cls));
-      const hasBorderOrOutline = /\bborder(?:-[\w/[\]]+)?\b|\bring(?:-[\w/[\]]+)?\b/.test(
-        cls,
-      );
-      return hasGreenBlue && hasBorderOrOutline;
-    };
+    // 2.7.4-exp2: primary CTAs use one solid style (jam-btn-primary, border built in), no gradients.
+    const hasGreenToBlueWithBorder = (cls: string): boolean =>
+      /\bjam-btn-primary\b/.test(cls) && !/\bbg-gradient-to-/.test(cls);
 
     const appControls = extractButtonsAndControls(
       renderUiComponentToHtml(React.createElement(App), { search: "" }),
@@ -1009,7 +1003,9 @@ describe("Feature 13: Side Panel & Dashboard UI / Green-to-Blue Outlined Button 
     const gradientButtons = allControls.filter((c) =>
       /\bbg-gradient-to-/.test(c.className),
     );
-    expect(gradientButtons.length).toBeGreaterThan(0);
+    // 2.7.4-exp2: gradients replaced by the solid jam-btn-primary style.
+    expect(gradientButtons.length).toBe(0);
+    expect(allControls.some((c) => /\bjam-btn-primary\b/.test(c.className))).toBe(true);
 
     for (const btn of gradientButtons) {
       expect(

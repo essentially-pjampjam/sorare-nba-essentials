@@ -175,7 +175,7 @@ export function CraftTab({
         <button
           type="button"
           onClick={() => onLoadPool(false)}
-          className="mt-3 rounded-xl bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-sm hover:from-emerald-300 hover:to-sky-300"
+          className="mt-3 rounded-xl jam-btn-primary px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-sm"
         >
           Load Live {rarityMeta.label} Pool
         </button>

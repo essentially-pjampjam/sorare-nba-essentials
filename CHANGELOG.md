@@ -2,6 +2,18 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
+## 2.7.4-exp2 (experimental, 2026-11-21)
+
+Changed:
+- Cleaner header: two rows (name, manager, Refresh, a menu for search / currency / density / pop-out / support / settings; then the tabs). Rarity, Essence and craft progress only show on Collections, Craft and Deals.
+- One status line on Lineups replaces the two timer rows: LIVE Game Week with your best rank, next cutoff, daily reset, injuries and the cutoff reminder.
+- Colors mean one thing each: green = money, blue = info and the main button, amber = warning, red = LIVE / injured, violet = Set / Common and sealing. Cards use a neutral border with a colored edge only when they need attention; the green-to-blue gradient buttons are gone.
+- New order. Pro: Current Pro Progress, Upcoming Lineups & Upgrade Swaps, Recommended Entry, Daily Play. Set: Pack & Mission Advisor, Squad, Solo / Squad builder, Daily Play, guide.
+- Small text is a bit larger; the long Daily Picker note folds to one line.
+
+Fixed:
+- Current Pro Progress said "Outside rewards" when the reward places were unknown; it now says "Live rank".
+
 ## 2.7.4-exp1 (experimental, 2026-11-21)
 
 Fixed:

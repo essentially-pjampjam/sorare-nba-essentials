@@ -7,6 +7,8 @@ import {
   Layers,
   Loader2,
   Maximize2,
+  MoreHorizontal,
+  Pencil,
   RefreshCw,
   Search,
   Settings,
@@ -118,6 +120,8 @@ export function App() {
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [showSupport, setShowSupport] = useState<boolean>(false);
   const [showWhatsNew, setShowWhatsNew] = useState<boolean>(false);
+  const [showHeaderMenu, setShowHeaderMenu] = useState<boolean>(false);
+  const [editingUsername, setEditingUsername] = useState<boolean>(false);
   const [hasUnseenWhatsNew, setHasUnseenWhatsNew] = useState<boolean>(() => {
     try {
       return (
@@ -816,208 +820,163 @@ export function App() {
       <div className={isDashboardMode ? "jam-dashboard-mode" : ""}>
       <div className="jam-sticky-wrap sticky top-0 z-30 px-2.5 pb-1.5 pt-2.5">
         <header className="glass-chrome rounded-2xl px-3 py-2.5">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex min-w-0 items-center gap-2">
-              <img
-                src="/logo.png"
-                alt="pjampjam's Sorare NBA Essentials"
-                className="h-8 w-8 shrink-0 rounded-xl object-contain"
-              />
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <h1 className="truncate text-xs font-semibold tracking-tight text-slate-100">
-                    Sorare NBA Essentials
-                  </h1>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowWhatsNew(true);
-                      setHasUnseenWhatsNew(false);
-                      try {
-                        window.localStorage.setItem(
-                          "jamassist_last_seen_version",
-                          version,
-                        );
-                      } catch {
-                        // Ignore
-                      }
-                    }}
-                    className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.2 font-mono text-[9px] font-medium transition ${
-                      isExperimentalBuild
-                        ? "border border-rose-400/50 bg-rose-500/15 text-rose-300 hover:bg-rose-500/25"
-                        : "bg-white/8 text-amber-300 hover:bg-amber-400/20"
-                    }`}
-                    title={`${isExperimentalBuild ? "Experimental build " : ""}v${version} • What's New & Send Feedback`}
-                  >
-                    <span>{versionBadgeLabel}</span>
-                    {hasUnseenWhatsNew && (
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                    )}
-                  </button>
-                  <span
-                    className={`rounded px-1 py-0.2 text-[9px] font-semibold ${
-                      settings.sorareApiKey
-                        ? "bg-emerald-500/20 text-emerald-300"
-                        : "bg-slate-800 text-slate-400"
-                    }`}
-                    title={
-                      settings.sorareApiKey
-                        ? "Fast Mode active using your local Sorare APIKEY"
-                        : "Safe Public Mode (add a Sorare API Key in Settings for 60x speed)"
+          {/* Row 1: identity, username, Refresh, overflow menu */}
+          <div className="flex items-center gap-2">
+            <img
+              src="/logo.png"
+              alt="pjampjam's Sorare NBA Essentials"
+              className="h-7 w-7 shrink-0 rounded-lg object-contain"
+            />
+            <div className="flex shrink-0 flex-col items-start leading-tight">
+              <h1 className="text-[11px] font-semibold tracking-tight text-slate-100">Sorare NBA</h1>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowWhatsNew(true);
+                    setHasUnseenWhatsNew(false);
+                    try {
+                      window.localStorage.setItem("jamassist_last_seen_version", version);
+                    } catch {
+                      // Ignore
                     }
-                  >
-                    {settings.sorareApiKey ? "FAST" : "SAFE"}
-                  </span>
-                </div>
-                <p className="truncate text-[10px] text-slate-400">
-                  by pjampjam • NBA Collect & Craft
-                </p>
+                  }}
+                  className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded px-1 font-mono text-[9px] font-medium transition ${
+                    isExperimentalBuild
+                      ? "border border-rose-400/50 bg-rose-500/15 text-rose-300 hover:bg-rose-500/25"
+                      : "bg-white/8 text-amber-300 hover:bg-amber-400/20"
+                  }`}
+                  title={`${isExperimentalBuild ? "Experimental build " : ""}v${version} • What's New & Send Feedback`}
+                >
+                  <span>{versionBadgeLabel}</span>
+                  {hasUnseenWhatsNew && <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />}
+                </button>
+                <span
+                  className={`rounded px-1 text-[9px] font-semibold ${
+                    settings.sorareApiKey ? "bg-sky-500/15 text-sky-300" : "bg-slate-800 text-slate-400"
+                  }`}
+                  title={
+                    settings.sorareApiKey
+                      ? "Fast Mode active using your local Sorare APIKEY"
+                      : "Safe Public Mode (add a Sorare API Key in Settings for 60x speed)"
+                  }
+                >
+                  {settings.sorareApiKey ? "FAST" : "SAFE"}
+                </span>
               </div>
             </div>
 
-            <div className="flex shrink-0 items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setShowCmdPalette(true)}
-                className="glass-pill inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10.5px] font-medium text-slate-300 transition hover:border-amber-400/50 hover:text-amber-200"
-                title="Quick Search & Command Palette (Ctrl+K)"
-                aria-label="Quick Search"
-              >
-                <Search className="h-3 w-3" />
-                <span className="hidden md:inline">Ctrl+K</span>
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  void updateSettings({
-                    density:
-                      settings.density === "compact" ? "cozy" : "compact",
-                  })
-                }
-                className={`glass-pill rounded-lg p-1.5 transition ${
-                  settings.density === "compact"
-                    ? "border-amber-400/50 text-amber-300"
-                    : "text-slate-300 hover:border-amber-400/50"
-                }`}
-                title={
-                  settings.density === "compact"
-                    ? "Density: Compact (click for Cozy)"
-                    : "Density: Cozy (click for Compact)"
-                }
-                aria-label="Toggle UI Density"
-              >
-                <AlignJustify className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleToggleCurrency()}
-                className="glass-pill rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-200 transition hover:border-amber-400/50"
-                title="Toggle display currency"
-              >
-                {settings.currency}
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowSupport(true)}
-                className="glass-pill inline-flex items-center gap-1 rounded-lg border-amber-400/35 px-2 py-1 text-[11px] font-semibold text-amber-200 transition hover:border-amber-400/60"
-                title="Support via Sorare trade or crypto tip"
-                aria-label="Support"
-              >
-                <Heart className="h-3 w-3 text-amber-400" />
-                <span className="hidden sm:inline">Support</span>
-              </button>
-              {!isDashboardMode && (
+            <div className="min-w-0 flex-1">
+              {settings.username && !editingUsername ? (
                 <button
                   type="button"
-                  onClick={() => void openDashboardTab(activeTab)}
-                  className="glass-pill rounded-lg p-1.5 text-slate-300 transition hover:border-sky-400/50 hover:text-sky-300"
-                  title="Pop out Full-Screen Website Dashboard"
-                  aria-label="Open full website dashboard"
+                  onClick={() => setEditingUsername(true)}
+                  className="glass-pill inline-flex max-w-full items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-100 hover:border-sky-400/50"
+                  title="Change the Sorare manager"
                 >
-                  <Maximize2 className="h-3.5 w-3.5" />
+                  <span className="truncate">@{settings.username}</span>
+                  <Pencil className="h-2.5 w-2.5 shrink-0 text-slate-400" />
                 </button>
+              ) : (
+                <form
+                  onSubmit={(e) => {
+                    void handleSubmitUsername(e);
+                    setEditingUsername(false);
+                  }}
+                  className="flex items-center gap-1"
+                >
+                  <input
+                    type="text"
+                    value={usernameDraft}
+                    onChange={(e) => setUsernameDraft(e.target.value)}
+                    placeholder="Sorare slug"
+                    aria-label="Sorare username or slug"
+                    autoFocus={editingUsername}
+                    className="glass-pill w-full min-w-0 rounded-lg px-2 py-1 text-[11px] text-slate-100 placeholder-slate-500 focus:border-sky-400/70 focus:outline-none"
+                  />
+                  <button
+                    type="submit"
+                    disabled={anyLoading || !usernameDraft.trim()}
+                    className="glass-pill shrink-0 rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-100 transition hover:border-sky-400/50 disabled:opacity-50"
+                  >
+                    Scan
+                  </button>
+                </form>
               )}
-              <button
-                type="button"
-                onClick={() => setShowSettings(true)}
-                className="glass-pill rounded-lg p-1.5 text-slate-300 transition hover:border-amber-400/50 hover:text-amber-300"
-                title="Settings & Themes"
-                aria-label="Settings"
-              >
-                <Settings className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                disabled={
-                  anyLoading ||
-                  ((activeTab === "collections" || activeTab === "lineups") &&
-                    !(settings.username || usernameDraft).trim())
-                }
-                onClick={handleRefreshActiveTab}
-                className="inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 px-2.5 py-1 text-[11px] font-semibold text-slate-950 shadow-xs transition hover:from-emerald-300 hover:to-sky-300 disabled:cursor-not-allowed disabled:opacity-50"
-                title="Fetch fresh live data"
-              >
-                <RefreshCw
-                  className={`h-3 w-3 ${anyLoading ? "animate-spin" : ""}`}
-                />
-                Refresh
-              </button>
             </div>
-          </div>
 
-          {/* Username & Essence Inputs */}
-          <div className="mt-2.5 grid grid-cols-12 gap-2">
-            <form
-              onSubmit={(e) => void handleSubmitUsername(e)}
-              className="col-span-7 flex items-center gap-1"
+            <button
+              type="button"
+              disabled={
+                anyLoading ||
+                ((activeTab === "collections" || activeTab === "lineups") &&
+                  !(settings.username || usernameDraft).trim())
+              }
+              onClick={handleRefreshActiveTab}
+              className="jam-btn-primary inline-flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+              title="Fetch fresh live data"
             >
-              <input
-                type="text"
-                value={usernameDraft}
-                onChange={(e) => setUsernameDraft(e.target.value)}
-                placeholder="Sorare slug (e.g. pjampjam)"
-                aria-label="Sorare username or slug"
-                className="glass-pill w-full rounded-xl px-2.5 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:border-amber-400/70 focus:outline-none"
-              />
+              <RefreshCw className={`h-3 w-3 ${anyLoading ? "animate-spin" : ""}`} />
+              Refresh
+            </button>
+
+            <div className="relative shrink-0">
               <button
-                type="submit"
-                disabled={anyLoading || !usernameDraft.trim()}
-                className="glass-pill shrink-0 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-slate-100 transition hover:border-amber-400/50 disabled:opacity-50"
+                type="button"
+                onClick={() => setShowHeaderMenu((v) => !v)}
+                className="glass-pill rounded-lg p-1.5 text-slate-300 transition hover:border-sky-400/50 hover:text-slate-100"
+                title="Search, currency, density, support, pop-out, settings"
+                aria-label="More options"
+                aria-expanded={showHeaderMenu}
               >
-                Scan
+                <MoreHorizontal className="h-3.5 w-3.5" />
               </button>
-            </form>
-
-            <div
-              className="glass-pill col-span-5 flex items-center gap-1.5 rounded-xl px-2 py-1"
-              title="Your Sorare Essence (auto-syncs from sorare.com sidebar, or click to type)"
-            >
-              <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-400" />
-              <input
-                type="number"
-                min={0}
-                step={1}
-                value={activeEssence}
-                onChange={(e) => handleEssenceChange(e.target.value)}
-                className="w-full bg-transparent text-xs font-semibold text-slate-100 focus:outline-none"
-                aria-label="Current Essence balance"
-              />
-              <span className="shrink-0 text-[10px] text-slate-400">
-                / {settings.craftThreshold}
-              </span>
+              {showHeaderMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowHeaderMenu(false)} />
+                  <div
+                    className="glass-chrome absolute right-0 top-full z-50 mt-1 w-48 rounded-xl p-1 text-[11px] text-slate-200"
+                    onClick={() => setShowHeaderMenu(false)}
+                  >
+                    <button type="button" onClick={() => setShowCmdPalette(true)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/8">
+                      <Search className="h-3.5 w-3.5 text-slate-400" /> Search <span className="ml-auto text-[10px] text-slate-500">Ctrl+K</span>
+                    </button>
+                    <button type="button" onClick={() => void handleToggleCurrency()} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/8">
+                      <Wallet className="h-3.5 w-3.5 text-slate-400" /> Currency <span className="ml-auto font-semibold">{settings.currency}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void updateSettings({ density: settings.density === "compact" ? "cozy" : "compact" })}
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/8"
+                    >
+                      <AlignJustify className="h-3.5 w-3.5 text-slate-400" /> Density
+                      <span className="ml-auto text-[10px] text-slate-400">{settings.density === "compact" ? "Compact" : "Cozy"}</span>
+                    </button>
+                    {!isDashboardMode && (
+                      <button type="button" onClick={() => void openDashboardTab(activeTab)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/8">
+                        <Maximize2 className="h-3.5 w-3.5 text-slate-400" /> Pop out dashboard
+                      </button>
+                    )}
+                    <button type="button" onClick={() => setShowSupport(true)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/8">
+                      <Heart className="h-3.5 w-3.5 text-amber-400" /> Support
+                    </button>
+                    <button type="button" onClick={() => setShowSettings(true)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/8">
+                      <Settings className="h-3.5 w-3.5 text-slate-400" /> Settings &amp; themes
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
           {/* Auto-detected sorare.com username pill */}
           {detectedUsername &&
             !RESERVED_USER_SLUGS.has(detectedUsername.toLowerCase()) &&
-            detectedUsername.toLowerCase() !==
-              (settings.username || "").toLowerCase() && (
+            detectedUsername.toLowerCase() !== (settings.username || "").toLowerCase() && (
               <div className="mt-1.5 flex items-center justify-between rounded-xl border border-sky-400/30 bg-sky-500/12 px-2.5 py-1 text-[11px] text-sky-100">
                 <span className="flex items-center gap-1">
                   <UserCheck className="h-3 w-3 text-sky-300" />
-                  Detected on sorare.com:{" "}
-                  <strong className="font-semibold">@{detectedUsername}</strong>
+                  Detected on sorare.com: <strong className="font-semibold">@{detectedUsername}</strong>
                 </span>
                 <button
                   type="button"
@@ -1029,75 +988,66 @@ export function App() {
               </div>
             )}
 
-          {/* Essence Progress Line + Synced Wallet Pill */}
-          <div className="mt-2">
-            <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
-              <span className="text-slate-400">
-                {RARITY_META[activeRarity].label} Craft Progress
-              </span>
-              <div className="flex items-center gap-2">
-                {(settings.walletBalance?.cashAmount !== null &&
-                  settings.walletBalance?.cashAmount !== undefined) ||
-                (settings.walletBalance?.ethAmount !== null &&
-                  settings.walletBalance?.ethAmount !== undefined) ? (
-                  <span
-                    className="inline-flex items-center gap-1 rounded bg-white/6 px-1.5 py-0.2 font-medium text-emerald-300"
-                    title="Auto-synced from sorare.com sidebar wallet"
-                  >
-                    <Wallet className="h-2.5 w-2.5" />
-                    {settings.walletBalance?.cashAmount !== null &&
-                    settings.walletBalance?.cashAmount !== undefined
-                      ? `${settings.walletBalance.cashSymbol ?? "€"}${settings.walletBalance.cashAmount.toFixed(2)}`
-                      : ""}
-                    {settings.walletBalance?.ethAmount !== null &&
-                    settings.walletBalance?.ethAmount !== undefined
-                      ? ` • ${settings.walletBalance.ethAmount} ETH`
-                      : ""}
-                  </span>
-                ) : null}
+          {/* Craft context: only where rarity and Essence matter (Collections, Craft, Deals) */}
+          {(activeTab === "collections" || activeTab === "craft" || activeTab === "bargains") && (
+            <div className="mt-2 space-y-1">
+              <div className="flex items-center gap-1.5">
+                <div className="grid flex-1 grid-cols-4 gap-0.5 rounded-lg border border-white/8 bg-white/[0.03] p-0.5">
+                  {RARITIES.map((rarity) => {
+                    const meta = RARITY_META[rarity];
+                    const active = rarity === activeRarity;
+                    return (
+                      <button
+                        key={rarity}
+                        type="button"
+                        onClick={() => void handleSelectRarity(rarity)}
+                        className={`truncate rounded-md px-1 py-0.5 text-[10.5px] font-medium transition ${
+                          active ? `${meta.badgeClass} font-semibold` : "text-slate-400 hover:text-slate-200"
+                        }`}
+                      >
+                        {meta.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div
+                  className="glass-pill flex w-24 shrink-0 items-center gap-1 rounded-lg px-1.5 py-0.5"
+                  title="Your Sorare Essence (auto-syncs from sorare.com sidebar, or click to type)"
+                >
+                  <Sparkles className="h-3 w-3 shrink-0 text-amber-400" />
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={activeEssence}
+                    onChange={(e) => handleEssenceChange(e.target.value)}
+                    className="w-full min-w-0 bg-transparent text-[11px] font-semibold text-slate-100 focus:outline-none"
+                    aria-label="Current Essence balance"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-[10px]">
+                <div className="h-1 flex-1 overflow-hidden rounded-full bg-slate-950/70">
+                  <div
+                    className="h-full transition-all duration-300"
+                    style={{ width: `${essencePct}%`, backgroundColor: essenceGap === 0 ? "var(--jam-money)" : "var(--jam-info)" }}
+                  />
+                </div>
                 {essenceGap === 0 ? (
-                  <span className="font-semibold text-emerald-300">
-                    CRAFT READY ({activeEssence.toLocaleString()})
-                  </span>
+                  <span className="shrink-0 font-semibold text-emerald-300">Craft ready</span>
                 ) : (
-                  <span className="text-slate-300">
-                    <strong className="text-amber-300">{essenceGap}</strong>{" "}
-                    Essence to craft
+                  <span className="shrink-0 tabular-nums text-slate-400">
+                    {essenceGap.toLocaleString()} Essence to craft
+                  </span>
+                )}
+                {settings.walletBalance?.cashAmount !== null && settings.walletBalance?.cashAmount !== undefined && (
+                  <span className="shrink-0 tabular-nums text-emerald-300" title="Auto-synced from sorare.com sidebar wallet">
+                    {`${settings.walletBalance.cashSymbol ?? "€"}${settings.walletBalance.cashAmount.toFixed(2)}`}
                   </span>
                 )}
               </div>
             </div>
-            <div className="h-1 w-full overflow-hidden rounded-full bg-slate-950/70">
-              <div
-                className={`h-full transition-all duration-300 ${
-                  essenceGap === 0 ? "bg-emerald-400" : "bg-amber-400"
-                }`}
-                style={{ width: `${essencePct}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Rarity Selector */}
-          <div className="mt-2.5 grid grid-cols-4 gap-1">
-            {RARITIES.map((rarity) => {
-              const meta = RARITY_META[rarity];
-              const active = rarity === activeRarity;
-              return (
-                <button
-                  key={rarity}
-                  type="button"
-                  onClick={() => void handleSelectRarity(rarity)}
-                  className={`rounded-xl border px-2 py-1 text-[11px] font-medium transition ${
-                    active
-                      ? `${meta.badgeClass} font-semibold`
-                      : "border-white/8 bg-white/[0.03] text-slate-400 hover:bg-white/[0.06] hover:text-slate-200"
-                  }`}
-                >
-                  {meta.label}
-                </button>
-              );
-            })}
-          </div>
+          )}
 
           {/* Accessible Tablist + Scan Age */}
           <div className="mt-2 flex items-center justify-between gap-1 border-t border-white/8 pt-1.5 text-[11px]">
@@ -1137,7 +1087,7 @@ export function App() {
                 onClick={() => setActiveTab("collections")}
                 className={`px-2 py-1 font-medium transition ${
                   activeTab === "collections"
-                    ? "text-amber-300"
+                    ? "text-slate-50 shadow-[inset_0_-2px_0_var(--jam-info)]"
                     : "text-slate-400 hover:text-slate-200"
                 }`}
               >
@@ -1153,7 +1103,7 @@ export function App() {
                 onClick={() => setActiveTab("craft")}
                 className={`inline-flex items-center gap-1 px-2 py-1 font-medium transition ${
                   activeTab === "craft"
-                    ? "text-emerald-300"
+                    ? "text-slate-50 shadow-[inset_0_-2px_0_var(--jam-info)]"
                     : "text-slate-400 hover:text-slate-200"
                 }`}
               >
@@ -1170,7 +1120,7 @@ export function App() {
                 onClick={() => setActiveTab("lineups")}
                 className={`inline-flex items-center gap-1 px-2 py-1 font-medium transition ${
                   activeTab === "lineups"
-                    ? "text-sky-300"
+                    ? "text-slate-50 shadow-[inset_0_-2px_0_var(--jam-info)]"
                     : "text-slate-400 hover:text-slate-200"
                 }`}
               >
@@ -1187,7 +1137,7 @@ export function App() {
                 onClick={() => setActiveTab("bargains")}
                 className={`inline-flex items-center gap-1 px-2 py-1 font-medium transition ${
                   activeTab === "bargains"
-                    ? "text-emerald-300"
+                    ? "text-slate-50 shadow-[inset_0_-2px_0_var(--jam-info)]"
                     : "text-slate-400 hover:text-slate-200"
                 }`}
               >
@@ -1209,7 +1159,7 @@ export function App() {
                 onClick={() => setActiveTab("gallery")}
                 className={`inline-flex items-center gap-1 px-2 py-1 font-medium transition ${
                   activeTab === "gallery"
-                    ? "text-amber-300"
+                    ? "text-slate-50 shadow-[inset_0_-2px_0_var(--jam-info)]"
                     : "text-slate-400 hover:text-slate-200"
                 }`}
               >

@@ -111,7 +111,7 @@ export function HeadToHeadCompareBox({
     : [];
 
   return (
-    <div className="rounded-2xl border border-sky-400/30 bg-[#111726] p-3 text-xs">
+    <div className="rounded-2xl border border-white/8 bg-[#111726] p-3 text-xs">
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="inline-flex items-center gap-1.5 font-semibold text-sky-200">
           <ArrowLeftRight className="h-3.5 w-3.5 text-sky-400" />

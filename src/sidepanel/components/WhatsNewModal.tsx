@@ -20,6 +20,16 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.4-exp2",
+    title: "v2.7.4-exp2 (test build): Cleaner Layout",
+    items: [
+      "Slimmer header: Refresh and your manager up top, everything else in the ... menu. Rarity and Essence only show where they matter.",
+      "One status line on Lineups: live Game Week and best rank, next cutoff, daily reset.",
+      "Colors now mean something: green is money, amber is a warning, red is live or injured, violet is Set.",
+      "Your progress comes first on Pro; packs come first on Set.",
+    ],
+  },
+  {
     version: "2.7.4-exp1",
     title: "v2.7.4-exp1 (test build): Your Lineups Show Up",
     items: [

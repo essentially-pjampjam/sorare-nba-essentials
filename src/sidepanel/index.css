@@ -257,3 +257,64 @@ details.cascade-section:not([open])::details-content {
     border-radius: 9999px;
   }
 }
+
+/* Meaning colors: one job each, used on chips, key numbers and attention edges (not every border).
+   money = cash / value, info = information + primary action, warn = time pressure / risk,
+   live = LIVE / injured / OUT, set = Set / Common and sealing. */
+:root {
+  --jam-money: #34d399;
+  --jam-info: #38bdf8;
+  --jam-warn: #fbbf24;
+  --jam-live: #fb7185;
+  --jam-set: #a78bfa;
+}
+
+.jam-btn-primary {
+  background-color: var(--jam-info);
+  border: 1px solid color-mix(in srgb, var(--jam-info) 60%, white);
+  color: #020617;
+  transition: background-color 0.15s ease, filter 0.15s ease;
+}
+.jam-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+.jam-btn-secondary {
+  background-color: color-mix(in srgb, var(--jam-info) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--jam-info) 45%, transparent);
+  color: #e0f2fe;
+}
+.jam-btn-secondary:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--jam-info) 80%, transparent);
+}
+
+.jam-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 0.375rem;
+  border: 1px solid;
+  padding: 0 0.375rem;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.jam-chip-money { color: var(--jam-money); border-color: color-mix(in srgb, var(--jam-money) 40%, transparent); background: color-mix(in srgb, var(--jam-money) 10%, transparent); }
+.jam-chip-info { color: var(--jam-info); border-color: color-mix(in srgb, var(--jam-info) 40%, transparent); background: color-mix(in srgb, var(--jam-info) 10%, transparent); }
+.jam-chip-warn { color: var(--jam-warn); border-color: color-mix(in srgb, var(--jam-warn) 40%, transparent); background: color-mix(in srgb, var(--jam-warn) 10%, transparent); }
+.jam-chip-live { color: var(--jam-live); border-color: color-mix(in srgb, var(--jam-live) 40%, transparent); background: color-mix(in srgb, var(--jam-live) 12%, transparent); }
+.jam-chip-set { color: var(--jam-set); border-color: color-mix(in srgb, var(--jam-set) 40%, transparent); background: color-mix(in srgb, var(--jam-set) 12%, transparent); }
+.jam-chip-muted { color: #cbd5e1; border-color: rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.04); }
+
+/* Neutral card border everywhere; a colored left edge only when the card needs attention. */
+.jam-attn-money { box-shadow: inset 3px 0 0 var(--jam-money); }
+.jam-attn-warn { box-shadow: inset 3px 0 0 var(--jam-warn); }
+.jam-attn-live { box-shadow: inset 3px 0 0 var(--jam-live); }
+.jam-attn-set { box-shadow: inset 3px 0 0 var(--jam-set); }
+
+/* Readability floor: 9-10 px body text reads as 10.5-11 px. */
+main .text-\[9px\],
+main .text-\[9\.5px\] { font-size: 10px; }
+main .text-\[10px\] { font-size: 10.5px; }
+main .tabular,
+main td { font-variant-numeric: tabular-nums; }

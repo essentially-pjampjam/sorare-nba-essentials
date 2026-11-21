@@ -150,7 +150,7 @@ export function SupportModal({ onClose }: SupportModalProps) {
               void openInActiveTab(SUPPORT_DONATION_INFO.sorareTradeUrl);
               dialogRef.current?.close();
             }}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:from-emerald-300 hover:to-sky-300"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl jam-btn-primary px-3 py-1.5 text-xs font-semibold text-slate-950"
           >
             <ArrowLeftRight className="h-3.5 w-3.5" />
             Trade Cards

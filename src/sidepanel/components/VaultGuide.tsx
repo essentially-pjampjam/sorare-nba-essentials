@@ -19,7 +19,7 @@ export function VaultGuide({ cards, candidates }: VaultGuideProps) {
   const candidatePoints = candidates.reduce((sum, c) => sum + estimateSealingPoints(c).sealingPoints, 0);
 
   return (
-    <details className="rounded-2xl border border-violet-400/25 bg-[#111726] px-3 py-2 text-[11px]">
+    <details className="rounded-2xl border border-white/8 jam-attn-set bg-[#111726] px-3 py-2 text-[11px]">
       <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2">
         <span className="inline-flex items-center gap-1.5 font-semibold text-violet-200">
           <Lock className="h-3.5 w-3.5" />

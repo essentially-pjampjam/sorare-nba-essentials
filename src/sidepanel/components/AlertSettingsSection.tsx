@@ -224,7 +224,7 @@ export function AlertSettingsSection({ settings, onUpdateSettings }: AlertSettin
         <button
           type="button"
           onClick={handleTest}
-          className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg border border-sky-400/40 bg-gradient-to-r from-emerald-500/15 to-sky-500/15 px-2 py-1.5 font-semibold text-sky-100 hover:border-sky-300"
+          className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg jam-btn-secondary px-2 py-1.5 font-semibold text-sky-100 hover:border-sky-300"
         >
           <Send className="h-3 w-3" />
           Send test notification

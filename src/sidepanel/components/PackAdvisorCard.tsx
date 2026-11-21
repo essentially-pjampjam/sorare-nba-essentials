@@ -50,7 +50,7 @@ export function PackAdvisorCard() {
   const hasOdds = analyses.some((a) => a.pack.slots.length > 0);
 
   return (
-    <div className="rounded-2xl border border-amber-400/25 bg-[#111726] p-3">
+    <div className="rounded-2xl border border-white/8 jam-attn-set bg-[#111726] p-3">
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <Package className="h-3.5 w-3.5 text-amber-300" />

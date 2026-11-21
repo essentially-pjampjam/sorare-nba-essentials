@@ -550,7 +550,7 @@ export function CollectionsTab({
           <button
             type="button"
             onClick={onScanNow}
-            className="mt-3.5 rounded-xl bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-sm hover:from-emerald-300 hover:to-sky-300"
+            className="mt-3.5 rounded-xl jam-btn-primary px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-sm"
           >
             Scan {rarityMeta.label} Collections
           </button>
@@ -681,7 +681,7 @@ export function CollectionsTab({
       {/* Hero Section 1 (Open by default): Real NBA League Quests Quick Finder */}
       <details
         open
-        className="cascade-section overflow-hidden rounded-2xl border border-emerald-400/25 bg-[#111726]"
+        className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]"
       >
         <summary className="flex w-full cursor-pointer select-none items-center justify-between px-3 py-2.5 text-left text-[11px] hover:bg-white/[0.03]">
           <span className="inline-flex items-center gap-1.5 font-semibold text-slate-100">
@@ -792,7 +792,7 @@ export function CollectionsTab({
                   type="button"
                   disabled={isQuestDealsLoading}
                   onClick={onLoadQuestDeals}
-                  className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 px-2.5 py-1 text-[10px] font-bold text-slate-950 shadow-xs transition hover:from-emerald-300 hover:to-sky-300 disabled:opacity-50"
+                  className="inline-flex cursor-pointer items-center gap-1 rounded-lg jam-btn-primary px-2.5 py-1 text-[10px] font-bold text-slate-950 shadow-xs transition disabled:opacity-50"
                 >
                   {isQuestDealsLoading && (
                     <Loader2 className="h-2.5 w-2.5 animate-spin" />
@@ -947,7 +947,7 @@ export function CollectionsTab({
                                 type="button"
                                 disabled={isQuestDealsLoading}
                                 onClick={onLoadQuestDeals}
-                                className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 px-2.5 py-1 font-bold text-slate-950 shadow-xs transition hover:from-emerald-300 hover:to-sky-300 disabled:opacity-50"
+                                className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg jam-btn-primary px-2.5 py-1 font-bold text-slate-950 shadow-xs transition disabled:opacity-50"
                               >
                                 {isQuestDealsLoading && (
                                   <Loader2 className="h-2.5 w-2.5 animate-spin" />
@@ -961,7 +961,7 @@ export function CollectionsTab({
                                 <button
                                   type="button"
                                   onClick={() => onSwitchTab("bargains")}
-                                  className="shrink-0 cursor-pointer rounded-lg bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 px-2.5 py-1 font-bold text-slate-950 shadow-xs hover:from-emerald-300 hover:to-sky-300"
+                                  className="shrink-0 cursor-pointer rounded-lg jam-btn-primary px-2.5 py-1 font-bold text-slate-950 shadow-xs"
                                 >
                                   Scan Deals
                                 </button>
@@ -1157,7 +1157,7 @@ export function CollectionsTab({
                       setActiveBatchButton("top3");
                       onPriceTopCollections(closestUnpricedSlugs);
                     }}
-                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 px-2.5 py-1 text-[10.5px] font-bold text-slate-950 shadow-xs transition hover:from-emerald-300 hover:to-sky-300 disabled:opacity-50"
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg jam-btn-primary px-2.5 py-1 text-[10.5px] font-bold text-slate-950 shadow-xs transition disabled:opacity-50"
                     title="Price the 3 closest unpriced teams (~4s)"
                   >
                     {currentBatchBtn === "top3" && (
@@ -1196,7 +1196,7 @@ export function CollectionsTab({
                       setActiveBatchButton("all");
                       onPriceTopCollections(allUnpricedIncompleteSlugs);
                     }}
-                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 px-2.5 py-1 text-[10.5px] font-bold text-slate-950 shadow-xs transition hover:from-emerald-300 hover:to-sky-300 disabled:opacity-50"
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg jam-btn-primary px-2.5 py-1 text-[10.5px] font-bold text-slate-950 shadow-xs transition disabled:opacity-50"
                     title="Price every incomplete team in this view (2-4 min in Public Mode)"
                   >
                     {currentBatchBtn === "all" && (

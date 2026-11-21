@@ -18,6 +18,7 @@ const STATUS: Record<ProLineupStatus, { label: string; cls: string }> = {
   rewarded: { label: "In rewards", cls: "border-sky-400/40 bg-sky-400/10 text-sky-300" },
   outside: { label: "Outside rewards", cls: "border-amber-400/40 bg-amber-400/10 text-amber-300" },
   unranked: { label: "Submitted", cls: "border-white/10 bg-white/5 text-slate-300" },
+  ranked: { label: "Live rank", cls: "border-white/10 bg-white/5 text-slate-300" },
 };
 
 const PHASE: Record<PageGameWeekGroup["phase"], { label: string; cls: string }> = {
@@ -73,7 +74,7 @@ export function ProProgressCard({ gallery }: { gallery: GalleryResult | null }) 
   };
 
   return (
-    <div className="rounded-2xl border border-sky-400/25 bg-[#111726] p-3">
+    <div className={`rounded-2xl border border-white/8 bg-[#111726] p-3 ${groups.some((g) => g.phase === "live") ? "jam-attn-live" : ""}`}>
       <div className="mb-1.5 flex items-center gap-1.5">
         <TrendingUp className="h-3.5 w-3.5 text-sky-300" />
         <span className="text-xs font-semibold text-slate-100">Current Pro Progress</span>

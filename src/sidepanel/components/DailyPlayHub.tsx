@@ -124,7 +124,7 @@ export function DailyPlayHub({ gallery, pool, poolLoading, onRefreshPool, missio
   }, [gallery, info, ownership, pool, strategy]);
 
   return (
-    <div className="rounded-2xl border border-emerald-400/25 bg-[#111726] p-3">
+    <div className="rounded-2xl border border-white/8 bg-[#111726] p-3">
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <Target className="h-3.5 w-3.5 text-emerald-400" />
@@ -158,10 +158,12 @@ export function DailyPlayHub({ gallery, pool, poolLoading, onRefreshPool, missio
         {scanError && <span className="text-rose-300">{scanError}</span>}
       </div>
       {pool && pool.window.rolledToNext && (
-        <div className="mb-1 rounded-lg border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-[10px] text-amber-100">
-          Today's picker games have all tipped off ({(pool.window.lockedGames ?? []).map((g) => `${g.awayAbbr}@${g.homeAbbr}`).join(", ") || "picks locked"}).
-          Showing the <strong>next</strong> Daily Picker, which opens at the reset ({fmtDay(pool.window.startIso)}).
-        </div>
+        <details className="mb-1 rounded-lg border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-[10px] text-amber-100">
+          <summary className="cursor-pointer truncate">
+            Showing the <strong>next</strong> Daily Picker (opens {fmtDay(pool.window.startIso)}) <span className="text-amber-300/70">more</span>
+          </summary>
+          Today's picker games have all tipped off ({(pool.window.lockedGames ?? []).map((g) => `${g.awayAbbr}@${g.homeAbbr}`).join(", ") || "picks locked"}), so the picks below are for the next one, which opens at the reset.
+        </details>
       )}
       {pool && (
         <div className="mb-1.5 text-[10px] text-slate-400">

@@ -393,7 +393,7 @@ export function GalleryTab({
           <button
             type="button"
             onClick={onRefreshGallery}
-            className="mt-3.5 rounded-xl bg-gradient-to-r from-emerald-400 to-sky-400 border border-sky-200/60 px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-sm hover:from-emerald-300 hover:to-sky-300"
+            className="mt-3.5 rounded-xl jam-btn-primary px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-sm"
           >
             Load My Gallery
           </button>
@@ -472,7 +472,7 @@ export function GalleryTab({
 
       {/* Best Liquidity Candidates Banner */}
       {poolMode === "pro" && portfolioStats.bestToSell.length > 0 && (
-        <div className="rounded-2xl border border-emerald-400/25 bg-[#111726] p-2.5 text-[11px]">
+        <div className="rounded-2xl border border-white/8 bg-[#111726] p-2.5 text-[11px]">
           <div className="mb-1 flex items-center justify-between">
             <span className="font-semibold text-emerald-300">
               Fastest Liquidity (Sell Unlocked Cards for Cash / Quests)
@@ -542,7 +542,7 @@ export function GalleryTab({
                 type="button"
                 disabled={isPricingGallery || sourceCards.length === 0}
                 onClick={onPriceGallery}
-                className="inline-flex items-center gap-1 rounded-xl border border-sky-200/60 bg-gradient-to-r from-emerald-400 to-sky-400 px-2.5 py-1 text-[11px] font-semibold text-slate-950 hover:from-emerald-300 hover:to-sky-300 disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-xl border border-sky-200/60 jam-btn-primary px-2.5 py-1 text-[11px] font-semibold text-slate-950 disabled:opacity-50"
               >
                 {isPricingGallery ? (
                   <Loader2 className="h-3 w-3 animate-spin" />
@@ -725,7 +725,7 @@ export function GalleryTab({
 
       {/* Vault vs. Sell ROI Summary Banner */}
       {formFilter === "seal" && poolMode === "pro" && (
-        <div className="rounded-2xl border border-violet-400/30 bg-[#111726] px-3 py-2 text-[11px]">
+        <div className="rounded-2xl border border-white/8 jam-attn-set bg-[#111726] px-3 py-2 text-[11px]">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="font-semibold text-violet-200">
               Vault vs. Sell ROI Advisor
