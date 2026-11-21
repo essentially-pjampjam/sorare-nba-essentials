@@ -2,6 +2,16 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
+## 2.7.4-exp5 (experimental, 2026-11-21)
+
+Fixed:
+- Set Essence could be read wrong: Sorare uses the same gradient id on the Limited Essence and the Set Essence counters, so a Pro page's Limited Essence could be saved as Set Essence. The two are now told apart by their colors (green = Limited, purple = Set), checked live on both pages (785 Limited, 19 Set).
+
+Changed:
+- Set has its own sage gray-green color (Set button, Set cards, packs, Squad); violet is now only for sealing and the Vault.
+- Selected options in the lineup builders are blue everywhere (were a mix of amber and green); green stays for money (budgets, rewards, cash).
+- All "Scan ..." buttons share one style; section icons are neutral; Pack & Mission Advisor no longer repeats Set Essence (it is in the top bar).
+
 ## 2.7.4-exp4 (experimental, 2026-11-21)
 
 Added:

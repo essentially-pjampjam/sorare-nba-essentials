@@ -747,7 +747,7 @@ export function GalleryTab({
 
       {/* Vault vs. Sell ROI Summary Banner */}
       {formFilter === "seal" && poolMode === "pro" && (
-        <div className="rounded-2xl border border-white/8 jam-attn-set bg-[#111726] px-3 py-2 text-[11px]">
+        <div className="rounded-2xl border border-white/8 jam-attn-seal bg-[#111726] px-3 py-2 text-[11px]">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="font-semibold text-violet-200">
               Vault vs. Sell ROI Advisor

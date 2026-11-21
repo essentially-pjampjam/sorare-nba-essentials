@@ -782,7 +782,7 @@ export function LineupsTab({
           onClick={() => setArenaMode("set_common")}
           className={`rounded-xl py-1.5 text-[11px] font-semibold transition ${
             arenaMode === "set_common"
-              ? "bg-violet-500/15 text-violet-100 ring-1 ring-violet-400/40"
+              ? "bg-set-500/20 text-set-200 ring-1 ring-set-400/40"
               : "text-slate-400 hover:text-slate-200"
           }`}
         >
@@ -1294,7 +1294,7 @@ export function LineupsTab({
                   onClick={() => setSetBuildMode("solo")}
                   className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
                     setBuildMode === "solo"
-                      ? "bg-emerald-500/20 text-emerald-200"
+                      ? "bg-sky-500/15 text-sky-100"
                       : "text-slate-400 hover:text-slate-200"
                   }`}
                 >
@@ -1305,7 +1305,7 @@ export function LineupsTab({
                   onClick={() => setSetBuildMode("squad")}
                   className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
                     setBuildMode === "squad"
-                      ? "bg-emerald-500/20 text-emerald-200"
+                      ? "bg-sky-500/15 text-sky-100"
                       : "text-slate-400 hover:text-slate-200"
                   }`}
                 >
@@ -1365,7 +1365,7 @@ export function LineupsTab({
                     title={hint}
                     onClick={() => chooseSoloTiming(id)}
                     className={`rounded-lg border px-2 py-0.5 font-semibold ${
-                      soloTiming === id ? "border-emerald-300/60 bg-emerald-500/20 text-emerald-100" : "border-white/10 text-slate-400 hover:text-slate-200"
+                      soloTiming === id ? "border-sky-400/50 bg-sky-500/15 text-sky-100" : "border-white/10 text-slate-400 hover:text-slate-200"
                     }`}
                   >
                     {label}
@@ -1568,7 +1568,7 @@ export function LineupsTab({
                 onClick={() => setFormat(opt.id)}
                 className={`cursor-pointer rounded-xl border px-1.5 py-1.5 text-center transition ${
                   active
-                    ? "border-amber-400/50 bg-amber-400/15 text-amber-200"
+                    ? "border-sky-400/50 bg-sky-500/15 text-sky-100"
                     : "border-white/8 bg-[#0b101b] text-slate-400 hover:text-slate-200"
                 }`}
               >
@@ -1649,7 +1649,7 @@ export function LineupsTab({
             onClick={() => setSeasonRule("4_in_1_classic")}
             className={`rounded-lg px-2 py-1 font-semibold transition ${
               seasonRule === "4_in_1_classic"
-                ? "bg-amber-400/20 text-amber-200"
+                ? "bg-sky-500/15 text-sky-100"
                 : "text-slate-400 hover:text-slate-200"
             }`}
             title="Allows 1 Out-of-Season Classic card alongside 4 In-Season (26-27) cards"
@@ -1700,7 +1700,7 @@ export function LineupsTab({
               onClick={() => setExcludeQuestionable((v) => !v)}
               className={`rounded-lg border px-2 py-0.5 transition ${
                 excludeQuestionable
-                  ? "border-amber-400/40 bg-amber-500/15 text-amber-200"
+                  ? "border-sky-400/50 bg-sky-500/15 text-sky-100"
                   : "border-white/8 bg-[#0b101b] text-slate-400"
               }`}
             >
@@ -1711,7 +1711,7 @@ export function LineupsTab({
               onClick={() => setDisjointLineups((v) => !v)}
               className={`rounded-lg border px-2 py-0.5 transition ${
                 disjointLineups
-                  ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-200"
+                  ? "border-sky-400/50 bg-sky-500/15 text-sky-100"
                   : "border-white/8 bg-[#0b101b] text-slate-400"
               }`}
               title="Prevent reusing the same card across Lineup #1, #2, #3"
@@ -2234,7 +2234,7 @@ export function LineupsTab({
             <TrendingUp className="h-3.5 w-3.5 text-sky-400" />
             Lineup Buy Advisor (1 Classic vs. In-Season)
           </span>
-          <span className="text-[10px] text-amber-300">
+          <span className="text-[10px] text-slate-400">
             {dualBuyAdvisor
               ? `${dualBuyAdvisor.classicSlotBuys.length} Classic • ${dualBuyAdvisor.inSeasonSlotBuys.length} In-S`
               : "Scan market"}
@@ -2309,7 +2309,7 @@ export function LineupsTab({
                   onClick={() => setBuySlotFilter("split")}
                   className={`rounded-lg py-1 font-semibold transition ${
                     buySlotFilter === "split"
-                      ? "bg-amber-400/20 text-amber-200"
+                      ? "bg-sky-500/15 text-sky-100"
                       : "text-slate-400"
                   }`}
                 >
@@ -2578,7 +2578,7 @@ export function LineupsTab({
             <Wallet className="h-3.5 w-3.5 text-emerald-400" />
             Hybrid Budget Lineup Builder ({formatMoney(budgetCents, currency)})
           </span>
-          <span className="text-[10px] text-emerald-300">
+          <span className="text-[10px] text-slate-400">
             {effectiveMarketListings.length > 0
               ? `${effectiveMarketListings.length} deals ready`
               : "Scan market"}
@@ -2644,7 +2644,7 @@ export function LineupsTab({
                   type="button"
                   disabled={isMarketLoading}
                   onClick={onScanMarketForBudget}
-                  className="rounded-lg border border-emerald-400/40 bg-emerald-500/20 px-2.5 py-1 text-[10px] font-semibold text-emerald-200 hover:bg-emerald-500/30 disabled:opacity-50"
+                  className="jam-btn-secondary rounded-lg px-2.5 py-1 text-[10px] font-semibold disabled:opacity-50"
                 >
                   {isMarketLoading ? "Loading..." : "Load Market Deals"}
                 </button>

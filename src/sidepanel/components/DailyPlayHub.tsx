@@ -127,7 +127,7 @@ export function DailyPlayHub({ gallery, pool, poolLoading, onRefreshPool, missio
     <div className="rounded-2xl border border-white/8 bg-[#111726] p-3">
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
-          <Target className="h-3.5 w-3.5 text-emerald-400" />
+          <Target className="h-3.5 w-3.5 text-slate-300" />
           <span className="text-xs font-semibold text-slate-100">Daily Play: {info.title}</span>
         </div>
         <GoButton url={missionUrl(info)} title={`Open ${info.title} on Sorare`} />
@@ -137,7 +137,7 @@ export function DailyPlayHub({ gallery, pool, poolLoading, onRefreshPool, missio
       </div>
       <div className="mb-1 flex flex-wrap items-center gap-2 text-[10px]">
         {snapshot && fresh ? (
-          <span className="text-emerald-300">
+          <span className="text-slate-300">
             ✓ Today's pickers synced from Sorare ({new Date(snapshot.scannedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})
           </span>
         ) : (
@@ -150,7 +150,7 @@ export function DailyPlayHub({ gallery, pool, poolLoading, onRefreshPool, missio
           disabled={scanBusy}
           onClick={scan}
           title="Read today's daily pickers from your open Sorare missions tab"
-          className="inline-flex items-center gap-1 rounded-lg border border-emerald-300/40 px-2 py-0.5 font-semibold text-emerald-200 hover:bg-emerald-500/15 disabled:opacity-50"
+          className="jam-btn-secondary inline-flex items-center gap-1 rounded-lg px-2 py-0.5 font-semibold disabled:opacity-50"
         >
           <RefreshCw className={`h-3 w-3 ${scanBusy ? "animate-spin" : ""}`} />
           Scan missions

@@ -68,7 +68,7 @@ export function DuplicateAdvisorSection({
                 pool === p
                   ? p === "pro"
                     ? "border-sky-300/60 bg-sky-500/20 text-sky-100"
-                    : "border-violet-300/60 bg-violet-500/20 text-violet-100"
+                    : "border-set-300/60 bg-set-500/25 text-set-200"
                   : "border-white/10 text-slate-400"
               }`}
             >
@@ -85,7 +85,7 @@ export function DuplicateAdvisorSection({
                 keepN[pool] === n
                   ? pool === "pro"
                     ? "border-sky-300/60 bg-sky-500/20 text-sky-100"
-                    : "border-violet-300/60 bg-violet-500/20 text-violet-100"
+                    : "border-set-300/60 bg-set-500/25 text-set-200"
                   : "border-white/10 text-slate-400"
               }`}
             >

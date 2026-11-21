@@ -35,7 +35,7 @@ export function SquadActivityCard({ mySlug }: { mySlug: string | null }) {
     <div className="rounded-2xl border border-white/8 jam-attn-set bg-[#111726] p-3">
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
-          <Users className="h-3.5 w-3.5 text-violet-300" />
+          <Users className="h-3.5 w-3.5 text-set-300" />
           <span className="text-xs font-semibold text-slate-100">
             Squad Activity{summary ? `: ${summary.squadName} (${summary.membersCount}/${summary.maxMembersCount})` : ""}
           </span>
@@ -46,7 +46,7 @@ export function SquadActivityCard({ mySlug }: { mySlug: string | null }) {
             disabled={busy}
             onClick={scan}
             title="Reads the Squad data from your open sorare.com Squad tab (no extra Sorare requests)"
-            className="inline-flex items-center gap-1 rounded-lg border border-violet-300/40 px-2 py-0.5 text-[10px] font-semibold text-violet-100 hover:bg-violet-500/15 disabled:opacity-50"
+            className="jam-btn-secondary inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[10px] font-semibold disabled:opacity-50"
           >
             <RefreshCw className={`h-3 w-3 ${busy ? "animate-spin" : ""}`} />
             {busy ? "Scanning..." : "Scan squad"}
@@ -72,14 +72,14 @@ export function SquadActivityCard({ mySlug }: { mySlug: string | null }) {
                 <span className="text-amber-300"> • needs {summary.teamsNeededToStart} more to count (best {cur.minimumLineups})</span>
               )}
               <div className="mt-1 h-1.5 overflow-hidden rounded bg-white/10">
-                <div className="h-full bg-violet-400/70" style={{ width: `${summary.progressPct}%` }} />
+                <div className="h-full bg-set-400/70" style={{ width: `${summary.progressPct}%` }} />
               </div>
               <div className="mt-1 text-[10px] text-slate-300">
                 Only the best {cur.minimumLineups} teams count (their scores are added up).
                 {summary.counting.length > 0 && (
                   <>
                     {" "}Counting now:{" "}
-                    <strong className="text-violet-200">
+                    <strong className="text-set-200">
                       {summary.counting.map((m) => `#${m.liveRank} ${m.nickname}${m.isMe ? " (you)" : ""}`).join(", ")}
                     </strong>
                     .
@@ -106,7 +106,7 @@ export function SquadActivityCard({ mySlug }: { mySlug: string | null }) {
             {summary.members.map((m) => (
               <li key={m.slug} className="flex items-center justify-between gap-1 truncate">
                 <span
-                  className={`truncate ${m.counting ? "font-semibold text-violet-200" : m.activeNow ? "text-slate-200" : "text-slate-500"}`}
+                  className={`truncate ${m.counting ? "font-semibold text-set-200" : m.activeNow ? "text-slate-200" : "text-slate-500"}`}
                   title={m.counting ? "Counts toward the stage total" : m.activeNow ? "Has a team (not in the best teams right now)" : "No team in the live stage"}
                 >
                   {m.liveRank ? `#${m.liveRank}` : "○"} {m.nickname}

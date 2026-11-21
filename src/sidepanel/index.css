@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+/* Set (Common) identity: sage gray-green, usable as text-set-300, bg-set-500/20, border-set-400/50 ... */
+@theme {
+  --color-set-200: #d6e3db;
+  --color-set-300: #b6cabe;
+  --color-set-400: #94ad9f;
+  --color-set-500: #6f8a7b;
+}
+
 :root,
 [data-theme="obsidian_gray"] {
   color-scheme: dark;
@@ -260,13 +268,14 @@ details.cascade-section:not([open])::details-content {
 
 /* Meaning colors: one job each, used on chips, key numbers and attention edges (not every border).
    money = cash / value, info = information + primary action, warn = time pressure / risk,
-   live = LIVE / injured / OUT, set = Set / Common and sealing. */
+   live = LIVE / injured / OUT, set = Set / Common (sage), seal = sealing / Vault (violet). */
 :root {
   --jam-money: #34d399;
   --jam-info: #38bdf8;
   --jam-warn: #fbbf24;
   --jam-live: #fb7185;
-  --jam-set: #a78bfa;
+  --jam-set: #94ad9f;
+  --jam-seal: #a78bfa;
 }
 
 .jam-btn-primary {
@@ -303,6 +312,7 @@ details.cascade-section:not([open])::details-content {
 .jam-chip-info { color: var(--jam-info); border-color: color-mix(in srgb, var(--jam-info) 40%, transparent); background: color-mix(in srgb, var(--jam-info) 10%, transparent); }
 .jam-chip-warn { color: var(--jam-warn); border-color: color-mix(in srgb, var(--jam-warn) 40%, transparent); background: color-mix(in srgb, var(--jam-warn) 10%, transparent); }
 .jam-chip-live { color: var(--jam-live); border-color: color-mix(in srgb, var(--jam-live) 40%, transparent); background: color-mix(in srgb, var(--jam-live) 12%, transparent); }
+.jam-chip-seal { color: var(--jam-seal); border-color: color-mix(in srgb, var(--jam-seal) 40%, transparent); background: color-mix(in srgb, var(--jam-seal) 12%, transparent); }
 .jam-chip-set { color: var(--jam-set); border-color: color-mix(in srgb, var(--jam-set) 40%, transparent); background: color-mix(in srgb, var(--jam-set) 12%, transparent); }
 .jam-chip-muted { color: #cbd5e1; border-color: rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.04); }
 
@@ -312,6 +322,7 @@ details.cascade-section:not([open])::details-content {
 .jam-attn-warn { box-shadow: inset 3px 0 0 var(--jam-warn); }
 .jam-attn-live { box-shadow: inset 3px 0 0 var(--jam-live); }
 .jam-attn-set { box-shadow: inset 3px 0 0 var(--jam-set); }
+.jam-attn-seal { box-shadow: inset 3px 0 0 var(--jam-seal); }
 
 /* Readability floor: 9-10 px body text reads as 10.5-11 px. */
 main .text-\[9px\],

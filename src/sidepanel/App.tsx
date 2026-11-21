@@ -1029,7 +1029,7 @@ export function App() {
                 title="Set (Common cards): Set lineups, packs, Squad, Set gallery and duplicates"
                 className={`h-7 truncate rounded-lg border px-1 text-[10.5px] font-medium transition ${
                   playMode === "set"
-                    ? "border-violet-400/60 bg-violet-500/20 font-semibold text-violet-100"
+                    ? "border-set-400/60 bg-set-500/25 font-semibold text-set-200"
                     : "border-white/8 bg-white/[0.03] text-slate-400 hover:text-slate-200"
                 }`}
               >
@@ -1066,7 +1066,7 @@ export function App() {
                   className="glass-pill flex h-7 min-w-0 items-center gap-1 rounded-lg px-1.5"
                   title="Set Essence (synced from sorare.com Set pages)"
                 >
-                  <Sparkles className="h-3 w-3 shrink-0 text-violet-300" />
+                  <Sparkles className="h-3 w-3 shrink-0 text-set-300" />
                   <span className="truncate text-[11px] font-semibold tabular-nums text-slate-100">
                     {typeof settings.commonEssence === "number" ? settings.commonEssence.toLocaleString() : "--"}
                   </span>

@@ -37,7 +37,7 @@ export function SealDealsSection({ gallery, rarity, currency }: { gallery: Galle
   const plan = useMemo(() => planSealBudget(deals, budget), [budget, deals]);
 
   return (
-    <details className="cascade-section overflow-hidden rounded-2xl border border-white/8 jam-attn-set bg-[#111726]">
+    <details className="cascade-section overflow-hidden rounded-2xl border border-white/8 jam-attn-seal bg-[#111726]">
       <summary className="flex w-full items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
         <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
           <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-violet-300" />

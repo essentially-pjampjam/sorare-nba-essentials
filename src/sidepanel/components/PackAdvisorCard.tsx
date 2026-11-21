@@ -55,9 +55,8 @@ export function PackAdvisorCard() {
     <div className="rounded-2xl border border-white/8 jam-attn-set bg-[#111726] p-3">
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
-          <Package className="h-3.5 w-3.5 text-amber-300" />
+          <Package className="h-3.5 w-3.5 text-set-300" />
           <span className="text-xs font-semibold text-slate-100">Pack &amp; Mission Advisor</span>
-          {commonEssence !== null && <span className="text-[10px] text-slate-400">• Set Essence {commonEssence}</span>}
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -65,7 +64,7 @@ export function PackAdvisorCard() {
             disabled={busy}
             onClick={scanShop}
             title="Reads your Daily Pack and Bronze+ progress from your open Sorare Set Shop tab"
-            className="inline-flex items-center gap-1 rounded-lg border border-amber-300/40 px-2 py-0.5 text-[10px] font-semibold text-amber-100 hover:bg-amber-500/15 disabled:opacity-50"
+            className="jam-btn-secondary inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[10px] font-semibold disabled:opacity-50"
           >
             <RefreshCw className={`h-3 w-3 ${busy ? "animate-spin" : ""}`} />
             Scan shop
@@ -92,8 +91,8 @@ export function PackAdvisorCard() {
       {analyses
         .filter((a) => a.pack.special)
         .map((a) => (
-          <div key={`sp-${a.pack.slug}`} className="mb-1.5 rounded-lg border border-violet-400/35 bg-violet-500/10 px-2 py-1.5 text-[10.5px] text-slate-200">
-            <span className="font-semibold text-violet-200">{isNewPack(a.pack.firstSeen) ? "New special pack: " : "Special pack: "}</span>
+          <div key={`sp-${a.pack.slug}`} className="mb-1.5 rounded-lg border border-set-400/35 bg-set-500/10 px-2 py-1.5 text-[10.5px] text-slate-200">
+            <span className="font-semibold text-set-200">{isNewPack(a.pack.firstSeen) ? "New special pack: " : "Special pack: "}</span>
             {a.pack.title} • {a.pack.price} {currencyLabel(a.pack.currency)} • {a.pack.cardsCount} cards
             {a.pack.endDate ? ` • ends in ${formatTimeLeft(a.pack.endDate)}` : ""}
             {a.pack.slots.length > 0
@@ -122,7 +121,7 @@ export function PackAdvisorCard() {
                 <td className="py-0.5">
                   {a.pack.title}
                   {a.pack.special && (
-                    <span className="ml-1 rounded border border-violet-400/40 bg-violet-500/15 px-1 text-[9px] font-bold text-violet-200">
+                    <span className="ml-1 rounded border border-set-400/40 bg-set-500/15 px-1 text-[9px] font-bold text-set-200">
                       {isNewPack(a.pack.firstSeen) ? "NEW" : "SPECIAL"}
                     </span>
                   )}

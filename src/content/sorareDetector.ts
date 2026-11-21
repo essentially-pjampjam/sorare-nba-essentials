@@ -194,12 +194,18 @@ import {
       );
       if (!hasEssenceIcon) continue;
       const numMatch = (btn.textContent || "").replace(/,/g, "").trim().match(/^(\d{1,5})$/);
-      // Set Essence uses a purple gradient (`essence-gradient-purple`); Limited Essence is green.
-      const purple = Boolean(btn.querySelector('linearGradient[id*="purple" i]'));
+      // Sorare reuses the gradient id `essence-gradient-purple` on BOTH counters (checked live
+      // 2026-11-21): the colors tell them apart. Limited Essence is filled with --c-green-400,
+      // Set Essence with purple #8567C9. The URL is only a fallback when no color is readable.
+      const fills = Array.from(btn.querySelectorAll("stop, path")).map((n) =>
+        (n.getAttribute("stop-color") || n.getAttribute("fill") || "").toLowerCase(),
+      );
+      const green = fills.some((f) => f.includes("green"));
+      const purple = fills.some((f) => f === "#8567c9");
       if (numMatch) {
         const val = Number(numMatch[1]);
         if (Number.isFinite(val) && val >= 0 && val <= 50000) {
-          const key = setMode || purple ? "common" : "limited";
+          const key = green ? "limited" : purple ? "common" : setMode ? "common" : "limited";
           if (out[key] === undefined) out[key] = val;
         }
       }

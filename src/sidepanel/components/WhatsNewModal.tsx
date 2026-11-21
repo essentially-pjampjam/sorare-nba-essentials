@@ -20,6 +20,15 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.4-exp5",
+    title: "v2.7.4-exp5 (test build): Set Colors & Essence Fix",
+    items: [
+      "Set has its own gray-green color; violet now only means sealing and the Vault.",
+      "Set Essence is read correctly from Sorare (it could pick up your Limited Essence before).",
+      "Selected options are blue everywhere, green is kept for money and rewards.",
+    ],
+  },
+  {
     version: "2.7.4-exp4",
     title: "v2.7.4-exp4 (test build): Set | Pro Switch",
     items: [
@@ -45,7 +54,7 @@ const RELEASE_HIGHLIGHTS: Array<{
     items: [
       "Slimmer header: Refresh and your manager up top, everything else in the ... menu. Rarity and Essence only show where they matter.",
       "One status line on Lineups: live Game Week and best rank, next cutoff, daily reset.",
-      "Colors now mean something: green is money, amber is a warning, red is live or injured, violet is Set.",
+      "Colors now mean something: green is money, amber is a warning, red is live or injured, sage gray-green is Set, violet is sealing.",
       "Your progress comes first on Pro; packs come first on Set.",
     ],
   },
