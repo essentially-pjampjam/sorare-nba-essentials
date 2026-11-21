@@ -41,7 +41,13 @@ export function PackAdvisorCard({ commonEssence: commonEssenceProp }: { commonEs
     setBusy(true);
     setScanError(null);
     scanSetShopStatus()
-      .then((shopStatus) => setData((d) => (d ? { ...d, shopStatus } : d)))
+      .then((shopStatus) => {
+        setData((d) => (d ? { ...d, shopStatus } : d));
+        // Refresh packs too so any newly discovered special pack on the Shop tab shows up right away.
+        return getSetPackAdvisor()
+          .then((advisor) => setData({ ...advisor, shopStatus }))
+          .catch(() => {});
+      })
       .catch((e: unknown) => setScanError(e instanceof Error ? e.message : String(e)))
       .finally(() => setBusy(false));
   };

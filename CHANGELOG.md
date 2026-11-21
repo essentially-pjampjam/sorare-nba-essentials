@@ -2,6 +2,19 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
+## 2.7.5-exp2 (2026-11-21)
+
+Fixed:
+- Wallet balance sync on sorare.com now parses thousands separators and locale formats (`€1,234.56`, `$1,200`, `1.234,56`, `12,50 €`, `1,250.5 ETH`) instead of failing or misreading `$1,200` as `1.2`.
+- Pro Essence `0` balances (e.g. right after crafting) now sync cleanly from sorare.com; manual Pro Essence typing no longer uses a stale closure over other rarities.
+- Cached gallery loads now filter out stale DOM lineups from closed Game Weeks just like fresh loads.
+- Sealing Deal Finder discards stale in-flight responses if you switch rarity or currency mid-scan, and respects active Sorare 429 cooldowns.
+- Pack & Mission Advisor no longer shows `0%` on Live Today advice when odds are unavailable, still shows Set Essence affordability tips without an API key, and refreshes special packs immediately when pressing Scan shop.
+- Daily Play missions update immediately on SPA auto-sync via `chrome.storage.onChanged` (instead of waiting up to 30 seconds).
+- Command Palette now shows card rarity (`Set`, `Limited`, `Rare`, `S. Rare`, `Unique`), uses dynamic season labels instead of hardcoded `26-27`, and deduplicates deal keys.
+- Settings JSON backup/restore now preserves and validates all exported preferences including rarity, projection source, auto-open toggles, and alert settings.
+- Header Refresh button disables properly on Gallery when no username is set, and all tab clicks route through `navigateTab()`.
+
 ## 2.7.5-exp1 (2026-11-21)
 
 Fixed:

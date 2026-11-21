@@ -764,25 +764,38 @@ export function App() {
 
   const essenceTimerRef = useRef<number | null>(null);
   const commonEssenceTimerRef = useRef<number | null>(null);
+  const latestEssenceRef = useRef(settings.essenceByRarity);
+  latestEssenceRef.current = settings.essenceByRarity;
+
+  useEffect(() => {
+    return () => {
+      if (essenceTimerRef.current !== null) window.clearTimeout(essenceTimerRef.current);
+      if (commonEssenceTimerRef.current !== null) window.clearTimeout(commonEssenceTimerRef.current);
+    };
+  }, []);
 
   const handleEssenceChange = (val: string) => {
-    const parsed = Math.max(0, Math.floor(Number(val) || 0));
-    setSettings((prev) => ({
-      ...prev,
-      essenceByRarity: {
+    const parsed = Math.max(0, Math.min(50000, Math.floor(Number(val) || 0)));
+    const targetRarity = activeRarity;
+    setSettings((prev) => {
+      const nextMap = {
         ...prev.essenceByRarity,
-        [activeRarity]: parsed,
-      },
-    }));
+        [targetRarity]: parsed,
+      };
+      latestEssenceRef.current = nextMap;
+      return {
+        ...prev,
+        essenceByRarity: nextMap,
+      };
+    });
     if (essenceTimerRef.current !== null) {
       window.clearTimeout(essenceTimerRef.current);
     }
-    const targetRarity = activeRarity;
     essenceTimerRef.current = window.setTimeout(() => {
       essenceTimerRef.current = null;
       void saveSettings({
         essenceByRarity: {
-          ...settings.essenceByRarity,
+          ...latestEssenceRef.current,
           [targetRarity]: parsed,
         },
       }).catch(() => {});
@@ -972,7 +985,7 @@ export function App() {
               type="button"
               disabled={
                 anyLoading ||
-                ((activeTab === "collections" || activeTab === "lineups") &&
+                ((activeTab === "collections" || activeTab === "lineups" || activeTab === "gallery") &&
                   !(settings.username || usernameDraft).trim())
               }
               onClick={handleRefreshActiveTab}
@@ -1185,10 +1198,7 @@ export function App() {
                 aria-controls="panel-collections"
                 aria-selected={activeTab === "collections"}
                 tabIndex={activeTab === "collections" ? 0 : -1}
-                onClick={() => {
-                  if (playMode === "set") selectPlayMode("pro");
-                  setActiveTab("collections");
-                }}
+                onClick={() => navigateTab("collections")}
                 data-pro-only={playMode === "set" ? "true" : undefined}
                 title={playMode === "set" ? "Pro only (Limited and up): click to switch to Pro" : undefined}
                 className={`px-2 py-1 font-medium transition ${
@@ -1206,10 +1216,7 @@ export function App() {
                 aria-controls="panel-craft"
                 aria-selected={activeTab === "craft"}
                 tabIndex={activeTab === "craft" ? 0 : -1}
-                onClick={() => {
-                  if (playMode === "set") selectPlayMode("pro");
-                  setActiveTab("craft");
-                }}
+                onClick={() => navigateTab("craft")}
                 data-pro-only={playMode === "set" ? "true" : undefined}
                 title={playMode === "set" ? "Pro only (Limited and up): click to switch to Pro" : undefined}
                 className={`inline-flex items-center gap-1 px-2 py-1 font-medium transition ${
@@ -1228,7 +1235,7 @@ export function App() {
                 aria-controls="panel-lineups"
                 aria-selected={activeTab === "lineups"}
                 tabIndex={activeTab === "lineups" ? 0 : -1}
-                onClick={() => setActiveTab("lineups")}
+                onClick={() => navigateTab("lineups")}
                 className={`inline-flex items-center gap-1 px-2 py-1 font-medium transition ${
                   activeTab === "lineups"
                     ? "text-slate-50 shadow-[inset_0_-2px_0_var(--jam-info)]"
@@ -1245,10 +1252,7 @@ export function App() {
                 aria-controls="panel-bargains"
                 aria-selected={activeTab === "bargains"}
                 tabIndex={activeTab === "bargains" ? 0 : -1}
-                onClick={() => {
-                  if (playMode === "set") selectPlayMode("pro");
-                  setActiveTab("bargains");
-                }}
+                onClick={() => navigateTab("bargains")}
                 data-pro-only={playMode === "set" ? "true" : undefined}
                 title={playMode === "set" ? "Pro only (Limited and up): click to switch to Pro" : undefined}
                 className={`inline-flex items-center gap-1 px-2 py-1 font-medium transition ${
@@ -1272,7 +1276,7 @@ export function App() {
                 aria-controls="panel-gallery"
                 aria-selected={activeTab === "gallery"}
                 tabIndex={activeTab === "gallery" ? 0 : -1}
-                onClick={() => setActiveTab("gallery")}
+                onClick={() => navigateTab("gallery")}
                 className={`inline-flex items-center gap-1 px-2 py-1 font-medium transition ${
                   activeTab === "gallery"
                     ? "text-slate-50 shadow-[inset_0_-2px_0_var(--jam-info)]"
@@ -1410,7 +1414,7 @@ export function App() {
               onCancelScan={() => void handleCancelScan()}
               onLoadQuestDeals={() => void handleLoadQuestDeals()}
               onSwitchTab={(tab) => {
-                setActiveTab(tab);
+                navigateTab(tab);
                 if (tab === "bargains" && !bargainsResult && !isBargainsLoading) {
                   void loadBargains(
                     activeRarity,

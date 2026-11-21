@@ -20,6 +20,17 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.5-exp2",
+    title: "v2.7.5-exp2: Audit & Polish Pass",
+    items: [
+      "Fixed wallet balance parsing for thousands separators and EU/US formats (€1,234.56, $1,200, 12,50 €), plus Pro Essence syncing down to 0 after crafting.",
+      "Fixed Sealing Deal Finder mid-scan rarity/currency race conditions and 429 cooldown handling, plus stale closed-GW DOM lineups on cached gallery loads.",
+      "Pack Advisor now refreshes special packs right away on Scan shop and hides 0% odds in Live Today tips when odds are unavailable.",
+      "Daily Play missions now update instantly on Sorare SPA navigation instead of waiting for the 30-second poll.",
+      "Command Palette now labels Set vs. Pro card rarities and uses dynamic season labels; Settings JSON backup/restore now preserves all preferences including alert settings.",
+    ],
+  },
+  {
     version: "2.7.5-exp1",
     title: "v2.7.5-exp1: Set Essence Sync & Reliability Fixes",
     items: [

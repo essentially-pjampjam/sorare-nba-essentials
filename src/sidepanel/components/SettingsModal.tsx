@@ -12,8 +12,8 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { APP_THEMES } from "../../shared/constants";
-import type { UserSettings } from "../../shared/types";
+import { APP_THEMES, RARITIES } from "../../shared/constants";
+import type { ProjectionSource, Rarity, UserSettings } from "../../shared/types";
 import { AlertSettingsSection } from "./AlertSettingsSection";
 
 interface SettingsModalProps {
@@ -124,6 +124,10 @@ export function SettingsModal({
       customProjectionsRaw: settings.customProjectionsRaw,
       milestoneRulesByRarity: settings.milestoneRulesByRarity,
       watchlist: settings.watchlist ?? [],
+      alertsEnabled: settings.alertsEnabled,
+      cutoffReminderEnabled: settings.cutoffReminderEnabled,
+      cutoffReminderMinutesBefore: settings.cutoffReminderMinutesBefore,
+      alertPreferences: settings.alertPreferences,
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json;charset=utf-8",
@@ -148,25 +152,67 @@ export function SettingsModal({
         setBackupStatus("Invalid JSON backup file.");
         return;
       }
+      const validThemes = new Set(APP_THEMES.map((t) => t.id));
+      const validRarities = new Set<Rarity>(RARITIES);
+      const validProjectionSources = new Set<ProjectionSource>([
+        "blended_smart",
+        "sorare_projected",
+        "sorare_l10",
+        "sorare_l5",
+        "custom_csv",
+      ]);
       const patch: Partial<UserSettings> = {};
-      if (parsed.theme) patch.theme = parsed.theme;
+      if (parsed.theme && validThemes.has(parsed.theme)) patch.theme = parsed.theme;
       if (parsed.density === "compact" || parsed.density === "cozy") {
         patch.density = parsed.density;
       }
       if (parsed.currency === "USD" || parsed.currency === "EUR") {
         patch.currency = parsed.currency;
       }
-      if (typeof parsed.craftThreshold === "number") {
+      if (parsed.selectedRarity && validRarities.has(parsed.selectedRarity)) {
+        patch.selectedRarity = parsed.selectedRarity;
+      }
+      if (typeof parsed.craftThreshold === "number" && Number.isFinite(parsed.craftThreshold)) {
         patch.craftThreshold = parsed.craftThreshold;
+      }
+      if (typeof parsed.autoOpenOnCraft === "boolean") {
+        patch.autoOpenOnCraft = parsed.autoOpenOnCraft;
+      }
+      if (typeof parsed.autoOpenOnSorare === "boolean") {
+        patch.autoOpenOnSorare = parsed.autoOpenOnSorare;
+      }
+      if (typeof parsed.autoShowInPageWizards === "boolean") {
+        patch.autoShowInPageWizards = parsed.autoShowInPageWizards;
+      }
+      if (typeof parsed.autoPriceTopN === "number" && Number.isFinite(parsed.autoPriceTopN)) {
+        patch.autoPriceTopN = parsed.autoPriceTopN;
+      }
+      if (parsed.projectionSource && validProjectionSources.has(parsed.projectionSource)) {
+        patch.projectionSource = parsed.projectionSource;
       }
       if (typeof parsed.customProjectionsRaw === "string") {
         patch.customProjectionsRaw = parsed.customProjectionsRaw;
       }
-      if (parsed.milestoneRulesByRarity) {
+      if (parsed.milestoneRulesByRarity && typeof parsed.milestoneRulesByRarity === "object") {
         patch.milestoneRulesByRarity = parsed.milestoneRulesByRarity;
       }
       if (Array.isArray(parsed.watchlist)) {
         patch.watchlist = parsed.watchlist;
+      }
+      if (typeof parsed.alertsEnabled === "boolean") {
+        patch.alertsEnabled = parsed.alertsEnabled;
+      }
+      if (typeof parsed.cutoffReminderEnabled === "boolean") {
+        patch.cutoffReminderEnabled = parsed.cutoffReminderEnabled;
+      }
+      if (
+        typeof parsed.cutoffReminderMinutesBefore === "number" &&
+        Number.isFinite(parsed.cutoffReminderMinutesBefore)
+      ) {
+        patch.cutoffReminderMinutesBefore = parsed.cutoffReminderMinutesBefore;
+      }
+      if (parsed.alertPreferences && typeof parsed.alertPreferences === "object") {
+        patch.alertPreferences = parsed.alertPreferences;
       }
       onUpdateSettings(patch);
       setBackupStatus("Setup imported successfully.");

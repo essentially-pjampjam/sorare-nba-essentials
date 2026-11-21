@@ -11,6 +11,7 @@ import {
   isCraftRoute as isCraftRouteUrl,
   isPartialLineupPage,
   normalizeNameForMatch,
+  parseWalletButtonText,
   type DomDetectedLineup,
 } from "./sorareDomParser";
 
@@ -261,32 +262,24 @@ import {
       "nav button, aside button",
     );
     for (const btn of buttons) {
-      const text = (btn.textContent || "").replace(/\u00a0/g, " ").trim();
+      const text = (btn.textContent || "").replace(/[\u00a0\u202f]/g, " ").trim();
       if (!text) continue;
 
       if (btn.querySelector('linearGradient[id*="boost" i]')) {
-        const clueMatch = text.replace(/,/g, "").match(/^(\d{1,4})$/);
+        const clueMatch = text.replace(/[\s,]+/g, "").match(/^(\d{1,4})$/);
         if (clueMatch) {
           cluesCount = Number(clueMatch[1]);
         }
       }
 
-      const fiatMatch = text.match(/^([€$£])\s*(\d+(?:[.,]\d+)?)$/);
-      if (fiatMatch) {
-        const parsed = Number.parseFloat(fiatMatch[2].replace(",", "."));
-        if (Number.isFinite(parsed)) {
-          cashSymbol = fiatMatch[1];
-          cashAmount = parsed;
-        }
+      const parsed = parseWalletButtonText(text);
+      if (parsed?.cashAmount !== undefined && parsed.cashSymbol) {
+        cashSymbol = parsed.cashSymbol;
+        cashAmount = parsed.cashAmount;
         continue;
       }
-
-      const ethMatch = text.match(/^(\d+(?:[.,]\d+)?)\s*ETH$/i);
-      if (ethMatch) {
-        const parsed = Number.parseFloat(ethMatch[1].replace(",", "."));
-        if (Number.isFinite(parsed)) {
-          ethAmount = parsed;
-        }
+      if (parsed?.ethAmount !== undefined) {
+        ethAmount = parsed.ethAmount;
       }
     }
 

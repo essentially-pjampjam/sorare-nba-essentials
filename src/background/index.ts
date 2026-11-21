@@ -1065,11 +1065,16 @@ async function fetchGalleryForLineups(
       const domLineups = await readStoredDomLineups();
       await syncSealedStatesFromOpenTabs();
       const pageLineups = await syncLineupsFromOpenTabs(cleanUser);
+      const cachedOpenGw = selectOpenGameWeek(cached.value.fixtures, Date.now());
       return {
         ...cached.value,
         cards: await applySealedOverrides(cached.value.cards, cached.value.fetchedAt),
         currentLineups: withPageLineups(
-          mergeCurrentLineups(cached.value.currentLineups ?? [], domLineups),
+          mergeCurrentLineups(
+            cached.value.currentLineups ?? [],
+            domLineups,
+            cachedOpenGw?.fixture.slug ?? null,
+          ),
           pageLineups,
         ),
         pageLineups,
@@ -1472,11 +1477,12 @@ async function handleMessage(
           if (
             typeof val === "number" &&
             Number.isFinite(val) &&
-            val > 0 &&
+            val >= 0 &&
             val <= 50000
           ) {
-            if (nextBalances[key] !== val) {
-              nextBalances[key] = val;
+            const floored = Math.floor(val);
+            if (nextBalances[key] !== floored) {
+              nextBalances[key] = floored;
               changed = true;
             }
           }
@@ -1828,6 +1834,7 @@ async function handleMessage(
       }
       case "GET_SEAL_DEALS": {
         const settings = await loadSettings();
+        await assertNoCooldown();
         const listings = await sorareClient.fetchNbaBargains(msg.rarity, "seal_value", settings.currency);
         return { ok: true, data: listings };
       }

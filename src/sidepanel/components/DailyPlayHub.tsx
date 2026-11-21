@@ -75,9 +75,22 @@ export function DailyPlayHub({ gallery, pool, poolLoading, onRefreshPool, missio
         .then(setDetected)
         .catch(() => {});
     load();
-    // Opening Sorare's missions page syncs the pickers in the background: pick that up.
+    // Instant update when watchMissionPages() writes new missions to storage on SPA navigation.
+    const onStorageChange = (
+      changes: Record<string, chrome.storage.StorageChange>,
+      areaName: string,
+    ) => {
+      if (areaName === "local" && changes.picker_missions_v1?.newValue) {
+        setDetected(changes.picker_missions_v1.newValue as PickerMissionsByMode);
+      }
+    };
+    chrome.storage?.onChanged?.addListener(onStorageChange);
+    // Fallback poll in case storage events were missed.
     const timer = setInterval(load, 30_000);
-    return () => clearInterval(timer);
+    return () => {
+      chrome.storage?.onChanged?.removeListener(onStorageChange);
+      clearInterval(timer);
+    };
   }, []);
 
   const snapshot = detected[mode];

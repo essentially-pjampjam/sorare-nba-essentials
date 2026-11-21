@@ -1686,3 +1686,71 @@ export function extractOpenLineupsFromDocument(
 
   return out;
 }
+
+/**
+ * Parses locale-formatted fiat / ETH numbers (e.g. "1,234.56", "1.234,56", "1 234,56", "1,200", "0.005").
+ */
+export function parseWalletAmount(raw: string): number | null {
+  const compact = raw.replace(/[\s\u00a0\u202f]+/g, "");
+  if (!compact || !/^[\d.,]+$/.test(compact)) return null;
+
+  const hasComma = compact.includes(",");
+  const hasDot = compact.includes(".");
+  let normalized = compact;
+
+  if (hasComma && hasDot) {
+    // Whichever separator appears last is the decimal point; the other is thousands grouping.
+    const lastComma = compact.lastIndexOf(",");
+    const lastDot = compact.lastIndexOf(".");
+    normalized =
+      lastComma > lastDot
+        ? compact.replace(/\./g, "").replace(",", ".")
+        : compact.replace(/,/g, "");
+  } else if (hasComma) {
+    const parts = compact.split(",");
+    const isThousands =
+      parts.length > 2
+        ? parts.slice(1).every((p) => p.length === 3)
+        : parts[0].length >= 1 && parts[0].length <= 3 && parts[1].length === 3;
+    normalized = isThousands ? compact.replace(/,/g, "") : compact.replace(",", ".");
+  } else if (hasDot) {
+    const parts = compact.split(".");
+    if (parts.length > 2 && parts.slice(1).every((p) => p.length === 3)) {
+      normalized = compact.replace(/\./g, "");
+    }
+  }
+
+  if (!/^\d+(?:\.\d+)?$/.test(normalized)) return null;
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** Parses a Sorare sidebar wallet button's text into fiat cash or ETH balance. */
+export function parseWalletButtonText(text: string): {
+  cashAmount?: number;
+  cashSymbol?: string;
+  ethAmount?: number;
+} | null {
+  const clean = text.replace(/[\u00a0\u202f]/g, " ").trim();
+  if (!clean) return null;
+
+  const prefixFiat = clean.match(/^([€$£])\s*([\d\s.,]+)$/);
+  if (prefixFiat) {
+    const amt = parseWalletAmount(prefixFiat[2]);
+    if (amt !== null) return { cashSymbol: prefixFiat[1], cashAmount: amt };
+  }
+
+  const suffixFiat = clean.match(/^([\d\s.,]+)\s*([€$£])$/);
+  if (suffixFiat) {
+    const amt = parseWalletAmount(suffixFiat[1]);
+    if (amt !== null) return { cashSymbol: suffixFiat[2], cashAmount: amt };
+  }
+
+  const ethMatch = clean.match(/^([\d\s.,]+)\s*ETH$/i);
+  if (ethMatch) {
+    const amt = parseWalletAmount(ethMatch[1]);
+    if (amt !== null) return { ethAmount: amt };
+  }
+
+  return null;
+}
