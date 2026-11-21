@@ -20,51 +20,14 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
-    version: "2.7.4-exp5",
-    title: "v2.7.4-exp5 (test build): Set Colors & Essence Fix",
+    version: "2.7.4",
+    title: "v2.7.4: Set | Pro Switch, Your Lineups & New Look",
     items: [
-      "Set has its own gray-green color; violet now only means sealing and the Vault.",
-      "Set Essence is read correctly from Sorare (it could pick up your Limited Essence before).",
-      "Selected options are blue everywhere, green is kept for money and rewards.",
-    ],
-  },
-  {
-    version: "2.7.4-exp4",
-    title: "v2.7.4-exp4 (test build): Set | Pro Switch",
-    items: [
-      "New Set button left of Limited: one tap and Lineups, Gallery and duplicates show your Set cards, packs and Squad.",
-      "The Set / rarity bar now stays on every tab.",
-      "Quick-jump chips wrap instead of getting cut off in a narrow panel.",
-    ],
-  },
-  {
-    version: "2.7.4-exp3",
-    title: "v2.7.4-exp3 (test build): Quick Jumps & Safer Key",
-    items: [
-      "Quick-jump bar on Lineups, Gallery and Deals: tap a chip to go straight to that section.",
-      "Tidier header: the lightning bolt on the logo shows your API key status (click it for Settings).",
-      "Rewards are green, cash places solid green. Sealing Deal Finder now lives in Deals.",
-      "Squad reward packs no longer show up as shop packs, and pack odds load again.",
-      "Your API key is now encrypted on this device and never shown in full.",
-    ],
-  },
-  {
-    version: "2.7.4-exp2",
-    title: "v2.7.4-exp2 (test build): Cleaner Layout",
-    items: [
-      "Slimmer header: Refresh and your manager up top, everything else in the ... menu. Rarity and Essence only show where they matter.",
-      "One status line on Lineups: live Game Week and best rank, next cutoff, daily reset.",
-      "Colors now mean something: green is money, amber is a warning, red is live or injured, sage gray-green is Set, violet is sealing.",
-      "Your progress comes first on Pro; packs come first on Set.",
-    ],
-  },
-  {
-    version: "2.7.4-exp1",
-    title: "v2.7.4-exp1 (test build): Your Lineups Show Up",
-    items: [
-      "Current Pro Progress now shows your real lineups: live Game Week with rank, points and projected rank, plus lineups submitted for the next Game Week. They are read from your logged-in Sorare tab, and Refresh or Sync re-reads them.",
-      "Gallery hides sealed cards by default. Untick Hide sealed to see them.",
-      "Special Set shop packs (like Emirates Cup Platinum) are spotted automatically and get the same odds breakdown as the other packs.",
+      "New Set button left of Limited: one tap and Lineups, Gallery and duplicates switch to your Set cards, packs and Squad.",
+      "Current Pro Progress shows your real lineups with live rank and points, read from your logged-in Sorare tab.",
+      "Cleaner layout with quick-jump chips; green means rewards, light gray means Set.",
+      "Special shop packs (like Emirates Cup Platinum) get odds automatically; Gallery hides sealed cards; Sealing Deal Finder is in Deals.",
+      "Fixed: Set Essence reading, Squad reward packs in the shop list, missing pack odds. Your API key is now encrypted on this device.",
     ],
   },
   {

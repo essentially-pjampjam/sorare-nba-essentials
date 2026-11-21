@@ -1,11 +1,11 @@
 @import "tailwindcss";
 
-/* Set (Common) identity: sage gray-green, usable as text-set-300, bg-set-500/20, border-set-400/50 ... */
+/* Set (Common) identity: pure light gray, usable as text-set-300, bg-set-500/20, border-set-400/50 ... */
 @theme {
-  --color-set-200: #d6e3db;
-  --color-set-300: #b6cabe;
-  --color-set-400: #94ad9f;
-  --color-set-500: #6f8a7b;
+  --color-set-200: #ececec;
+  --color-set-300: #d9d9d9;
+  --color-set-400: #bdbdbd;
+  --color-set-500: #8c8c8c;
 }
 
 :root,
@@ -268,13 +268,13 @@ details.cascade-section:not([open])::details-content {
 
 /* Meaning colors: one job each, used on chips, key numbers and attention edges (not every border).
    money = cash / value, info = information + primary action, warn = time pressure / risk,
-   live = LIVE / injured / OUT, set = Set / Common (sage), seal = sealing / Vault (violet). */
+   live = LIVE / injured / OUT, set = Set / Common (light gray), seal = sealing / Vault (violet). */
 :root {
   --jam-money: #34d399;
   --jam-info: #38bdf8;
   --jam-warn: #fbbf24;
   --jam-live: #fb7185;
-  --jam-set: #94ad9f;
+  --jam-set: #d9d9d9;
   --jam-seal: #a78bfa;
 }
 

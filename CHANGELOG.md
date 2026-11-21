@@ -2,73 +2,29 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
-## 2.7.4-exp5 (experimental, 2026-11-21)
-
-Fixed:
-- Set Essence could be read wrong: Sorare uses the same gradient id on the Limited Essence and the Set Essence counters, so a Pro page's Limited Essence could be saved as Set Essence. The two are now told apart by their colors (green = Limited, purple = Set), checked live on both pages (785 Limited, 19 Set).
-
-Changed:
-- Set has its own sage gray-green color (Set button, Set cards, packs, Squad); violet is now only for sealing and the Vault.
-- Selected options in the lineup builders are blue everywhere (were a mix of amber and green); green stays for money (budgets, rewards, cash).
-- All "Scan ..." buttons share one style; section icons are neutral; Pack & Mission Advisor no longer repeats Set Essence (it is in the top bar).
-
-## 2.7.4-exp4 (experimental, 2026-11-21)
+## 2.7.4 (2026-11-21)
 
 Added:
-- Set | Pro switch in the top bar, like Sorare's own: Set (Common) sits left of Limited. Set mode turns Lineups into Set teams, packs and Squad, and Gallery and the Duplicate Sell Advisor into your Set cards; it shows Set Essence. Collections, Craft and Deals are Pro-only (Limited and up), dim in Set mode and switch back to Pro when clicked. The choice is remembered.
+- Set | Pro switch in the top bar (Set sits left of Limited, like on Sorare): Set mode shows Set lineups, packs, Squad, Set cards, Set duplicates and Set Essence. Collections, Craft and Deals stay Pro (Limited and up).
+- Current Pro Progress shows your real lineups: live Game Week with rank, points, projected rank and field size, plus lineups submitted for the next Game Week. They are read from your logged-in Sorare tab (Sorare keeps lineups private, so the public API never returned them); Refresh and Sync re-read them.
+- Special Set shop packs (for example "Emirates Cup Platinum") are found on your Sorare Shop tab and get the same price and 3★+ / 4★+ odds breakdown as the standard packs, with a NEW badge and time left.
+- Quick-jump chips under the header on Lineups, Gallery and Deals.
 
 Changed:
-- The Set / rarity / Essence bar shows on every tab (it no longer disappears on Lineups and Gallery); the craft progress line stays on Collections, Craft and Deals.
-- The old Pro / Set switches inside Lineups, Gallery and the Duplicate Sell Advisor are gone (the top bar drives them).
-- "Super Rare" reads "S. Rare" in a narrow panel.
+- New layout: two-row header with a "..." menu, a lightning bolt on the logo for your API key status (blue = Fast Mode, gray = public mode, click for Settings), one status line on Lineups (live Game Week and best rank, next cutoff, daily reset, injuries, reminder).
+- Colors mean one thing each: green = money and rewards (solid green = cash places), blue = info, buttons and selected options, amber = warning, red = live / injured, light gray = Set, violet = sealing and the Vault.
+- New section order: Pro starts with your progress, Set starts with packs.
+- Gallery hides sealed cards by default ("Hide sealed" to show them). The Sealing Deal Finder moved to Deals. Duplicate Sell Advisor colors Pro and Set cards differently.
+- "Upcoming Lineups & Upgrade Swaps" (was "Current Open Lineups") with a correct explanation.
 
 Fixed:
-- Quick-jump chips were cut off on the right in a narrow panel; they now wrap onto a second row, and sections land below it.
-
-## 2.7.4-exp3 (experimental, 2026-11-21)
-
-Added:
-- Quick-jump bar under the header on Lineups (Pro and Set), Gallery and Deals: one tap scrolls to a section (and opens it).
-
-Changed:
-- Header: the logo carries a lightning bolt (blue = API key active, gray = public mode; click opens Settings) instead of the FAST chip. All header controls share one height, and Essence is a fifth equal column next to the rarities.
-- Rewards are green everywhere: "In rewards" is a green outline, "In the cash" a solid green chip; blue stays for buttons and info.
-- Duplicate Sell Advisor: Pro cards blue, Set cards violet; Hold is neutral gray.
-- Sealing Deal Finder moved from Gallery to Deals.
-- Dim gray text is a step brighter (contrast).
-
-Fixed:
-- Pack & Mission Advisor listed Squad reward packs (LVL 1-5, 0 Essence) as new special packs; reward packs are no longer treated as shop offers.
-- Pack odds failed for every pack once more than a few packs were listed (one oversized request); odds now load per pack.
+- Your submitted lineups never showed up in Pro Progress.
+- Set Essence could pick up your Limited Essence (Sorare uses the same icon id for both counters); they are now told apart by color.
+- Squad reward packs showed up as shop packs, and pack odds failed for every pack once several packs were listed.
+- Pro Progress said "Outside rewards" when the reward places were unknown.
 
 Security:
-- The Sorare API key is encrypted at rest (AES-GCM, with a key that cannot be exported and that pages and content scripts cannot reach). Existing keys are encrypted on first load.
-- The side panel never receives the full key, only a masked one (e.g. ••••abcd).
-
-## 2.7.4-exp2 (experimental, 2026-11-21)
-
-Changed:
-- Cleaner header: two rows (name, manager, Refresh, a menu for search / currency / density / pop-out / support / settings; then the tabs). Rarity, Essence and craft progress only show on Collections, Craft and Deals.
-- One status line on Lineups replaces the two timer rows: LIVE Game Week with your best rank, next cutoff, daily reset, injuries and the cutoff reminder.
-- Colors mean one thing each: green = money, blue = info and the main button, amber = warning, red = LIVE / injured, violet = Set / Common and sealing. Cards use a neutral border with a colored edge only when they need attention; the green-to-blue gradient buttons are gone.
-- New order. Pro: Current Pro Progress, Upcoming Lineups & Upgrade Swaps, Recommended Entry, Daily Play. Set: Pack & Mission Advisor, Squad, Solo / Squad builder, Daily Play, guide.
-- Small text is a bit larger; the long Daily Picker note folds to one line.
-
-Fixed:
-- Current Pro Progress said "Outside rewards" when the reward places were unknown; it now says "Live rank".
-
-## 2.7.4-exp1 (experimental, 2026-11-21)
-
-Fixed:
-- Pro lineups never showed up: Sorare keeps lineups private, so the public API returns none, and live Game Week lineups were filtered out. Lineups are now read from your logged-in Sorare tab (live and upcoming Game Weeks) with rank, score, projected rank and field size; Refresh and the new Sync button re-read them.
-
-Changed:
-- "Pro Progress" is now "Current Pro Progress": lineups grouped by Game Week (LIVE / Before cutoff) with reward status estimated from last week's field.
-- "Current Open Lineups & Upgrade Swaps" is now "Upcoming Lineups & Upgrade Swaps" with a correct explanation.
-- Gallery hides sealed cards by default; untick "Hide sealed" to show them.
-
-Added:
-- Special Set shop packs (for example "Emirates Cup Platinum") are detected from your Sorare Shop tab and analyzed like the standard packs (price, 3★+ / 4★+ odds, NEW badge, time left).
+- Your Sorare API key is encrypted on this device (AES-GCM with a key that cannot be exported and that web pages cannot reach), and the side panel only ever sees it masked.
 
 ## 2.7.3 (2026-11-21)
 
