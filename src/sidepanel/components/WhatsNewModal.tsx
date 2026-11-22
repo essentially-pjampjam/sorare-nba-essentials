@@ -20,6 +20,13 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.5-exp8",
+    title: "v2.7.5-exp8: Updated PPs Essentials Logo Everywhere",
+    items: [
+      "Updated the extension artwork everywhere (Chrome toolbar, chrome://extensions, side panel header, loading stage, dashboard tab favicon, notifications, and Sorare NBA bottom-right launcher) with the new transparent PPs essentials logo.",
+    ],
+  },
+  {
     version: "2.7.5-exp7",
     title: "v2.7.5-exp7: Playmaker Picker, Set Essence Bar, Rarity Motes & Must-Start Locks",
     items: [
