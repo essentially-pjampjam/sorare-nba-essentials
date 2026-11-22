@@ -20,6 +20,13 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.5-exp9",
+    title: "v2.7.5-exp9: Updated Logo (v3) Everywhere",
+    items: [
+      "Applied the updated logo3.png artwork across the Chrome toolbar, chrome://extensions, side panel header, loading stage, dashboard favicon, notifications, and Sorare NBA bottom-right launcher.",
+    ],
+  },
+  {
     version: "2.7.5-exp8",
     title: "v2.7.5-exp8: Updated PPs Essentials Logo Everywhere",
     items: [

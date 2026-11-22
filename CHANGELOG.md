@@ -2,6 +2,11 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
+## 2.7.5-exp9 (2026-11-22)
+
+Changed:
+- Applied `logo3.png` across `public/logo.png` (`256x256`) and all extension icon sizes (`16`, `32`, `48`, `128`), updating the Chrome toolbar, `chrome://extensions`, side panel header, loading stage, dashboard favicon, desktop notifications, and Sorare NBA bottom-right launcher.
+
 ## 2.7.5-exp8 (2026-11-22)
 
 Changed:
