@@ -2,6 +2,11 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
+## 2.7.5-exp11 (2026-11-22)
+
+Changed:
+- Scaled down the Essence bar particles (`1.5px` to `3px` micro-motes with tight `2px-3px` glow, lower `0.58-0.75` peak opacity, slower `2.6s-4.0s` drift, staggered negative start delays, and softer `0.42` sheen) so the effect reads as subtle, minimal shimmer across all rarities and Set mode.
+
 ## 2.7.5-exp10 (2026-11-22)
 
 Changed:

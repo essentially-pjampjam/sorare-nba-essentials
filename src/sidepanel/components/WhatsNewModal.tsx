@@ -20,6 +20,13 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.5-exp11",
+    title: "v2.7.5-exp11: Subtle Micro-Particles on Essence Bar",
+    items: [
+      "Refined the Essence bar particle effects to smaller, calmer micro-motes with softer glow, slower drift, and gentler sheen across Set, Limited, Rare, Super Rare, and Unique.",
+    ],
+  },
+  {
     version: "2.7.5-exp10",
     title: "v2.7.5-exp10: White Beveled Logo Backing",
     items: [

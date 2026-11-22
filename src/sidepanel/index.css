@@ -562,9 +562,9 @@ dialog::backdrop {
   inset: 0;
   background: linear-gradient(
     105deg,
-    transparent 20%,
-    rgba(255, 255, 255, 0.42) 50%,
-    transparent 80%
+    transparent 24%,
+    rgba(255, 255, 255, 0.28) 50%,
+    transparent 76%
   );
   opacity: 0;
   transform: translateX(-100%);
@@ -574,11 +574,11 @@ dialog::backdrop {
 .jam-essence-fill[data-rarity="unique"]::after {
   background: linear-gradient(
     105deg,
-    transparent 15%,
-    rgba(244, 114, 182, 0.48) 38%,
-    rgba(253, 224, 71, 0.55) 52%,
-    rgba(192, 132, 252, 0.48) 66%,
-    transparent 85%
+    transparent 18%,
+    rgba(244, 114, 182, 0.32) 38%,
+    rgba(253, 224, 71, 0.36) 52%,
+    rgba(192, 132, 252, 0.32) 66%,
+    transparent 82%
   );
 }
 
@@ -592,99 +592,101 @@ dialog::backdrop {
   pointer-events: none;
   z-index: 3;
   transition: width 520ms cubic-bezier(0.22, 1, 0.36, 1);
-  mask-image: linear-gradient(90deg, transparent 0%, #000 10%, #000 90%, transparent 100%);
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 10%, #000 90%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 12%, #000 88%, transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 12%, #000 88%, transparent 100%);
 }
 
 .jam-essence-mote {
   position: absolute;
   top: 50%;
-  margin-top: -1.5px;
-  width: 3px;
-  height: 3px;
+  margin-top: -0.75px;
+  width: 1.5px;
+  height: 1.5px;
   border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 0 5px rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 0 2px rgba(255, 255, 255, 0.55);
   opacity: 0;
   pointer-events: none;
 }
 
 .jam-essence-particles[data-rarity="limited"] .jam-essence-mote {
-  width: 3.5px;
-  height: 3.5px;
+  width: 1.75px;
+  height: 1.75px;
+  margin-top: -0.9px;
   background: #fef08a;
-  box-shadow: 0 0 6px rgba(251, 191, 36, 0.95);
+  box-shadow: 0 0 2.5px rgba(251, 191, 36, 0.65);
 }
 
 .jam-essence-particles[data-rarity="rare"] .jam-essence-mote {
-  width: 8px;
-  height: 2px;
-  margin-top: -1px;
+  width: 4px;
+  height: 1.25px;
+  margin-top: -0.6px;
   border-radius: 9999px;
   background: linear-gradient(90deg, transparent, #fda4af, #ffffff);
-  box-shadow: 0 0 6px rgba(244, 63, 94, 0.92);
+  box-shadow: 0 0 2.5px rgba(244, 63, 94, 0.6);
 }
 
 .jam-essence-particles[data-rarity="super_rare"] .jam-essence-mote {
-  width: 4px;
-  height: 4px;
-  margin-top: -2px;
-  border-radius: 1px;
+  width: 2px;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 0.5px;
   background: #bae6fd;
-  box-shadow: 0 0 6px rgba(56, 189, 248, 0.95);
+  box-shadow: 0 0 2.5px rgba(56, 189, 248, 0.65);
 }
 
 .jam-essence-particles[data-rarity="unique"] .jam-essence-mote {
-  width: 6px;
-  height: 6px;
-  margin-top: -3px;
+  width: 3px;
+  height: 3px;
+  margin-top: -1.5px;
   border-radius: 0;
   clip-path: polygon(50% 0%, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0% 50%, 38% 38%);
   background: #e9d5ff;
-  box-shadow: 0 0 7px rgba(192, 132, 252, 0.95);
+  box-shadow: 0 0 3px rgba(192, 132, 252, 0.65);
 }
 
 .jam-essence-particles[data-rarity="unique"] .jam-essence-mote:nth-child(even) {
   background: #fde047;
-  box-shadow: 0 0 7px rgba(250, 204, 21, 0.95);
+  box-shadow: 0 0 3px rgba(250, 204, 21, 0.65);
 }
 
 .jam-essence-particles[data-rarity="set"] .jam-essence-mote {
-  width: 3px;
-  height: 3px;
-  background: rgba(244, 244, 245, 0.92);
-  box-shadow: 0 0 5px rgba(212, 212, 216, 0.85);
+  width: 1.5px;
+  height: 1.5px;
+  margin-top: -0.75px;
+  background: rgba(244, 244, 245, 0.78);
+  box-shadow: 0 0 2px rgba(212, 212, 216, 0.5);
 }
 
 @media (prefers-reduced-motion: no-preference) {
   .jam-essence-fill::after {
-    opacity: 0.7;
-    animation: jam-bar-sheen 2.8s ease-in-out infinite;
+    opacity: 0.42;
+    animation: jam-bar-sheen 3.8s ease-in-out infinite;
   }
   .jam-essence-fill[data-rarity="unique"] {
-    animation: jam-unique-prism 4.5s ease-in-out infinite;
+    animation: jam-unique-prism 5.5s ease-in-out infinite;
   }
   .jam-essence-particles[data-rarity="limited"] .jam-essence-mote {
-    animation: jam-mote-ember 2.4s ease-out infinite;
+    animation: jam-mote-ember 3.4s ease-in-out infinite;
   }
   .jam-essence-particles[data-rarity="rare"] .jam-essence-mote {
-    animation: jam-mote-plasma 1.55s linear infinite;
+    animation: jam-mote-plasma 2.6s ease-in-out infinite;
   }
   .jam-essence-particles[data-rarity="super_rare"] .jam-essence-mote {
-    animation: jam-mote-shard 2.3s ease-in-out infinite;
+    animation: jam-mote-shard 3.6s ease-in-out infinite;
   }
   .jam-essence-particles[data-rarity="unique"] .jam-essence-mote {
-    animation: jam-mote-star 2.5s ease-in-out infinite;
+    animation: jam-mote-star 3.8s ease-in-out infinite;
   }
   .jam-essence-particles[data-rarity="set"] .jam-essence-mote {
-    animation: jam-mote-dust 2.7s ease-in-out infinite;
+    animation: jam-mote-dust 4s ease-in-out infinite;
   }
-  .jam-essence-mote-1 { animation-delay: 0s; }
-  .jam-essence-mote-2 { animation-delay: 0.45s; }
-  .jam-essence-mote-3 { animation-delay: 0.95s; }
-  .jam-essence-mote-4 { animation-delay: 1.35s; }
-  .jam-essence-mote-5 { animation-delay: 1.8s; }
-  .jam-essence-mote-6 { animation-delay: 2.15s; }
+  .jam-essence-mote-1 { animation-delay: -0.4s; }
+  .jam-essence-mote-2 { animation-delay: -1.1s; }
+  .jam-essence-mote-3 { animation-delay: -1.9s; }
+  .jam-essence-mote-4 { animation-delay: -2.6s; }
+  .jam-essence-mote-5 { animation-delay: -3.2s; }
+  .jam-essence-mote-6 { animation-delay: -3.8s; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -695,7 +697,7 @@ dialog::backdrop {
 
 @keyframes jam-bar-sheen {
   0% { transform: translateX(-110%); }
-  60%, 100% { transform: translateX(130%); }
+  55%, 100% { transform: translateX(130%); }
 }
 
 @keyframes jam-unique-prism {
@@ -704,38 +706,38 @@ dialog::backdrop {
 }
 
 @keyframes jam-mote-ember {
-  0% { opacity: 0; transform: translate(-2px, 3px) scale(0.5); }
-  25% { opacity: 0.95; transform: translate(3px, 0px) scale(1); }
-  70% { opacity: 0.78; transform: translate(8px, -3.5px) scale(0.85); }
-  100% { opacity: 0; transform: translate(12px, -6px) scale(0.4); }
+  0% { opacity: 0; transform: translate(-2px, 1.5px) scale(0.45); }
+  30% { opacity: 0.72; transform: translate(2px, -0.5px) scale(1); }
+  70% { opacity: 0.48; transform: translate(6px, -2px) scale(0.8); }
+  100% { opacity: 0; transform: translate(9px, -3.5px) scale(0.35); }
 }
 
 @keyframes jam-mote-plasma {
-  0% { opacity: 0; transform: translate(-8px, 0px) scaleX(0.6); }
-  25% { opacity: 0.95; transform: translate(0px, -0.5px) scaleX(1.1); }
-  70% { opacity: 0.8; transform: translate(12px, 0.5px) scaleX(1); }
-  100% { opacity: 0; transform: translate(20px, 0px) scaleX(0.5); }
+  0% { opacity: 0; transform: translate(-5px, 0px) scaleX(0.5); }
+  30% { opacity: 0.68; transform: translate(1px, -0.3px) scaleX(1); }
+  70% { opacity: 0.45; transform: translate(8px, 0.3px) scaleX(0.9); }
+  100% { opacity: 0; transform: translate(14px, 0px) scaleX(0.45); }
 }
 
 @keyframes jam-mote-shard {
-  0% { opacity: 0; transform: translate(-3px, 2px) rotate(45deg) scale(0.5); }
-  25% { opacity: 0.95; transform: translate(2px, -1px) rotate(45deg) scale(1); }
-  70% { opacity: 0.75; transform: translate(9px, -2.5px) rotate(45deg) scale(0.85); }
-  100% { opacity: 0; transform: translate(14px, -4px) rotate(45deg) scale(0.45); }
+  0% { opacity: 0; transform: translate(-2px, 1px) rotate(45deg) scale(0.45); }
+  30% { opacity: 0.7; transform: translate(2px, -0.5px) rotate(45deg) scale(1); }
+  70% { opacity: 0.48; transform: translate(6px, -1.5px) rotate(45deg) scale(0.8); }
+  100% { opacity: 0; transform: translate(10px, -2.5px) rotate(45deg) scale(0.4); }
 }
 
 @keyframes jam-mote-star {
-  0% { opacity: 0; transform: translate(-2px, 2.5px) scale(0.4) rotate(0deg); }
-  25% { opacity: 1; transform: translate(3px, -1px) scale(1.05) rotate(30deg); }
-  70% { opacity: 0.8; transform: translate(8px, -3px) scale(0.85) rotate(65deg); }
-  100% { opacity: 0; transform: translate(13px, -5px) scale(0.35) rotate(90deg); }
+  0% { opacity: 0; transform: translate(-2px, 1.5px) scale(0.4) rotate(0deg); }
+  30% { opacity: 0.75; transform: translate(2px, -0.5px) scale(1) rotate(25deg); }
+  70% { opacity: 0.5; transform: translate(6px, -2px) scale(0.8) rotate(55deg); }
+  100% { opacity: 0; transform: translate(9px, -3px) scale(0.35) rotate(80deg); }
 }
 
 @keyframes jam-mote-dust {
-  0% { opacity: 0; transform: translate(-3px, 1.5px) scale(0.55); }
-  25% { opacity: 0.85; transform: translate(2px, -0.5px) scale(1); }
-  70% { opacity: 0.65; transform: translate(8px, -2px) scale(0.8); }
-  100% { opacity: 0; transform: translate(13px, -3.5px) scale(0.4); }
+  0% { opacity: 0; transform: translate(-2px, 1px) scale(0.5); }
+  30% { opacity: 0.58; transform: translate(2px, -0.3px) scale(1); }
+  70% { opacity: 0.38; transform: translate(6px, -1.2px) scale(0.8); }
+  100% { opacity: 0; transform: translate(9px, -2px) scale(0.4); }
 }
 
 /* Semantic collapsible <details> sections (find-in-page friendly, reduced-motion safe) */
