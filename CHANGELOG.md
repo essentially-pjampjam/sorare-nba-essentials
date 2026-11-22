@@ -2,6 +2,11 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
+## 2.7.5-exp15 (2026-11-22)
+
+Changed:
+- Decluttered Side Panel Top Bar (`App.tsx`, `SettingsModal.tsx`): removed the redundant in-panel top-left logo, `"Sorare NBA"` title, and version badge in Side Panel mode (since Chrome's side panel chrome already shows the icon and extension name), giving `@username` / the username input full breathing room on the left alongside a compact Fast Mode `Zap` status button. Moved the color-coded version pill and What's New trigger cleanly into Settings, the `...` menu, and the subtle page footer (popped-out Dashboard tab keeps the logo).
+
 ## 2.7.5-exp14 (2026-11-22)
 
 Changed:

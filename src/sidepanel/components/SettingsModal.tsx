@@ -22,6 +22,7 @@ interface SettingsModalProps {
   focusApiKey?: boolean;
   onUpdateSettings: (patch: Partial<UserSettings>) => void;
   onOpenTierEditor: () => void;
+  onOpenWhatsNew?: () => void;
   onClearCache: () => void;
   onReloadExtension: () => void;
   onClose: () => void;
@@ -33,6 +34,7 @@ export function SettingsModal({
   focusApiKey = false,
   onUpdateSettings,
   onOpenTierEditor,
+  onOpenWhatsNew,
   onClearCache,
   onReloadExtension,
   onClose,
@@ -228,18 +230,45 @@ export function SettingsModal({
       {...({ closedby: "any" } as Record<string, string>)}
       className="glass-chrome max-h-[90vh] w-[calc(100%-24px)] max-w-md overflow-y-auto rounded-2xl p-4"
     >
-      <div className="mb-3 flex items-center justify-between">
-        <div>
-          <h2
-            id="settings-dialog-title"
-            className="text-sm font-semibold text-slate-100"
-          >
-            Settings & API Fast Mode
-          </h2>
-          <p className="text-[11px] text-slate-400">
-            pjampjam&apos;s Sorare NBA Essentials •{" "}
-            <span className="font-mono text-amber-300">v{version}</span>
-          </p>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <img
+            src="/logo.png"
+            alt="pjampjam's Sorare NBA Essentials"
+            className="h-8 w-8 shrink-0 rounded-lg object-contain"
+          />
+          <div className="min-w-0">
+            <h2
+              id="settings-dialog-title"
+              className="text-sm font-semibold text-slate-100"
+            >
+              Settings &amp; API Fast Mode
+            </h2>
+            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400">
+              <span>pjampjam&apos;s Sorare NBA Essentials</span>
+              <span
+                className={`rounded px-1.5 py-px font-mono text-[10px] font-medium ${
+                  /-exp/i.test(version)
+                    ? "border border-rose-400/50 bg-rose-500/15 text-rose-300"
+                    : "bg-white/8 text-amber-300"
+                }`}
+              >
+                v{version}
+              </span>
+              {onOpenWhatsNew && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    dialogRef.current?.close();
+                    onOpenWhatsNew();
+                  }}
+                  className="text-[10.5px] font-medium text-sky-300 hover:text-sky-200 hover:underline"
+                >
+                  What&apos;s New
+                </button>
+              )}
+            </div>
+          </div>
         </div>
         <button
           type="button"

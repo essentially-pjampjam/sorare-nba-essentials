@@ -20,6 +20,14 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.5-exp15",
+    title: "v2.7.5-exp15: Cleaner Top Bar (Username-First Header)",
+    items: [
+      "Removed the redundant in-panel top-left logo, 'Sorare NBA' label, and version badge in Side Panel mode so @username / slug input sits cleanly on the left with plenty of room.",
+      "Added a dedicated compact Fast Mode (Zap) status button next to Refresh, and moved the version pill & What's New into Settings, the '...' menu, and the page footer.",
+    ],
+  },
+  {
     version: "2.7.5-exp14",
     title: "v2.7.5-exp14: Logo C (Hoops Hairline), Header Polish & Richer Card Tooltips",
     items: [

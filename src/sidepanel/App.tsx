@@ -1085,62 +1085,21 @@ export function App() {
       <div className={isDashboardMode ? "jam-dashboard-mode" : ""}>
       <div ref={stickyHeaderRef} className="jam-sticky-wrap sticky top-0 z-30 px-2.5 pb-1 pt-2">
         <header className="glass-chrome rounded-2xl px-2.5 py-2">
-          {/* Row 1: identity, username, Refresh, overflow menu */}
-          <div className="flex items-center gap-2">
-            {/* Logo with the connection bolt: blue = API key active (Fast Mode), gray = public mode. */}
-            <button
-              type="button"
-              onClick={() => setShowSettings(true)}
-              className="relative h-8 w-8 shrink-0"
-              title={
-                settings.sorareApiKey
-                  ? "Fast Mode: your Sorare API key is active (click for Settings)"
-                  : "Public mode, no API key: click to add one in Settings for faster, fuller data"
-              }
-              aria-label={settings.sorareApiKey ? "Fast Mode active, open Settings" : "No API key, open Settings to add one"}
-            >
-              <span className="jam-logo-badge flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg">
+          <h1 className="sr-only">pjampjam&apos;s Sorare NBA Essentials</h1>
+          {/* Row 1: username (left), Fast Mode bolt, Refresh, Guides, overflow menu */}
+          <div className="flex items-center gap-1.5">
+            {isDashboardMode && (
+              <span className="jam-logo-badge flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-lg">
                 <img src="/logo.png" alt="pjampjam's Sorare NBA Essentials" className="h-full w-full object-contain" />
               </span>
-              <span
-                className={`absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full border-2 border-[var(--jam-chrome-bot)] ${
-                  settings.sorareApiKey ? "bg-sky-400 text-slate-950" : "bg-slate-600 text-slate-200"
-                }`}
-              >
-                <Zap className="h-2.5 w-2.5" fill="currentColor" />
-              </span>
-            </button>
-            <div className="flex min-w-0 shrink-0 flex-col justify-center gap-0.5 leading-none">
-              <h1 className="whitespace-nowrap text-xs font-semibold tracking-tight text-slate-100">Sorare NBA</h1>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowWhatsNew(true);
-                  setHasUnseenWhatsNew(false);
-                  try {
-                    window.localStorage.setItem("jamassist_last_seen_version", version);
-                  } catch {
-                    // Ignore
-                  }
-                }}
-                className={`inline-flex w-fit items-center gap-1 whitespace-nowrap rounded px-1 py-px font-mono text-[9px] font-medium transition ${
-                  isExperimentalBuild
-                    ? "border border-rose-400/50 bg-rose-500/15 text-rose-300 hover:bg-rose-500/25"
-                    : "bg-white/8 text-amber-300 hover:bg-amber-400/20"
-                }`}
-                title={`${isExperimentalBuild ? "Experimental build " : ""}v${version} • What's New & Send Feedback`}
-              >
-                <span>{versionBadgeLabel}</span>
-                {hasUnseenWhatsNew && <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />}
-              </button>
-            </div>
+            )}
 
             <div className="min-w-0 flex-1">
               {settings.username && !editingUsername ? (
                 <button
                   type="button"
                   onClick={() => setEditingUsername(true)}
-                  className="glass-pill inline-flex h-7 max-w-full items-center gap-1 rounded-lg px-2 text-[11px] font-semibold text-slate-100 hover:border-sky-400/50"
+                  className="glass-pill inline-flex h-7 max-w-full items-center gap-1.5 rounded-lg px-2.5 text-[11.5px] font-semibold text-slate-100 hover:border-sky-400/50"
                   title="Change the Sorare manager"
                 >
                   <span className="truncate">@{settings.username}</span>
@@ -1158,21 +1117,39 @@ export function App() {
                     type="text"
                     value={usernameDraft}
                     onChange={(e) => setUsernameDraft(e.target.value)}
-                    placeholder="Sorare slug"
+                    placeholder="Sorare username..."
                     aria-label="Sorare username or slug"
                     autoFocus={editingUsername}
-                    className="glass-pill w-full min-w-0 rounded-lg px-2 py-1 text-[11px] text-slate-100 placeholder-slate-500 focus:border-sky-400/70 focus:outline-none"
+                    className="glass-pill h-7 w-full min-w-0 rounded-lg px-2.5 text-[11px] text-slate-100 placeholder-slate-500 focus:border-sky-400/70 focus:outline-none"
                   />
                   <button
                     type="submit"
                     disabled={anyLoading || !usernameDraft.trim()}
-                    className="glass-pill shrink-0 rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-100 transition hover:border-sky-400/50 disabled:opacity-50"
+                    className="glass-pill h-7 shrink-0 rounded-lg px-2.5 text-[11px] font-semibold text-slate-100 transition hover:border-sky-400/50 disabled:opacity-50"
                   >
                     Scan
                   </button>
                 </form>
               )}
             </div>
+
+            <button
+              type="button"
+              onClick={() => setShowSettings(true)}
+              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition ${
+                settings.sorareApiKey
+                  ? "border-sky-400/45 bg-sky-500/18 text-sky-300 hover:border-sky-300/70 hover:bg-sky-500/28"
+                  : "border-white/10 bg-white/[0.04] text-slate-400 hover:border-white/20 hover:text-slate-200"
+              }`}
+              title={
+                settings.sorareApiKey
+                  ? "Fast Mode: your Sorare API key is active (click for Settings)"
+                  : "Public mode, no API key: click to add one in Settings for faster, fuller data"
+              }
+              aria-label={settings.sorareApiKey ? "Fast Mode active, open Settings" : "No API key, open Settings to add one"}
+            >
+              <Zap className="h-3.5 w-3.5" fill={settings.sorareApiKey ? "currentColor" : "none"} />
+            </button>
 
             <button
               type="button"
@@ -1203,12 +1180,15 @@ export function App() {
               <button
                 type="button"
                 onClick={() => setShowHeaderMenu((v) => !v)}
-                className="glass-pill flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 transition hover:border-sky-400/50 hover:text-slate-100"
-                title="Search, currency, support, pop-out, settings"
+                className="glass-pill relative flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 transition hover:border-sky-400/50 hover:text-slate-100"
+                title="Search, currency, support, pop-out, settings, What's New"
                 aria-label="More options"
                 aria-expanded={showHeaderMenu}
               >
                 <MoreHorizontal className="h-3.5 w-3.5" />
+                {hasUnseenWhatsNew && (
+                  <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                )}
               </button>
               {showHeaderMenu && (
                 <>
@@ -1233,6 +1213,33 @@ export function App() {
                     </button>
                     <button type="button" onClick={() => setShowSettings(true)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/8">
                       <Settings className="h-3.5 w-3.5 text-slate-400" /> Settings &amp; themes
+                    </button>
+                    <div className="my-1 border-t border-white/8" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowWhatsNew(true);
+                        setHasUnseenWhatsNew(false);
+                        try {
+                          window.localStorage.setItem("jamassist_last_seen_version", version);
+                        } catch {
+                          // Ignore
+                        }
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/8"
+                    >
+                      <Sparkles className="h-3.5 w-3.5 text-amber-300" />
+                      <span>What&apos;s New</span>
+                      <span
+                        className={`ml-auto inline-flex items-center gap-1 rounded px-1 py-px font-mono text-[9.5px] font-medium ${
+                          isExperimentalBuild
+                            ? "border border-rose-400/50 bg-rose-500/15 text-rose-300"
+                            : "bg-white/8 text-amber-300"
+                        }`}
+                      >
+                        {versionBadgeLabel}
+                        {hasUnseenWhatsNew && <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />}
+                      </span>
                     </button>
                   </div>
                 </>
@@ -1922,6 +1929,16 @@ export function App() {
             focusApiKey={focusApiKeyInSettings}
             onUpdateSettings={(patch) => void updateSettings(patch)}
             onOpenTierEditor={() => setShowTierEditor(true)}
+            onOpenWhatsNew={() => {
+              setShowSettings(false);
+              setShowWhatsNew(true);
+              setHasUnseenWhatsNew(false);
+              try {
+                window.localStorage.setItem("jamassist_last_seen_version", version);
+              } catch {
+                // Ignore
+              }
+            }}
             onClearCache={() => void clearCache()}
             onReloadExtension={() => void reloadExtension()}
             onClose={() => {
@@ -1942,6 +1959,26 @@ export function App() {
       )}
 
       <footer className="px-3 pb-4 pt-1 text-center text-[10px] text-slate-500">
+        <button
+          type="button"
+          onClick={() => {
+            setShowWhatsNew(true);
+            setHasUnseenWhatsNew(false);
+            try {
+              window.localStorage.setItem("jamassist_last_seen_version", version);
+            } catch {
+              // Ignore
+            }
+          }}
+          className={`mr-1.5 inline-flex items-center rounded px-1 py-px font-mono text-[9.5px] font-medium transition ${
+            isExperimentalBuild
+              ? "border border-rose-400/40 bg-rose-500/12 text-rose-300 hover:bg-rose-500/20"
+              : "bg-white/8 text-amber-300 hover:bg-amber-400/20"
+          }`}
+          title="View What's New & Changelog"
+        >
+          {versionBadgeLabel}
+        </button>
         Use at own risk • Estimates only (not financial advice) • Unofficial
         companion by pjampjam (not affiliated with Sorare or NBA) • Local-only
         storage • MIT License
