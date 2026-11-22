@@ -16,6 +16,7 @@ import {
   Settings,
   Sparkles,
   TrendingDown,
+  Trophy,
   UserCheck,
   Wallet,
   Wand2,
@@ -523,6 +524,8 @@ export function App() {
           );
           void loadGallery(initialUser, false, true);
         }
+        // Also hydrate cached Deals instantaneously on startup (zero network calls)
+        void loadBargains(loaded.selectedRarity, "instant_value", loaded.currency, false, true);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
         setInitialized(true);
@@ -1093,13 +1096,14 @@ export function App() {
             )}
 
           {/* Mode bar on every tab: Set (Common) | Limited | Rare | Super Rare | Unique | Essence */}
-          <div className="mt-2 space-y-1">
+          <div className="mt-2 space-y-1.5">
             <div className="grid grid-cols-6 gap-1">
               <button
                 type="button"
                 onClick={() => selectPlayMode("set")}
+                data-active={playMode === "set" ? "true" : undefined}
                 title="Set (Common cards): Set lineups, packs, Squad, Set gallery and duplicates"
-                className={`h-7 truncate rounded-lg border px-1 text-[10.5px] font-medium transition ${
+                className={`jam-mode-pill h-7 truncate rounded-lg border px-1 text-[10.5px] font-medium transition ${
                   playMode === "set"
                     ? "border-set-400/60 bg-set-500/25 font-semibold text-set-200"
                     : "border-white/8 bg-white/[0.03] text-slate-400 hover:text-slate-200"
@@ -1114,11 +1118,12 @@ export function App() {
                   <button
                     key={rarity}
                     type="button"
+                    data-active={active ? "true" : undefined}
                     onClick={() => {
                       selectPlayMode("pro");
                       void handleSelectRarity(rarity);
                     }}
-                    className={`h-7 truncate rounded-lg border px-1 text-[10.5px] font-medium transition ${
+                    className={`jam-mode-pill h-7 truncate rounded-lg border px-1 text-[10.5px] font-medium transition ${
                       active ? `${meta.badgeClass} font-semibold` : "border-white/8 bg-white/[0.03] text-slate-400 hover:text-slate-200"
                     }`}
                   >
@@ -1171,11 +1176,28 @@ export function App() {
             </div>
             {playMode === "pro" && (activeTab === "collections" || activeTab === "craft" || activeTab === "bargains") && (
               <div className="flex items-center gap-2 text-[10px]">
-                <div className="h-1 flex-1 overflow-hidden rounded-full bg-slate-950/70">
+                <div
+                  className="jam-essence-track"
+                  role="progressbar"
+                  aria-label="Essence progress toward Craft"
+                  aria-valuenow={essencePct}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                >
                   <div
-                    className="h-full transition-all duration-300"
-                    style={{ width: `${essencePct}%`, backgroundColor: essenceGap === 0 ? "var(--jam-money)" : "var(--jam-info)" }}
-                  />
+                    className="jam-essence-fill"
+                    data-ready={essenceGap === 0 ? "true" : undefined}
+                    style={{ width: `${essencePct}%` }}
+                  >
+                    {essencePct > 0 && (
+                      <>
+                        <span className="jam-essence-mote jam-essence-mote-1" aria-hidden="true" />
+                        <span className="jam-essence-mote jam-essence-mote-2" aria-hidden="true" />
+                        <span className="jam-essence-mote jam-essence-mote-3" aria-hidden="true" />
+                        <span className="jam-essence-mote jam-essence-mote-4" aria-hidden="true" />
+                      </>
+                    )}
+                  </div>
                 </div>
                 {essenceGap === 0 ? (
                   <span className="shrink-0 font-semibold text-emerald-300">Craft ready</span>
@@ -1217,7 +1239,7 @@ export function App() {
                   document.getElementById(`tab-${prev}`)?.focus();
                 }
               }}
-              className="flex min-w-0 flex-wrap items-center gap-0.5"
+              className="flex min-w-0 flex-wrap items-center gap-1"
             >
               <button
                 type="button"
@@ -1229,12 +1251,9 @@ export function App() {
                 onClick={() => navigateTab("collections")}
                 data-pro-only={playMode === "set" ? "true" : undefined}
                 title={playMode === "set" ? "Pro only (Limited and up): click to switch to Pro" : undefined}
-                className={`px-2 py-1 font-medium transition ${
-                  activeTab === "collections"
-                    ? "text-slate-50 shadow-[inset_0_-2px_0_var(--jam-info)]"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
+                className="jam-nav-tab"
               >
+                <Trophy className="h-3 w-3" />
                 Collections
               </button>
               <button
@@ -1247,11 +1266,7 @@ export function App() {
                 onClick={() => navigateTab("craft")}
                 data-pro-only={playMode === "set" ? "true" : undefined}
                 title={playMode === "set" ? "Pro only (Limited and up): click to switch to Pro" : undefined}
-                className={`inline-flex items-center gap-1 px-2 py-1 font-medium transition ${
-                  activeTab === "craft"
-                    ? "text-slate-50 shadow-[inset_0_-2px_0_var(--jam-info)]"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
+                className="jam-nav-tab"
               >
                 <Sparkles className="h-3 w-3" />
                 Craft
@@ -1264,11 +1279,7 @@ export function App() {
                 aria-selected={activeTab === "lineups"}
                 tabIndex={activeTab === "lineups" ? 0 : -1}
                 onClick={() => navigateTab("lineups")}
-                className={`inline-flex items-center gap-1 px-2 py-1 font-medium transition ${
-                  activeTab === "lineups"
-                    ? "text-slate-50 shadow-[inset_0_-2px_0_var(--jam-info)]"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
+                className="jam-nav-tab"
               >
                 <Wand2 className="h-3 w-3" />
                 Lineups
@@ -1283,11 +1294,7 @@ export function App() {
                 onClick={() => navigateTab("bargains")}
                 data-pro-only={playMode === "set" ? "true" : undefined}
                 title={playMode === "set" ? "Pro only (Limited and up): click to switch to Pro" : undefined}
-                className={`inline-flex items-center gap-1 px-2 py-1 font-medium transition ${
-                  activeTab === "bargains"
-                    ? "text-slate-50 shadow-[inset_0_-2px_0_var(--jam-info)]"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
+                className="jam-nav-tab"
               >
                 <TrendingDown className="h-3 w-3" />
                 Deals
@@ -1305,11 +1312,7 @@ export function App() {
                 aria-selected={activeTab === "gallery"}
                 tabIndex={activeTab === "gallery" ? 0 : -1}
                 onClick={() => navigateTab("gallery")}
-                className={`inline-flex items-center gap-1 px-2 py-1 font-medium transition ${
-                  activeTab === "gallery"
-                    ? "text-slate-50 shadow-[inset_0_-2px_0_var(--jam-info)]"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
+                className="jam-nav-tab"
               >
                 <Layers className="h-3 w-3" />
                 Gallery
@@ -1381,21 +1384,33 @@ export function App() {
           )}
 
         {anyLoading && (
-          <div className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-            <div className="flex min-w-0 items-center gap-2">
-              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-amber-400" />
-              <span className="truncate">
-                {progress?.message ?? "Loading Sorare NBA data..."}
-              </span>
+          <div className="glass-pill mb-3 space-y-1.5 rounded-xl border-sky-400/30 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-sky-300" />
+                <span className="truncate">
+                  {progress?.message ?? "Loading Sorare NBA data..."}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleCancelScan()}
+                className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-white/15 bg-slate-950/60 px-2 py-0.5 text-[10px] font-medium text-slate-200 hover:border-sky-400/50 hover:bg-slate-800"
+              >
+                <X className="h-3 w-3" />
+                Cancel
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => void handleCancelScan()}
-              className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-amber-400/30 bg-[#111726] px-2 py-0.5 text-[10px] font-medium text-amber-200 hover:bg-slate-800"
-            >
-              <X className="h-3 w-3" />
-              Cancel
-            </button>
+            {progress && progress.total > 0 && (
+              <div className="jam-essence-track">
+                <div
+                  className="jam-essence-fill"
+                  style={{
+                    width: `${Math.max(10, Math.min(100, Math.round((progress.completed / progress.total) * 100)))}%`,
+                  }}
+                />
+              </div>
+            )}
           </div>
         )}
 
@@ -1412,6 +1427,7 @@ export function App() {
             id="panel-collections"
             aria-labelledby="tab-collections"
             tabIndex={0}
+            className="jam-panel-enter"
           >
             <CollectionsTab
               analyses={analysis.analyses}
@@ -1488,6 +1504,7 @@ export function App() {
             id="panel-craft"
             aria-labelledby="tab-craft"
             tabIndex={0}
+            className="jam-panel-enter"
           >
             <CraftTab
               craftPool={
@@ -1519,6 +1536,7 @@ export function App() {
             id="panel-lineups"
             aria-labelledby="tab-lineups"
             tabIndex={0}
+            className="jam-panel-enter"
           >
             <LineupsTab
               mode={playMode === "set" ? "set_common" : "pro"}
@@ -1572,6 +1590,7 @@ export function App() {
             id="panel-bargains"
             aria-labelledby="tab-bargains"
             tabIndex={0}
+            className="jam-panel-enter"
           >
             <BargainsTab
               bargains={
@@ -1620,6 +1639,7 @@ export function App() {
             id="panel-gallery"
             aria-labelledby="tab-gallery"
             tabIndex={0}
+            className="jam-panel-enter"
           >
             <GalleryTab
               pool={playMode === "set" ? "common" : "pro"}

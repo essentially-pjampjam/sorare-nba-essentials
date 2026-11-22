@@ -2,6 +2,16 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
+## 2.7.5-exp5 (2026-11-22)
+
+Added:
+- NBA-Exclusive Floating Launcher (`sorareDomParser.ts`, `sorareDetector.ts`): bottom-right Sorare NBA Essentials dock now mounts exclusively on Sorare NBA pages (`/nba`, `/nba/...`, and localized `/<lang>/nba/...`) and automatically unmounts on SPA navigation to Football, MLB, or non-NBA pages; restyled to match the `.glass-chrome` dark obsidian frosted-glass design with spring hover/press micro-animations.
+- Category Selection, Animations & Essence Micro-Particles (`index.css`, `App.tsx`): upgraded primary workspace tabs (`Collections`, `Craft`, `Lineups`, `Deals`, `Gallery`) and sub-tabs with frosted hover pills, luminous active borders, glowing animated bottom indicators, icon micro-scale, spring `linear()` tactile press curves, tab-panel entry transitions, collapsible `<details>` hover sheen, and subtle GPU-composited shimmer + floating motes on the Essence & live scan progress bars (fully `prefers-reduced-motion` safe).
+
+Improved (Performance / Scan Speed):
+- Rate-Limit-Safe Fast-Mode Pipelining (`rateLimitQueue.ts`, `index.ts`): enables concurrency-2 pipelining when a Sorare API key is active (still strictly enforcing `45/min` sliding window and `220ms` spacing; Safe Mode remains concurrency-1).
+- Parallel Gallery & Lineups Loading + Coalescing (`index.ts`, `App.tsx`): runs ESPN season stats and local tab readers in parallel with Sorare GraphQL (and parallelizes cache-hit tab sync), coalesces duplicate in-flight gallery loads, and hydrates cached Deals instantaneously on startup with zero extra API calls.
+
 ## 2.7.5-exp4 (2026-11-22)
 
 Added:

@@ -32,3 +32,4 @@ EXPERIMENTAL.md
 *.local.md
 .preview/
 scripts/ship-helper.mjs
+logo-concepts/

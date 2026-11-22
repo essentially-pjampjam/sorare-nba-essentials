@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseWalletAmount, parseWalletButtonText } from "./sorareDomParser";
+import { isNbaSorareUrl, parseWalletAmount, parseWalletButtonText } from "./sorareDomParser";
 
 describe("parseWalletAmount", () => {
   it("parses standard US and EU decimal formats", () => {
@@ -53,5 +53,30 @@ describe("parseWalletButtonText", () => {
   it("returns null for unrelated button text", () => {
     expect(parseWalletButtonText("Market")).toBeNull();
     expect(parseWalletButtonText("785")).toBeNull();
+  });
+});
+
+describe("isNbaSorareUrl", () => {
+  it("accepts NBA section URLs including localized prefixes", () => {
+    expect(isNbaSorareUrl("https://sorare.com/nba")).toBe(true);
+    expect(isNbaSorareUrl("https://sorare.com/nba/")).toBe(true);
+    expect(isNbaSorareUrl("https://sorare.com/nba/play/boards/arena")).toBe(true);
+    expect(isNbaSorareUrl("https://sorare.com/nba/market?rarity=limited")).toBe(true);
+    expect(isNbaSorareUrl("https://sorare.com/en/nba/series")).toBe(true);
+    expect(isNbaSorareUrl("https://sorare.com/fr-fr/nba/craft")).toBe(true);
+    expect(isNbaSorareUrl("https://sorare.com/zh-hans/nba/play")).toBe(true);
+    expect(isNbaSorareUrl("/nba/market")).toBe(true);
+  });
+
+  it("rejects non-NBA Sorare sections, non-Sorare hosts, and unrelated paths", () => {
+    expect(isNbaSorareUrl("https://sorare.com/")).toBe(false);
+    expect(isNbaSorareUrl("https://sorare.com/football")).toBe(false);
+    expect(isNbaSorareUrl("https://sorare.com/football/play")).toBe(false);
+    expect(isNbaSorareUrl("https://sorare.com/mlb/market")).toBe(false);
+    expect(isNbaSorareUrl("https://sorare.com/en/football/craft")).toBe(false);
+    expect(isNbaSorareUrl("https://sorare.com/nba-promo")).toBe(false);
+    expect(isNbaSorareUrl("https://sorare.com/club/nba")).toBe(false);
+    expect(isNbaSorareUrl("https://example.com/nba/play")).toBe(false);
+    expect(isNbaSorareUrl("")).toBe(false);
   });
 });

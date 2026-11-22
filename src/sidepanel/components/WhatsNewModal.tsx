@@ -20,6 +20,16 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.5-exp5",
+    title: "v2.7.5-exp5: NBA-Only Glass Launcher, Tab Polish, Essence Motes & Scan Boost",
+    items: [
+      "The bottom-right Sorare NBA Essentials floating dock now appears exclusively on Sorare NBA pages (auto-hiding on Football/MLB/home across SPA navigation) and matches the side panel's dark frosted-glass style with tactile hover/click animations.",
+      "Upgraded Collections, Craft, Lineups, Deals, and Gallery tabs plus sub-tabs and mode pills with frosted hover pills, luminous active indicators, glowing bottom bars, icon micro-scale, and spring tactile clicks.",
+      "Added subtle GPU-composited shimmer and floating micro-particles to the Essence bar (and a live progress bar to active scans), fully respecting reduced-motion settings.",
+      "Boosted scan & tab speed without risking rate limits: added Fast-Mode concurrency-2 pipelining (still under 45/min), parallel ESPN/local-tab sync during Gallery loads, in-flight request coalescing, and instant cached Deals hydration on startup.",
+    ],
+  },
+  {
     version: "2.7.5-exp4",
     title: "v2.7.5-exp4: Glass UI, Card & Reward Previews, Sub-Tabs & EVOI",
     items: [

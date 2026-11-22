@@ -587,9 +587,7 @@ export class SorareClient {
     let doneCount = 0;
     const estimatedSteps = Math.max(1, groupList.length + 1);
 
-    for (const group of groupList) {
-      if (signal?.aborted) break;
-
+    await this.runWithFastPipelining(groupList, signal, async (group) => {
       const filters: Array<Record<string, unknown>> = [
         {
           field: "sport",
@@ -642,7 +640,7 @@ export class SorareClient {
 
       doneCount += 1;
       onStep?.(doneCount, estimatedSteps);
-    }
+    });
 
     const prices: Record<string, CardMarketPrice> = {};
     const now = Date.now();
@@ -926,8 +924,7 @@ export class SorareClient {
       { floorCents: number | null; floorCardSlug: string | null }
     > = {};
 
-    for (const player of players.slice(0, 10)) {
-      if (signal?.aborted) break;
+    await this.runWithFastPipelining(players.slice(0, 10), signal, async (player) => {
       try {
         const res = await this.postGraphQL<{
           searchCards: {
@@ -975,8 +972,44 @@ export class SorareClient {
         }
         // Individual player price miss is non-fatal
       }
-    }
+    });
     return out;
+  }
+
+  /**
+   * Runs independent batch queries with up to 2 workers in Fast Mode (API key active)
+   * and 1 worker in Safe Mode, routing every query through RateLimitQueue.
+   * Stops dispatching new items immediately on abort or fatal error (e.g. HTTP 429).
+   */
+  private async runWithFastPipelining<T>(
+    items: T[],
+    signal: AbortSignal | undefined,
+    worker: (item: T) => Promise<void>,
+  ): Promise<void> {
+    if (items.length === 0) return;
+    const workerCount = this.hasApiKey() ? Math.min(2, items.length) : 1;
+    let nextIndex = 0;
+    let fatalError: unknown = null;
+
+    const runners = Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        if (signal?.aborted || fatalError !== null) break;
+        const idx = nextIndex++;
+        try {
+          await worker(items[idx]);
+        } catch (err) {
+          if (fatalError === null) {
+            fatalError = err;
+          }
+          break;
+        }
+      }
+    });
+
+    await Promise.all(runners);
+    if (fatalError !== null) {
+      throw fatalError;
+    }
   }
 
   /**

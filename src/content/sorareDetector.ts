@@ -9,6 +9,7 @@ import {
   classifySorareContext as classifyContextFromUrl,
   extractOpenLineupsFromDocument,
   isCraftRoute as isCraftRouteUrl,
+  isNbaSorareUrl,
   isPartialLineupPage,
   normalizeNameForMatch,
   parseWalletButtonText,
@@ -564,7 +565,7 @@ import {
   }
 
   function tryAutoOpenOnGesture(): void {
-    if (autoOpenedThisRoute) return;
+    if (autoOpenedThisRoute || !isNbaSorareUrl(window.location.href)) return;
     const onCraft = isCraftRoute();
     const shouldOpenCraft = onCraft && autoOpenFlags.autoOpenOnCraft;
     const shouldOpenAny = autoOpenFlags.autoOpenOnSorare;
@@ -580,8 +581,43 @@ import {
     }
   }
 
+  function removeBottomLauncher(): void {
+    const existing = document.getElementById("jamassist-sorare-root");
+    if (existing) existing.remove();
+    pillEl = null;
+    badgeSubEl = null;
+    const hud = document.getElementById("jamassist-lineup-hud");
+    if (hud) {
+      clearActiveTileHighlight();
+      hud.remove();
+    }
+    const pills = document.querySelectorAll<HTMLElement>(".jamassist-card-overlay-pill");
+    if (pills.length > 0) {
+      pills.forEach((el) => el.remove());
+      document
+        .querySelectorAll<HTMLElement>("[data-jamassist-decorated]")
+        .forEach((el) => delete el.dataset.jamassistDecorated);
+    }
+  }
+
+  function syncBottomLauncherVisibility(refreshText = false): void {
+    if (!isNbaSorareUrl(window.location.href)) {
+      removeBottomLauncher();
+      return;
+    }
+    if (!document.getElementById("jamassist-sorare-root")) {
+      injectBottomLauncher();
+    } else if (refreshText) {
+      updateOverlayUI();
+    }
+  }
+
   function injectBottomLauncher(): void {
-    if (!document.body || document.getElementById("jamassist-sorare-root")) {
+    if (
+      !document.body ||
+      !isNbaSorareUrl(window.location.href) ||
+      document.getElementById("jamassist-sorare-root")
+    ) {
       return;
     }
 
@@ -609,110 +645,182 @@ import {
         display: flex;
         align-items: center;
         gap: 6px;
+        padding: 4px;
+        border-radius: 18px;
+        border: 1px solid rgba(255, 255, 255, 0.13);
+        background: linear-gradient(180deg, rgba(26, 29, 35, 0.84) 0%, rgba(17, 19, 23, 0.89) 100%);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.16),
+          0 14px 32px -8px rgba(0, 0, 0, 0.72);
+        backdrop-filter: blur(16px) saturate(150%);
+        -webkit-backdrop-filter: blur(16px) saturate(150%);
         font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, ui-sans-serif, system-ui, sans-serif;
       }
       .pill {
         display: inline-flex;
         align-items: center;
         gap: 8px;
-        padding: 6px 13px 6px 7px;
-        border-radius: 9999px;
-        border: 1px solid rgba(255, 255, 255, 0.16);
-        background: linear-gradient(180deg, rgba(28, 39, 64, 0.78), rgba(13, 19, 34, 0.74));
+        padding: 4px 11px 4px 5px;
+        border-radius: 13px;
+        border: 1px solid rgba(255, 255, 255, 0.10);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 100%);
         color: #f8fafc;
-        box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.28),
-          inset 0 -1px 0 rgba(0, 0, 0, 0.42),
-          0 14px 32px rgba(0, 0, 0, 0.55);
-        backdrop-filter: blur(20px) saturate(170%);
-        -webkit-backdrop-filter: blur(20px) saturate(170%);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10);
         cursor: pointer;
-        transition: transform 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+        transition:
+          border-color 160ms ease-out,
+          background 160ms ease-out,
+          box-shadow 160ms ease-out,
+          scale 160ms ease-out,
+          translate 160ms ease-out;
       }
       .pill:hover {
-        transform: translateY(-1px);
-        border-color: rgba(251, 191, 36, 0.7);
-        background: linear-gradient(180deg, rgba(35, 48, 78, 0.88), rgba(15, 23, 42, 0.86));
+        border-color: rgba(56, 189, 248, 0.58);
+        background: linear-gradient(180deg, rgba(56, 189, 248, 0.16) 0%, rgba(56, 189, 248, 0.06) 100%);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.18),
+          0 6px 18px -6px rgba(56, 189, 248, 0.42);
       }
       .pill.craft-glow {
-        border-color: rgba(52, 211, 153, 0.75);
+        border-color: rgba(52, 211, 153, 0.68);
+        background: linear-gradient(180deg, rgba(52, 211, 153, 0.16) 0%, rgba(16, 185, 129, 0.06) 100%);
         box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.30),
-          0 0 0 3px rgba(16, 185, 129, 0.18),
-          0 14px 32px rgba(0, 0, 0, 0.55);
+          inset 0 1px 0 rgba(255, 255, 255, 0.22),
+          0 0 0 2px rgba(52, 211, 153, 0.18),
+          0 8px 20px -6px rgba(16, 185, 129, 0.45);
       }
       .pill.minimized {
-        padding: 5px;
+        padding: 3px;
       }
       .logo-badge {
         width: 26px;
         height: 26px;
-        border-radius: 7px;
+        border-radius: 8px;
         display: flex;
         align-items: center;
         justify-content: center;
         flex-shrink: 0;
         overflow: hidden;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        transition: scale 180ms ease-out;
       }
       .logo-img {
-        width: 26px;
-        height: 26px;
+        width: 24px;
+        height: 24px;
         object-fit: contain;
         display: block;
       }
       .logo-fallback {
-        color: #020617;
+        color: #f8fafc;
         font-size: 10.5px;
         font-weight: 900;
       }
       .text {
         display: flex;
         flex-direction: column;
-        line-height: 1.15;
+        line-height: 1.18;
         text-align: left;
       }
       .title {
         font-size: 11.5px;
         font-weight: 700;
+        letter-spacing: -0.01em;
         color: #f8fafc;
       }
       .sub {
         font-size: 10px;
-        color: #fbbf24;
+        color: #7dd3fc;
         font-weight: 500;
       }
       .pill.craft-glow .sub {
         color: #6ee7b7;
       }
       .min-btn {
-        width: 22px;
-        height: 22px;
-        border-radius: 9999px;
-        border: 1px solid rgba(255, 255, 255, 0.14);
-        background: rgba(15, 23, 42, 0.72);
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+        width: 28px;
+        height: 28px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.10);
+        background: rgba(255, 255, 255, 0.04);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09);
         color: #cbd5e1;
-        font-size: 12px;
+        font-size: 13px;
+        font-weight: 600;
         line-height: 1;
         display: flex;
         align-items: center;
         justify-content: center;
         cursor: pointer;
+        transition:
+          color 150ms ease-out,
+          border-color 150ms ease-out,
+          background-color 150ms ease-out,
+          box-shadow 150ms ease-out,
+          scale 150ms ease-out,
+          translate 150ms ease-out;
       }
       .min-btn:hover {
-        color: #ffffff;
-        border-color: rgba(255, 255, 255, 0.35);
+        color: #f8fafc;
+        border-color: rgba(56, 189, 248, 0.52);
+        background: rgba(56, 189, 248, 0.14);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.14),
+          0 4px 12px -4px rgba(0, 0, 0, 0.5);
+      }
+      .pill:focus-visible,
+      .min-btn:focus-visible {
+        outline: 2px solid #38bdf8;
+        outline-offset: 2px;
       }
       .hidden {
         display: none;
       }
+      @media (prefers-reduced-motion: no-preference) {
+        .wrap {
+          --jam-spring: linear(0, 0.25 14%, 0.72 32%, 1.04 54%, 0.99 78%, 1);
+          animation: jam-dock-in 240ms var(--jam-spring) both;
+        }
+        .pill,
+        .min-btn {
+          transition-timing-function: var(--jam-spring);
+        }
+        .pill:hover {
+          translate: 0 -1px;
+        }
+        .pill:hover .logo-badge {
+          scale: 1.06;
+        }
+        .pill:active {
+          scale: 0.97;
+        }
+        .min-btn:hover {
+          translate: 0 -1px;
+        }
+        .min-btn:active {
+          scale: 0.93;
+        }
+      }
+      @keyframes jam-dock-in {
+        from {
+          opacity: 0;
+          translate: 0 8px;
+          scale: 0.96;
+        }
+        to {
+          opacity: 1;
+          translate: 0 0;
+          scale: 1;
+        }
+      }
       @media (prefers-reduced-transparency: reduce) {
-        .pill, .min-btn {
-          background: #0f172a;
+        .wrap {
+          background: #14161a;
           backdrop-filter: none;
           -webkit-backdrop-filter: none;
+        }
+        .pill,
+        .min-btn {
+          background: #1a1d23;
         }
       }
     `;
@@ -877,9 +985,11 @@ import {
   }
 
   reportContext();
-  injectBottomLauncher();
-  checkPendingLineupHud();
-  void decorateSorareCardTiles();
+  syncBottomLauncherVisibility();
+  if (isNbaSorareUrl(window.location.href)) {
+    checkPendingLineupHud();
+    void decorateSorareCardTiles();
+  }
 
   // Trigger optional auto-open on user click when on craft / configured pages
   document.addEventListener(
@@ -904,7 +1014,7 @@ import {
   }
 
   async function decorateSorareCardTiles(): Promise<void> {
-    if (decoratingBusy || !autoOpenFlags.autoShowInPageWizards) return;
+    if (decoratingBusy || !autoOpenFlags.autoShowInPageWizards || !isNbaSorareUrl(window.location.href)) return;
     decoratingBusy = true;
     try {
       const anchors = Array.from(
@@ -997,19 +1107,28 @@ import {
     if (window.location.href !== lastHref) {
       lastHref = window.location.href;
       autoOpenedThisRoute = false;
-      checkPendingLineupHud();
+      if (isNbaSorareUrl(window.location.href)) {
+        checkPendingLineupHud();
+      }
     }
+    syncBottomLauncherVisibility(true);
     reportContext();
-    void decorateSorareCardTiles();
+    if (isNbaSorareUrl(window.location.href)) {
+      void decorateSorareCardTiles();
+    }
   };
 
   window.addEventListener("popstate", handleSpaNavigation);
   window.addEventListener("hashchange", handleSpaNavigation);
+  const navApi = (
+    window as Window & {
+      navigation?: { addEventListener?: (type: string, listener: () => void) => void };
+    }
+  ).navigation;
+  navApi?.addEventListener?.("currententrychange", handleSpaNavigation);
 
   const observer = new MutationObserver(() => {
-    if (!document.getElementById("jamassist-sorare-root")) {
-      injectBottomLauncher();
-    }
+    syncBottomLauncherVisibility(false);
     if (observerTimer !== null) return;
     observerTimer = window.setTimeout(() => {
       observerTimer = null;

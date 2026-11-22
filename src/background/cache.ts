@@ -8,6 +8,22 @@ interface CacheEnvelope<T> {
 
 const CACHE_PREFIX = "jamassist_cache:";
 
+function isEnvelopeFresh(
+  envelope: Partial<CacheEnvelope<unknown>> | undefined,
+  ttlMs: number,
+  now: number,
+): envelope is CacheEnvelope<unknown> {
+  return Boolean(
+    envelope &&
+      typeof envelope.expiresAt === "number" &&
+      Number.isFinite(envelope.expiresAt) &&
+      typeof envelope.storedAt === "number" &&
+      Number.isFinite(envelope.storedAt) &&
+      now <= envelope.expiresAt &&
+      now - envelope.storedAt <= ttlMs,
+  );
+}
+
 export async function getCached<T>(
   key: string,
   ttlMs: number = CACHE_TTL_MS,
@@ -18,14 +34,7 @@ export async function getCached<T>(
   if (!envelope) return null;
 
   const now = Date.now();
-  if (
-    typeof envelope.expiresAt !== "number" ||
-    !Number.isFinite(envelope.expiresAt) ||
-    typeof envelope.storedAt !== "number" ||
-    !Number.isFinite(envelope.storedAt) ||
-    now > envelope.expiresAt ||
-    now - envelope.storedAt > ttlMs
-  ) {
+  if (!isEnvelopeFresh(envelope, ttlMs, now)) {
     await chrome.storage.local.remove(fullKey);
     return null;
   }

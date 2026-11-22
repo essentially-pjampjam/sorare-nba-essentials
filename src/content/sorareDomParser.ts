@@ -406,6 +406,25 @@ export function normalizeNameForMatch(raw: string): string {
     .trim();
 }
 
+/**
+ * True only when the Sorare URL belongs to the NBA section (e.g. /nba, /nba/play, /en/nba/market).
+ * Keeps floating NBA launcher buttons off Football, MLB, and top-level non-NBA pages.
+ */
+export function isNbaSorareUrl(url: string): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url, "https://sorare.com");
+    const host = parsed.hostname.toLowerCase();
+    if (host !== "sorare.com" && !host.endsWith(".sorare.com")) {
+      return false;
+    }
+    const path = parsed.pathname.toLowerCase();
+    return /^(?:\/[a-z]{2}(?:-[a-z]{2,4})?)?\/nba(?:\/|$)/i.test(path);
+  } catch {
+    return false;
+  }
+}
+
 export function isCraftRoute(href: string): boolean {
   const lower = href.toLowerCase();
   if (lower.includes("/boards/") || lower.includes("/arena/")) {

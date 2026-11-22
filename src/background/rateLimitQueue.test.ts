@@ -4,6 +4,8 @@ import {
   RateLimitQueue,
   ScanCancelledError,
 } from "./rateLimitQueue";
+import { SorareClient } from "./sorareClient";
+import type { CraftPoolPlayer } from "../shared/types";
 
 describe("RateLimitQueue", () => {
   it("deduplicates concurrent in-flight requests sharing a dedupeKey", async () => {
@@ -95,5 +97,101 @@ describe("RateLimitQueue", () => {
 
     await expect(first).resolves.toBe("done");
     await expect(second).rejects.toBeInstanceOf(ScanCancelledError);
+  });
+
+  it("supports dynamically updating concurrency via setLimits for Fast Mode pipelining", async () => {
+    const queue = new RateLimitQueue({ maxPerMinute: 45, concurrency: 1, minSpacingMs: 0 });
+    queue.setLimits(45, 0, 2);
+
+    let active = 0;
+    let maxActive = 0;
+    let releaseAll!: () => void;
+    const gate = new Promise<void>((r) => {
+      releaseAll = r;
+    });
+
+    const p1 = queue.enqueue(async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await gate;
+      active -= 1;
+      return 1;
+    });
+    const p2 = queue.enqueue(async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await gate;
+      active -= 1;
+      return 2;
+    });
+
+    await new Promise((r) => setTimeout(r, 20));
+    expect(maxActive).toBe(2);
+    releaseAll();
+    await expect(Promise.all([p1, p2])).resolves.toEqual([1, 2]);
+  });
+
+  it("pipelines SorareClient.priceCraftPlayers with concurrency 2 in Fast Mode and 1 in Safe Mode", async () => {
+    const samplePlayers: CraftPoolPlayer[] = [
+      {
+        playerSlug: "player-a",
+        playerName: "Player A",
+        teamName: "Team A",
+        teamSlug: "team-a",
+        conference: "EAST",
+        positions: ["basketball_guard"],
+        age: 24,
+        averageL10: 35,
+        qualityTier: "TIER_2",
+        availableSupply: 10,
+        floorCents: null,
+        floorCardSlug: null,
+        marketUrl: "https://sorare.com/nba/market",
+      },
+      {
+        playerSlug: "player-b",
+        playerName: "Player B",
+        teamName: "Team B",
+        teamSlug: "team-b",
+        conference: "WEST",
+        positions: ["basketball_forward"],
+        age: 25,
+        averageL10: 32,
+        qualityTier: "TIER_2",
+        availableSupply: 8,
+        floorCents: null,
+        floorCardSlug: null,
+        marketUrl: "https://sorare.com/nba/market",
+      },
+    ];
+
+    const origFetch = globalThis.fetch;
+    try {
+      const runMode = async (apiKey: string, concurrency: number): Promise<number> => {
+        let active = 0;
+        let maxActive = 0;
+        globalThis.fetch = vi.fn(async () => {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          await new Promise((r) => setTimeout(r, 35));
+          active -= 1;
+          return new Response(JSON.stringify({ data: { searchCards: { hits: [] } } }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }) as unknown as typeof fetch;
+
+        const queue = new RateLimitQueue({ maxPerMinute: 45, concurrency, minSpacingMs: 0 });
+        const client = new SorareClient(queue);
+        client.setApiKey(apiKey);
+        await client.priceCraftPlayers(samplePlayers, "limited", "USD");
+        return maxActive;
+      };
+
+      expect(await runMode("", 1)).toBe(1);
+      expect(await runMode("test-api-key", 2)).toBe(2);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
   });
 });

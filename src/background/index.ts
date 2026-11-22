@@ -203,9 +203,10 @@ function applyNetworkMode(settings: UserSettings): void {
   const key = settings.sorareApiKey?.trim() ?? "";
   sorareClient.setApiKey(key);
   if (key) {
-    queue.setLimits(FAST_MODE_REQUESTS_PER_MINUTE, FAST_MODE_SPACING_MS);
+    // Pipeline up to 2 in-flight queries in Fast Mode while still strictly enforcing 45/min & 220ms spacing.
+    queue.setLimits(FAST_MODE_REQUESTS_PER_MINUTE, FAST_MODE_SPACING_MS, 2);
   } else {
-    queue.setLimits(MAX_REQUESTS_PER_MINUTE, MIN_REQUEST_SPACING_MS);
+    queue.setLimits(MAX_REQUESTS_PER_MINUTE, MIN_REQUEST_SPACING_MS, 1);
   }
 }
 
@@ -1046,6 +1047,8 @@ async function recordProProgress(lineups: CurrentLineupEntry[], benchmarks: Lead
   await chrome.storage.local.set({ [PRO_PROGRESS_KEY]: next });
 }
 
+const inFlightGalleryByKey = new Map<string, Promise<GalleryResult | null>>();
+
 async function fetchGalleryForLineups(
   username: string,
   forceRefresh = false,
@@ -1062,9 +1065,11 @@ async function fetchGalleryForLineups(
     const cached = await getCached<GalleryResult>(cacheKey);
     if (cached) {
       void syncOverlayLookup(cached.value.cards);
-      const domLineups = await readStoredDomLineups();
-      await syncSealedStatesFromOpenTabs();
-      const pageLineups = await syncLineupsFromOpenTabs(cleanUser);
+      const [domLineups, , pageLineups] = await Promise.all([
+        readStoredDomLineups(),
+        syncSealedStatesFromOpenTabs(),
+        syncLineupsFromOpenTabs(cleanUser),
+      ]);
       const cachedOpenGw = selectOpenGameWeek(cached.value.fixtures, Date.now());
       return {
         ...cached.value,
@@ -1086,84 +1091,109 @@ async function fetchGalleryForLineups(
     }
   }
 
-  await loadSettings();
-  await assertNoCooldown();
-
-  cancelActiveScan();
-  const controller = new AbortController();
-  currentScanAbort = controller;
-
-  broadcastProgress({
-    phase: "collections",
-    completed: 0,
-    total: 2,
-    message: `Loading ${cleanUser}'s NBA gallery (Pro + Common), live cutoffs & ESPN injuries...`,
-  });
-
-  const [
-    { cards, commonCards, fixtures, currentLineups, leaderboardBenchmarks },
-    domLineups,
-    pageLineups,
-  ] = await Promise.all([
-    sorareClient.fetchUserGalleryAndFixtures(cleanUser, controller.signal),
-    readStoredDomLineups(),
-    syncLineupsFromOpenTabs(cleanUser),
-  ]);
-  // Count ESPN games inside the opened Game Week (cutoff -> end), not a rolling window.
-  const openGw = selectOpenGameWeek(fixtures, Date.now());
-  const external = await fetchExternalNbaContext(
-    openGw ? { startIso: openGw.fixture.cutOffDate, endIso: openGw.fixture.endDate } : null,
-  );
-
-  // Players with no NBA game this season (L10 from last season) are never suggested or "hot".
-  const seasonStats = await fetchPlayerSeasonStats().catch(() => ({}));
-  const result: GalleryResult = {
-    username: cleanUser,
-    cards: annotateSeasonActivity(cards, seasonStats),
-    commonCards: annotateSeasonActivity(commonCards, seasonStats),
-    fixtures,
-    currentLineups: withPageLineups(
-      mergeCurrentLineups(currentLineups, domLineups, openGw?.fixture.slug ?? null),
-      pageLineups,
-    ),
-    leaderboardBenchmarks,
-    pageLineups,
-    injuriesByName: external.injuriesByName,
-    gamesPerTeam: external.gamesPerTeam,
-    scheduleByTeam: external.scheduleByTeam,
-    fetchedAt: Date.now(),
-    fromCache: false,
-  };
-
-  if (!controller.signal.aborted) {
-    // Fresh API lineups supersede stored page captures (they may predate edits made
-    // while the panel was closed); later page syncs start from a clean slate.
-    if (currentLineups.some((l) => l.source !== "dom")) {
-      await chrome.storage.local.set({ [DETECTED_LINEUPS_KEY]: [] });
-    }
-    await setCached(cacheKey, result);
-    await saveAlertSnapshot({
-      cards: result.cards,
-      currentLineups: result.currentLineups,
-      fixtures: result.fixtures,
-      currency: (await loadSettings()).currency,
-      injuriesByName: result.injuriesByName,
-      gamesPerTeam: result.gamesPerTeam,
-    });
-    await syncOverlayLookup(result.cards);
-    await recordProProgress(
-      [...currentLineups, ...pageLineupsForHistory(pageLineups?.lineups ?? [])],
-      leaderboardBenchmarks ?? [],
-    );
-    broadcastProgress({
-      phase: "done",
-      completed: 1,
-      total: 1,
-      message: "Lineup data ready",
-    });
+  // Coalesce duplicate concurrent live loads for the same manager (e.g. visibility focus + Refresh click)
+  const existingFlight = inFlightGalleryByKey.get(cacheKey);
+  if (existingFlight && !forceRefresh) {
+    return existingFlight;
   }
 
-  return result;
+  const task = (async (): Promise<GalleryResult | null> => {
+    await loadSettings();
+    await assertNoCooldown();
+
+    cancelActiveScan();
+    const controller = new AbortController();
+    currentScanAbort = controller;
+
+    broadcastProgress({
+      phase: "collections",
+      completed: 0,
+      total: 2,
+      message: `Loading ${cleanUser}'s NBA gallery (Pro + Common), live cutoffs & ESPN injuries...`,
+    });
+
+    // Run independent non-Sorare work (ESPN season stats + local tab readers) in parallel with Sorare GraphQL.
+    const [
+      { cards, commonCards, fixtures, currentLineups, leaderboardBenchmarks },
+      domLineups,
+      pageLineups,
+      seasonStats,
+    ] = await Promise.all([
+      sorareClient.fetchUserGalleryAndFixtures(cleanUser, controller.signal),
+      readStoredDomLineups(),
+      syncLineupsFromOpenTabs(cleanUser),
+      fetchPlayerSeasonStats().catch(() => ({})),
+      syncSealedStatesFromOpenTabs().catch(() => undefined),
+    ]);
+    // Count ESPN games inside the opened Game Week (cutoff -> end), not a rolling window.
+    const openGw = selectOpenGameWeek(fixtures, Date.now());
+    const external = await fetchExternalNbaContext(
+      openGw ? { startIso: openGw.fixture.cutOffDate, endIso: openGw.fixture.endDate } : null,
+    );
+
+    const fetchedAt = Date.now();
+    // Players with no NBA game this season (L10 from last season) are never suggested or "hot".
+    const annotatedProCards = await applySealedOverrides(
+      annotateSeasonActivity(cards, seasonStats),
+      fetchedAt,
+    );
+    const result: GalleryResult = {
+      username: cleanUser,
+      cards: annotatedProCards,
+      commonCards: annotateSeasonActivity(commonCards, seasonStats),
+      fixtures,
+      currentLineups: withPageLineups(
+        mergeCurrentLineups(currentLineups, domLineups, openGw?.fixture.slug ?? null),
+        pageLineups,
+      ),
+      leaderboardBenchmarks,
+      pageLineups,
+      injuriesByName: external.injuriesByName,
+      gamesPerTeam: external.gamesPerTeam,
+      scheduleByTeam: external.scheduleByTeam,
+      fetchedAt,
+      fromCache: false,
+    };
+
+    if (!controller.signal.aborted) {
+      // Fresh API lineups supersede stored page captures (they may predate edits made
+      // while the panel was closed); later page syncs start from a clean slate.
+      if (currentLineups.some((l) => l.source !== "dom")) {
+        await chrome.storage.local.set({ [DETECTED_LINEUPS_KEY]: [] });
+      }
+      await setCached(cacheKey, result);
+      await saveAlertSnapshot({
+        cards: result.cards,
+        currentLineups: result.currentLineups,
+        fixtures: result.fixtures,
+        currency: (await loadSettings()).currency,
+        injuriesByName: result.injuriesByName,
+        gamesPerTeam: result.gamesPerTeam,
+      });
+      await syncOverlayLookup(result.cards);
+      await recordProProgress(
+        [...currentLineups, ...pageLineupsForHistory(pageLineups?.lineups ?? [])],
+        leaderboardBenchmarks ?? [],
+      );
+      broadcastProgress({
+        phase: "done",
+        completed: 1,
+        total: 1,
+        message: "Lineup data ready",
+      });
+    }
+
+    return result;
+  })();
+
+  inFlightGalleryByKey.set(cacheKey, task);
+  const cleanup = () => {
+    if (inFlightGalleryByKey.get(cacheKey) === task) {
+      inFlightGalleryByKey.delete(cacheKey);
+    }
+  };
+  task.then(cleanup, cleanup);
+  return task;
 }
 
 async function syncOverlayLookup(cards: GalleryCard[]): Promise<void> {
