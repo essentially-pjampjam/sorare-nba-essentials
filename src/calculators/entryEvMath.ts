@@ -3,8 +3,8 @@
  *
  * Model: a lineup's Game Week score ~ Normal(mean, sd). Each player's score has a
  * coefficient of variation (CV) of ~0.35 (NBA fantasy box scores are noisy; best-game-of-week
- * scoring trims the downside a little). Teammates in the same lineup are positively
- * correlated (shared pace / game script), which widens the lineup spread.
+ * scoring trims the downside a little). Teammates in the same lineup have a slight negative
+ * correlation (-0.05) because they compete for a fixed pool of shots, usage, and rebounds.
  *
  * Probabilities of clearing the field's reward cutoff, top-20% line and podium line come
  * from the latest closed Game Week benchmarks. EV weights follow Sorare's top-heavy payout
@@ -12,7 +12,7 @@
  */
 
 export const PLAYER_SCORE_CV = 0.35;
-export const SAME_TEAM_CORRELATION = 0.15;
+export const SAME_TEAM_CORRELATION = -0.05;
 /** Below this cash probability (%) a contest is not worth recommending. */
 export const MIN_VIABLE_CASH_PCT = 5;
 

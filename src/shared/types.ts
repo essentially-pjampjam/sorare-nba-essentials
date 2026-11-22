@@ -910,6 +910,8 @@ export interface AlertPreferences {
   /** Minimum floor rise (%) over the stored baseline that counts as a surge. */
   priceSurgePctThreshold: number;
   injuryRiskEnabled: boolean;
+  /** When true, only alert on injury downgrades for players sitting in open/submitted lineups. */
+  injuryLineupsOnly?: boolean;
   bargainAlertEnabled: boolean;
   cutoffAlertEnabled: boolean;
   dailyResetAlertEnabled: boolean;
@@ -960,6 +962,8 @@ export interface AlertEvaluationInputs {
   currentLineups: CurrentLineupEntry[];
   previousInjuriesByName: Record<string, InjuryReportEntry>;
   currentInjuriesByName: Record<string, InjuryReportEntry>;
+  /** Team slug -> games count in the active Game Week slate (for 0G pre-lock health check). */
+  gamesPerTeam?: Record<string, number>;
   bargainListings: BargainListing[];
   watchlist: WatchlistEntry[];
   fixtures: So5FixtureSummary[];

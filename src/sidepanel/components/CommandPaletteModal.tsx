@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  BookOpen,
   ExternalLink,
   Layers,
   Maximize2,
@@ -39,6 +40,7 @@ interface CommandPaletteModalProps {
   deals: BargainListing[];
   currency: Currency;
   onSwitchTab: (tab: PaletteTab) => void;
+  onOpenGuides?: () => void;
   onOpenSettings: () => void;
   onOpenDashboard: () => void;
   onClose: () => void;
@@ -50,6 +52,7 @@ export function CommandPaletteModal({
   deals,
   currency,
   onSwitchTab,
+  onOpenGuides,
   onOpenSettings,
   onOpenDashboard,
   onClose,
@@ -165,6 +168,20 @@ export function CommandPaletteModal({
           onClose();
         },
       },
+      ...(onOpenGuides
+        ? [
+            {
+              id: "nav-guides",
+              group: "Tab" as const,
+              title: "Guides & Strategy Hub",
+              subtitle: "NBA Scoring Calculator, Caps, Stars, Vault, Set F2P & Pre-Lock Checklist",
+              onSelect: () => {
+                onOpenGuides();
+                onClose();
+              },
+            },
+          ]
+        : []),
       {
         id: "nav-settings",
         group: "Tab",
@@ -271,6 +288,7 @@ export function CommandPaletteModal({
     if (item.id === "nav-bargains") return <TrendingDown className="h-3.5 w-3.5 text-emerald-400" />;
     if (item.id === "nav-gallery") return <Layers className="h-3.5 w-3.5 text-amber-400" />;
     if (item.id === "nav-dashboard") return <Maximize2 className="h-3.5 w-3.5 text-sky-300" />;
+    if (item.id === "nav-guides") return <BookOpen className="h-3.5 w-3.5 text-sky-300" />;
     if (item.id === "nav-settings") return <Settings className="h-3.5 w-3.5 text-slate-300" />;
     if (item.group === "Market Deal") return <Tag className="h-3.5 w-3.5 text-amber-400" />;
     if (item.group === "My Card") return <Layers className="h-3.5 w-3.5 text-sky-300" />;

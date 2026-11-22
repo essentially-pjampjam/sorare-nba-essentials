@@ -8,6 +8,7 @@ const UI_DEFAULT_ALERT_PREFERENCES: AlertPreferences = {
   priceSurgeEnabled: true,
   priceSurgePctThreshold: 25,
   injuryRiskEnabled: true,
+  injuryLineupsOnly: false,
   bargainAlertEnabled: true,
   cutoffAlertEnabled: true,
   dailyResetAlertEnabled: true,
@@ -157,6 +158,13 @@ export function AlertSettingsSection({ settings, onUpdateSettings }: AlertSettin
         onChange={(v) => setPref({ injuryRiskEnabled: v })}
       />
       <ToggleRow
+        title="Open/Submitted Lineups Only"
+        description="Only alert on injury downgrades for players in your open or submitted lineups."
+        checked={prefs.injuryLineupsOnly === true}
+        disabled={!alertsOn || !prefs.injuryRiskEnabled}
+        onChange={(v) => setPref({ injuryLineupsOnly: v })}
+      />
+      <ToggleRow
         title="Watchlist bargains"
         description="Instant Buy listing matches a watchlist rule."
         checked={prefs.bargainAlertEnabled}
@@ -165,7 +173,7 @@ export function AlertSettingsSection({ settings, onUpdateSettings }: AlertSettin
       />
       <ToggleRow
         title="Game Week cutoff reminder"
-        description="Reminds you before the open Game Week locks."
+        description="Reminds you before lock and flags OUT, Doubtful, or 0G starters in your lineups."
         checked={settings.cutoffReminderEnabled === true}
         onChange={(v) =>
           onUpdateSettings({

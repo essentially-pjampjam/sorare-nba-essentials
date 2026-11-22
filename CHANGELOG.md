@@ -2,6 +2,20 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
+## 2.7.5-exp3 (2026-11-22)
+
+Added:
+- Unified Guides & Strategy Hub (`GuidesModal.tsx`, header book button + Command Palette): interactive Sorare NBA Scoring Matrix & Box-Score Calculator (`nbaScoringMath.ts`), 2026-27 competitions & multi-game peak strategy, Star brackets & bonus stacking, Vault & Sealing playbook, Set F2P-to-Pro roadmap, persistent Pre-Lock GW Checklist, and Math & Privacy FAQ.
+- Alert & Price Tracker upgrades: `Open/Submitted Lineups Only` injury toggle (`injuryLineupsOnly`) and a Pre-Lock Lineup Health Check inside the `gw_cutoff` window flagging already-OUT, Doubtful, or 0G rostered starters before lock.
+
+Improved / Fixed:
+- Enforced Sorare NBA's `max 4 players per NBA team` rule across `generateTopLineups`, `buildBudgetLineups`, `recommendLineupMarketBuys`, and `recommendTwoCardComboSwaps`.
+- Fixed `Safe floor (p10)` and `High ceiling (p90)` strategies to optimize lineup floor/ceiling directly inside DFS instead of only re-sorting disjoint mean-optimal passes.
+- Replaced greedy budget packing in `planSealBudget` with an exact 0/1 Knapsack DP maximizing total Sealing Points (breaking ties by lowest cost); scaled `evaluateVaultVsSellRoi` sell floor thresholds by rarity (`Limited 2.50`, `Rare 15.00`, `Super Rare 60.00`, `Unique 250.00`).
+- Recalibrated NBA teammate correlation from `+0.15` to `-0.05` (with `SAME_GAME_RHO = +0.06`), unified variance across `buildBudgetLineups` and `entryEvMath`, and calibrated `rankDailyPickerCandidates` single-game CV to `0.35`.
+- Passed `scheduleByTeam` into `buildBudgetLineups`, `recommendLineupMarketBuys`, and `recommendTwoCardComboSwaps`; fixed `buildEditFocusPoints` to remove the nonexistent NBA position filter, evaluate candidates through `evaluateCardForLineup` (respecting 0G, injury, In-Season, max 4/team, star cap), and format currency dynamically.
+- Removed retired `"Cap 120 + MVP"` / `"Daily Pickup"` copy from `ESSENCE_EARNING_SOURCES`.
+
 ## 2.7.5-exp2 (2026-11-21)
 
 Fixed:

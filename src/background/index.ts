@@ -1148,6 +1148,7 @@ async function fetchGalleryForLineups(
       fixtures: result.fixtures,
       currency: (await loadSettings()).currency,
       injuriesByName: result.injuriesByName,
+      gamesPerTeam: result.gamesPerTeam,
     });
     await syncOverlayLookup(result.cards);
     await recordProProgress(

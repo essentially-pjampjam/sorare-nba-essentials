@@ -2,6 +2,7 @@ import { mergeApiAndDomLineups } from "../shared/domLineupMerge";
 import {
   AlertCircle,
   AlignJustify,
+  BookOpen,
   Zap,
   Heart,
   KeyRound,
@@ -63,6 +64,7 @@ import {
   scanCollections,
 } from "./api";
 import { CommandPaletteModal } from "./components/CommandPaletteModal";
+import { GuidesModal } from "./components/GuidesModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { SupportModal } from "./components/SupportModal";
 import { TierEditorModal } from "./components/TierEditorModal";
@@ -131,6 +133,7 @@ export function App() {
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [showSupport, setShowSupport] = useState<boolean>(false);
   const [showWhatsNew, setShowWhatsNew] = useState<boolean>(false);
+  const [showGuides, setShowGuides] = useState<boolean>(false);
   const [showHeaderMenu, setShowHeaderMenu] = useState<boolean>(false);
   const selectPlayMode = (next: "pro" | "set") => {
     setPlayMode(next);
@@ -996,6 +999,16 @@ export function App() {
               Refresh
             </button>
 
+            <button
+              type="button"
+              onClick={() => setShowGuides(true)}
+              className="glass-pill flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sky-300 transition hover:border-sky-400/50 hover:text-sky-100"
+              title="Guides & Strategy Hub (Scoring Calculator, Caps, Vault, Pre-Lock)"
+              aria-label="Open Guides & Strategy Hub"
+            >
+              <BookOpen className="h-3.5 w-3.5" />
+            </button>
+
             <div className="relative shrink-0">
               <button
                 type="button"
@@ -1624,6 +1637,8 @@ export function App() {
         />
       )}
 
+      {showGuides && <GuidesModal onClose={() => setShowGuides(false)} />}
+
       {showCmdPalette && (
         <CommandPaletteModal
           galleryCards={[
@@ -1634,6 +1649,7 @@ export function App() {
           deals={allScannedBargains}
           currency={settings.currency}
           onSwitchTab={(t) => navigateTab(t)}
+          onOpenGuides={() => setShowGuides(true)}
           onOpenSettings={() => setShowSettings(true)}
           onOpenDashboard={() => void openDashboardTab(activeTab)}
           onClose={() => setShowCmdPalette(false)}

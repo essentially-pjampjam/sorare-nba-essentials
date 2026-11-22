@@ -20,6 +20,18 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.5-exp3",
+    title: "v2.7.5-exp3: Optimizer Math, Pre-Lock Alerts & Guides Hub",
+    items: [
+      "Enforced Sorare NBA's max 4 players per NBA team rule across Pro Auto-Build, Budget Lineups, and Market Buy / 2-Card Combo Swaps.",
+      "Safe floor (p10) and High ceiling (p90) now optimize lineup floor and ceiling directly inside the DFS solver instead of re-sorting mean-optimal passes.",
+      "Recalibrated NBA teammate correlation (-0.05) and same-game opponent correlation (+0.06), unified variance in Budget Lineups and Daily Picker (CV 0.35), and upgraded Sealing Deal Finder budget packing to exact 0/1 Knapsack DP.",
+      "Passed full schedule/Vegas context into Market Buy & Combo Swap advisors, removed the nonexistent NBA position filter in synced-lineup Edit Focus, and scaled Vault vs. Sell floor thresholds by rarity.",
+      "Upgraded Alerts with an Open/Submitted Lineups Only injury toggle and a Pre-Lock Lineup Health Check inside the GW cutoff window flagging OUT, Doubtful, or 0G starters.",
+      "Added a unified Guides & Strategy Hub (header book icon & Ctrl+K) featuring an interactive Sorare NBA Box-Score Calculator, 2026-27 caps & stars guide, Vault playbook, Set F2P roadmap, persistent Pre-Lock GW Checklist, and Math & Privacy FAQ.",
+    ],
+  },
+  {
     version: "2.7.5-exp2",
     title: "v2.7.5-exp2: Audit & Polish Pass",
     items: [

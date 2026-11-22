@@ -134,10 +134,10 @@ describe("set solo timing", () => {
       starCost: stars,
       starSource: "live",
     }) as GalleryCard;
-  // Five today players (30 pts each) and five tomorrow players (34 pts each), all 3 stars.
+  // Five today players (30 pts each across 2 teams playing today) and five tomorrow players (34 pts each across 2 teams), all 3 stars.
   const cards = [
-    ...["a", "b", "c", "d", "e"].map((s) => mk(`t-${s}`, "today-team", 30)),
-    ...["a", "b", "c", "d", "e"].map((s) => mk(`l-${s}`, "later-team", 34)),
+    ...["a", "b", "c", "d", "e"].map((s, i) => mk(`t-${s}`, i < 3 ? "today-team-1" : "today-team-2", 30)),
+    ...["a", "b", "c", "d", "e"].map((s, i) => mk(`l-${s}`, i < 3 ? "later-team-1" : "later-team-2", 34)),
   ];
   const base = {
     mode: "solo" as const,
@@ -145,21 +145,21 @@ describe("set solo timing", () => {
     projectionSource: "sorare_projected" as const,
     customProjectionsRaw: "",
     injuriesByName: {},
-    gamesPerTeam: { "today-team": 1 },
+    gamesPerTeam: { "today-team-1": 1, "today-team-2": 1 },
     excludeOut: true,
     disjointAcrossTeams: true,
-    todayTeamSlugs: ["today-team"],
-    laterTeamSlugs: ["later-team"],
+    todayTeamSlugs: ["today-team-1", "today-team-2"],
+    laterTeamSlugs: ["later-team-1", "later-team-2"],
   };
 
   it("today_only drafts only today's players", () => {
     const r = buildSetTeams(cards, { ...base, soloTiming: "today_only" });
-    expect(r.soloTeams[0].lineup.slots.every((s) => s.evaluated.card.teamSlug === "today-team")).toBe(true);
+    expect(r.soloTeams[0].lineup.slots.every((s) => s.evaluated.card.teamSlug?.startsWith("today-team"))).toBe(true);
   });
 
   it("any_day takes the higher projections from tomorrow", () => {
     const r = buildSetTeams(cards, { ...base, soloTiming: "any_day" });
-    expect(r.soloTeams[0].lineup.slots.every((s) => s.evaluated.card.teamSlug === "later-team")).toBe(true);
+    expect(r.soloTeams[0].lineup.slots.every((s) => s.evaluated.card.teamSlug?.startsWith("later-team"))).toBe(true);
     expect(r.soloTeams[0].todayPlayers).toBe(0);
   });
 

@@ -440,12 +440,16 @@ export function LineupsTab({
     return Array.from(new Set([...excludedCardSlugs, ...synced]));
   }, [excludeSubmittedCards, excludedCardSlugs, gallery]);
 
+  // Lineup strategy: max projection, safe floor (p10) or high ceiling (p90), optimized directly in DFS.
+  const [lineupStrategy, setLineupStrategy] = useState<"proj" | "floor" | "ceiling">("proj");
+
   const built = useMemo(() => {
     if (!gallery) return null;
     // Reference buildSeed so clicking Auto-Build triggers explicit recomputation feedback
     void buildSeed;
     return generateTopLineups(gallery.cards, {
       format,
+      strategy: lineupStrategy,
       rarityFilter: rarityScope,
       projectionSource,
       customProjectionsRaw,
@@ -460,8 +464,7 @@ export function LineupsTab({
       ageFilter,
       excludeSubmittedCards,
       excludedCardSlugs: effectiveExcludedCardSlugs,
-      // Extra candidates so the Safe floor / High ceiling strategies have real choices.
-      maxLineups: Math.min(10, entryLimit * 2),
+      maxLineups: entryLimit,
       captainBonusPct: 0,
       benchmarks: gallery.leaderboardBenchmarks,
       benchmarkSeasonScope,
@@ -479,26 +482,17 @@ export function LineupsTab({
     excludeSubmittedCards,
     format,
     gallery,
+    lineupStrategy,
     minInSeasonCards,
     projectionSource,
     rarityScope,
     strictInSeasonOnly,
   ]);
 
-  // Lineup strategy: max projection, safe floor (p10) or high ceiling (p90), up to the entry limit.
-  const [lineupStrategy, setLineupStrategy] = useState<"proj" | "floor" | "ceiling">("proj");
-  const shownLineups = useMemo(() => {
-    const list = built?.lineups ?? [];
-    const score = (l: (typeof list)[number]) => {
-      const sd = l.stdDev ?? 0;
-      return lineupStrategy === "floor"
-        ? l.totalScore - 1.2816 * sd
-        : lineupStrategy === "ceiling"
-          ? l.totalScore + 1.2816 * sd
-          : l.totalScore;
-    };
-    return [...list].sort((a, b) => score(b) - score(a)).slice(0, entryLimit);
-  }, [built, entryLimit, lineupStrategy]);
+  const shownLineups = useMemo(
+    () => (built?.lineups ?? []).slice(0, entryLimit),
+    [built, entryLimit],
+  );
 
   const effectiveMarketListings = useMemo(
     () =>
@@ -564,6 +558,7 @@ export function LineupsTab({
       customProjectionsRaw,
       injuriesByName: gallery.injuriesByName,
       gamesPerTeam: gallery.gamesPerTeam,
+      scheduleByTeam: gallery.scheduleByTeam,
       budgetCents,
       includeOwned: includeOwnedInBudget,
       inSeasonOnly: strictInSeasonOnly,
@@ -653,6 +648,7 @@ export function LineupsTab({
         customProjectionsRaw,
         injuriesByName: gallery.injuriesByName,
         gamesPerTeam: gallery.gamesPerTeam,
+        scheduleByTeam: gallery.scheduleByTeam,
         excludeOut,
         excludeQuestionable,
         captainBonusPct: 0,
@@ -698,6 +694,7 @@ export function LineupsTab({
         customProjectionsRaw,
         injuriesByName: gallery.injuriesByName,
         gamesPerTeam: gallery.gamesPerTeam,
+        scheduleByTeam: gallery.scheduleByTeam,
         excludeOut,
         excludeQuestionable,
         captainBonusPct: 0,

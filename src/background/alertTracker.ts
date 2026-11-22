@@ -24,6 +24,7 @@ export const DEFAULT_ALERT_PREFERENCES: AlertPreferences = {
   priceSurgeEnabled: true,
   priceSurgePctThreshold: 25,
   injuryRiskEnabled: true,
+  injuryLineupsOnly: false,
   bargainAlertEnabled: true,
   cutoffAlertEnabled: true,
   dailyResetAlertEnabled: true,
@@ -47,6 +48,8 @@ interface TrackerSnapshot {
   currency: "EUR" | "USD";
   /** ESPN injuries from the same gallery load. */
   injuriesByName?: Record<string, InjuryReportEntry>;
+  /** Team slug -> games count in the active Game Week slate. */
+  gamesPerTeam?: Record<string, number>;
 }
 
 function emptyState(): TrackerState {
@@ -73,6 +76,7 @@ interface CachedGalleryLike {
   currentLineups?: CurrentLineupEntry[];
   fixtures?: So5FixtureSummary[];
   injuriesByName?: Record<string, InjuryReportEntry>;
+  gamesPerTeam?: Record<string, number>;
 }
 
 /** Last snapshot, else the last cached gallery for the user (expired TTL is fine here). */
@@ -93,6 +97,7 @@ async function readSnapshot(username: string, currency: "EUR" | "USD"): Promise<
         fixtures: g.fixtures ?? [],
         currency,
         injuriesByName: g.injuriesByName,
+        gamesPerTeam: g.gamesPerTeam,
       };
     }
   }
@@ -201,6 +206,7 @@ export async function runAlertTracker(
       currentLineups: snapshot?.currentLineups ?? [],
       previousInjuriesByName: state.previousInjuriesByName,
       currentInjuriesByName,
+      gamesPerTeam: snapshot?.gamesPerTeam,
       bargainListings: [],
       watchlist: [],
       fixtures: snapshot?.fixtures ?? [],
