@@ -695,24 +695,30 @@ import {
       .logo-badge {
         width: 26px;
         height: 26px;
+        padding: 2px;
+        box-sizing: border-box;
         border-radius: 8px;
         display: flex;
         align-items: center;
         justify-content: center;
         flex-shrink: 0;
         overflow: hidden;
-        background: rgba(255, 255, 255, 0.04);
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%);
+        border: 1px solid rgba(255, 255, 255, 0.92);
+        box-shadow:
+          inset 0 1px 0 #ffffff,
+          inset 0 -1.5px 2px rgba(15, 23, 42, 0.14),
+          0 2px 6px -1px rgba(0, 0, 0, 0.45);
         transition: scale 180ms ease-out;
       }
       .logo-img {
-        width: 24px;
-        height: 24px;
+        width: 100%;
+        height: 100%;
         object-fit: contain;
         display: block;
       }
       .logo-fallback {
-        color: #f8fafc;
+        color: #b91c1c;
         font-size: 10.5px;
         font-weight: 900;
       }

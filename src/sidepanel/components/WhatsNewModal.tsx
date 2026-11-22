@@ -20,6 +20,13 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.5-exp10",
+    title: "v2.7.5-exp10: White Beveled Logo Backing",
+    items: [
+      "Added a white beveled-edge rounded backing behind the logo in the Sorare NBA bottom-right launcher, side panel header, and loading stage (browser toolbar / plugin icons unchanged).",
+    ],
+  },
+  {
     version: "2.7.5-exp9",
     title: "v2.7.5-exp9: Updated Logo (v3) Everywhere",
     items: [

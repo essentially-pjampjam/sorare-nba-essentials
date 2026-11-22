@@ -29,12 +29,14 @@ export function LoadingStage({
     >
       <div className="glass-chrome rounded-2xl p-4">
         <div className="flex items-center gap-3">
-          <img
-            src="/logo.png"
-            alt=""
-            aria-hidden="true"
-            className="h-9 w-9 shrink-0 rounded-xl object-contain"
-          />
+          <span className="jam-logo-badge flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl p-1">
+            <img
+              src="/logo.png"
+              alt=""
+              aria-hidden="true"
+              className="h-full w-full object-contain"
+            />
+          </span>
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-xs font-semibold tracking-tight text-slate-100">
               {title}

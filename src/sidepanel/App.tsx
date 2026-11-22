@@ -1095,7 +1095,9 @@ export function App() {
               }
               aria-label={settings.sorareApiKey ? "Fast Mode active, open Settings" : "No API key, open Settings to add one"}
             >
-              <img src="/logo.png" alt="pjampjam's Sorare NBA Essentials" className="h-8 w-8 rounded-lg object-contain" />
+              <span className="jam-logo-badge flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg p-0.5">
+                <img src="/logo.png" alt="pjampjam's Sorare NBA Essentials" className="h-full w-full object-contain" />
+              </span>
               <span
                 className={`absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full border-2 border-[var(--jam-chrome-bot)] ${
                   settings.sorareApiKey ? "bg-sky-400 text-slate-950" : "bg-slate-600 text-slate-200"

@@ -2,6 +2,11 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
+## 2.7.5-exp10 (2026-11-22)
+
+Changed:
+- Added a white beveled-edge rounded background behind the logo on the Sorare NBA bottom-right launcher (`sorareDetector.ts`) and in the side panel header and loading stage (`App.tsx`, `LoadingStage.tsx`, `index.css`), leaving the browser toolbar / plugin icons untouched.
+
 ## 2.7.5-exp9 (2026-11-22)
 
 Changed:
