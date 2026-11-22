@@ -161,7 +161,7 @@ describe("questOptimizerMath", () => {
         saleType: "auction",
         priceCents: 197,
         currency: "EUR",
-        endDate: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
+        endDate: new Date(Date.now() + 30 * 60 * 60 * 1000).toISOString(),
         bidsCount: 0,
         centsPerL10: 5.5,
         valueScore: 95,

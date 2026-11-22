@@ -3,6 +3,8 @@ import type { GalleryCard, PlayerSeasonStats } from "../shared/types";
 import {
   DAILY_MISSIONS,
   buildDailyPickIdeas,
+  classifyPickerTaskMode,
+  filterPickerTasksForMode,
   parsePickerMission,
   probabilityStatAtLeast,
 } from "./dailyPicksMath";
@@ -264,5 +266,43 @@ describe("v2.7.5-exp7 Manual Lock (Must-Start) in generateTopLineups", () => {
       maxLineups: 1,
     });
     expect(overFiveRes.lineups).toHaveLength(0);
+  });
+});
+
+describe("v2.7.5-exp12 Set vs Pro Daily Picker isolation", () => {
+  it("separates Set Daily Picker from Pro Classic Daily Picker and Playmaker Picker", () => {
+    const mixed = [
+      {
+        title: "Daily Picker",
+        description: "Pick a player who outperforms his L10 by 7 points. The player must also score at least 20 fantasy points.",
+        mode: "SCORE",
+        slug: "set-daily-picker",
+        picks: 1,
+      },
+      {
+        title: "Daily Picker",
+        description: "Classic: Pick a player who outperforms his L10 by 7 points and win 100 XP per successful choice. The player must also score at least 20 fantasy points.",
+        mode: "SCORE",
+        slug: "pro-daily-picker",
+        picks: 3,
+      },
+      {
+        title: "Playmaker Picker",
+        description: "Classic: Pick a player ranked DNP Plus or less who records 4+ assists in today's games and win 25 Essence per successful choice.",
+        mode: "STAT",
+        slug: "pro-playmaker-picker",
+        picks: 3,
+      },
+    ];
+    expect(classifyPickerTaskMode(mixed[0])).toBe("set");
+    expect(classifyPickerTaskMode(mixed[1])).toBe("pro");
+    expect(classifyPickerTaskMode(mixed[2])).toBe("pro");
+
+    const setOnly = filterPickerTasksForMode(mixed, "set");
+    expect(setOnly).toHaveLength(1);
+    expect(setOnly[0].slug).toBe("set-daily-picker");
+
+    const proOnly = filterPickerTasksForMode(mixed, "pro");
+    expect(proOnly.map((t) => t.slug)).toEqual(["pro-daily-picker", "pro-playmaker-picker"]);
   });
 });

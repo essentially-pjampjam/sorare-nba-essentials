@@ -935,11 +935,11 @@ export function CollectionsTab({
                           <div className="flex items-center justify-between gap-2 text-[9.5px] text-slate-400">
                             <span>
                               {hasLoadedQuestDeals || allScannedBargains.length > 0
-                                ? "No live matches on Sorare right now (auctions only show if < 1h left). Click Refresh or check Sorare directly."
+                                ? "No live matches on Sorare right now (auctions only show if < 24h left). Click Refresh or check Sorare directly."
                                 : questBuyFilter === "primary_instant"
                                   ? "Click Load Prices to find direct Sorare Primary Offers."
                                   : questBuyFilter === "auction"
-                                    ? "Click Load Prices to scan live <1h 2026 auctions."
+                                    ? "Click Load Prices to scan live <24h 2026 auctions."
                                     : "Click Load Prices to rank cheapest eligible buys."}
                             </span>
                             {onLoadQuestDeals ? (

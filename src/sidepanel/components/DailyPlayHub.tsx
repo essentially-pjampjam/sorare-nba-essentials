@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   DAILY_MISSIONS,
   buildDailyPickIdeas,
+  filterPickerTasksForMode,
   parsePickerMission,
   type DailyMission,
   type OwnershipFilter,
@@ -97,12 +98,15 @@ export function DailyPlayHub({ gallery, pool, poolLoading, onRefreshPool, missio
   const fresh = snapshot ? snapshot.scannedAt >= lastResetMs(Date.now()) : false;
   const specs: PickerMissionSpec[] = useMemo(() => {
     if (snapshot && fresh && snapshot.tasks.length > 0) {
-      return snapshot.tasks.map((t) => {
-        const spec = parsePickerMission(t, mode === "set" ? "common" : "limited");
-        // Some tasks (Set Daily Picker) have no reward text: borrow the matching preset's.
-        const preset = Object.values(DAILY_MISSIONS).find((p) => p.kind === spec.kind && p.rarity === spec.rarity);
-        return spec.reward === "See Sorare" && preset ? { ...spec, reward: preset.reward } : spec;
-      });
+      const modeTasks = filterPickerTasksForMode(snapshot.tasks, mode);
+      if (modeTasks.length > 0) {
+        return modeTasks.map((t) => {
+          const spec = parsePickerMission(t, mode === "set" ? "common" : "limited");
+          // Some tasks (Set Daily Picker) have no reward text: borrow the matching preset's.
+          const preset = Object.values(DAILY_MISSIONS).find((p) => p.kind === spec.kind && p.rarity === spec.rarity);
+          return spec.reward === "See Sorare" && preset ? { ...spec, reward: preset.reward } : spec;
+        });
+      }
     }
     return missions.map((m) => DAILY_MISSIONS[m]);
   }, [fresh, missions, mode, snapshot]);

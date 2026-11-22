@@ -430,8 +430,22 @@ export function App() {
         }));
       }
 
+      const instantRes = await fetchBargains(
+        activeRarity,
+        "instant_value",
+        settings.currency,
+        true,
+        false,
+      );
+      if (instantRes) {
+        setBargainPoolByKey((prev) => ({
+          ...prev,
+          [`${instantRes.rarity}:${instantRes.currency}:${instantRes.mode}`]:
+            instantRes,
+        }));
+      }
+
       if (scanResult && scanResult.rarity === activeRarity) {
-        const pricedSet = new Set(scanResult.pricedCollectionSlugs);
         const closestInSeasonTeam = [...scanResult.collections]
           .filter((c) => !c.complete && c.inSeason && Boolean(c.teamSlug))
           .sort((a, b) => {
@@ -440,7 +454,7 @@ export function App() {
             if (ra !== rb) return ra - rb;
             return b.fulfilledSlotsCount - a.fulfilledSlotsCount;
           })[0];
-        if (closestInSeasonTeam && !pricedSet.has(closestInSeasonTeam.slug)) {
+        if (closestInSeasonTeam) {
           const pricedScan = await priceCollection(
             scanResult.username,
             closestInSeasonTeam.slug,

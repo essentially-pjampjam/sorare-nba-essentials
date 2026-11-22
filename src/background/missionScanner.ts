@@ -12,6 +12,20 @@ function readPickerTasksFromPage(): { mode: "pro" | "set"; tasks: RawPickerTaskS
     .__APOLLO_CLIENT__;
   if (!client) return { error: "Sorare page data not ready yet." };
   const ex = client.cache.extract();
+  const pageMode: "pro" | "set" = /\/series(\/|$)/.test(location.pathname) ? "set" : "pro";
+  const isProTask = (t: { title: string; description: string; slug: string; picks: number }): boolean => {
+    const desc = t.description.trim();
+    const slug = t.slug.toLowerCase();
+    const title = t.title.toLowerCase();
+    return (
+      /^(classic|in-season):/i.test(desc) ||
+      /\b(xp|limited|rare|super\s*rare|unique)\b/i.test(desc) ||
+      /\b(classic|pro|limited|rare|playmaker|rebound|double|triple)\b/.test(slug) ||
+      /\b(playmaker|rebound|double[- ]double|triple[- ]double)\b/.test(title) ||
+      t.picks > 1
+    );
+  };
+  const seen = new Set<string>();
   const tasks = Object.entries(ex)
     .filter(([, t]) => t.__typename === "DecisivePlayerPickerTask" && t.expired !== true)
     .map(([, t]) => ({
@@ -22,9 +36,16 @@ function readPickerTasksFromPage(): { mode: "pro" | "set"; tasks: RawPickerTaskS
       picks: Number(t.maxAppearancesCount ?? 1) || 1,
       state: String(t.aasmState ?? ""),
     }))
-    .filter((t) => t.title.length > 0);
+    .filter((t) => t.title.length > 0)
+    .filter((t) => (pageMode === "pro" ? isProTask(t) : !isProTask(t)))
+    .filter((t) => {
+      const key = (t.slug || `${t.title}::${t.description}`).toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   if (tasks.length === 0) return { error: "No daily pickers on this page. Open Sorare's Play missions." };
-  return { mode: /\/series(\/|$)/.test(location.pathname) ? "set" : "pro", tasks };
+  return { mode: pageMode, tasks };
 }
 
 export async function getSavedPickerMissions(): Promise<PickerMissionsByMode> {

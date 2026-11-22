@@ -136,6 +136,36 @@ function parseNamedTierMaxStars(text: string): number | null {
   return null;
 }
 
+/**
+ * Distinguishes Pro vs Set DecisivePlayerPickerTask items when Sorare's SPA Apollo cache
+ * holds tasks from both modes in the same tab.
+ */
+export function classifyPickerTaskMode(task: RawPickerTask): "pro" | "set" {
+  const desc = task.description.trim();
+  const slug = task.slug.toLowerCase();
+  const title = task.title.toLowerCase();
+  if (/^(classic|in-season):/i.test(desc)) return "pro";
+  if (/\b(xp|limited|rare|super\s*rare|unique)\b/i.test(desc)) return "pro";
+  if (/\b(classic|pro|limited|rare|playmaker|rebound|double|triple)\b/.test(slug)) return "pro";
+  if (/\b(playmaker|rebound|double[- ]double|triple[- ]double)\b/.test(title)) return "pro";
+  if ((task.picks || 1) > 1) return "pro";
+  return "set";
+}
+
+/** Filters and deduplicates cached picker tasks so Pro missions never leak into Set mode. */
+export function filterPickerTasksForMode<T extends RawPickerTask>(tasks: T[], mode: "pro" | "set"): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const t of tasks) {
+    if (classifyPickerTaskMode(t) !== mode) continue;
+    const key = (t.slug || `${t.title}::${t.description}`).toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(t);
+  }
+  return out;
+}
+
 /** Turns a live Sorare picker task into a mission spec (rule, reward, stat target, star cap). */
 export function parsePickerMission(raw: RawPickerTask, rarity: GalleryCard["rarity"]): PickerMissionSpec {
   const desc = raw.description.replace(/^classic:\s*/i, "").trim();

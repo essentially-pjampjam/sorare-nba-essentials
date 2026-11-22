@@ -190,9 +190,9 @@ export function evaluateLeagueQuests(
   }
 
   // Aggregate cheapest eligible current-season market/collection opportunities
-  // (keeping primary instant vs <1h auction vs secondary instant separate)
+  // (keeping primary instant vs <24h auction vs secondary instant separate)
   const nowMs = Date.now();
-  const maxAuctionMs = 60 * 60 * 1000;
+  const maxAuctionMs = 24 * 60 * 60 * 1000;
   const candidateByKey = new Map<string, QuestShoppingCandidate>();
   for (const listing of bargainListings) {
     if (

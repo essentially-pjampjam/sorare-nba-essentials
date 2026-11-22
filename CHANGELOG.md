@@ -2,6 +2,14 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
+## 2.7.5-exp12 (2026-11-22)
+
+Fixed:
+- Not-owned Daily Picker roster scan (`sorareClient.ts`): removed invalid `... on NBAPlayer { gameplayTier }` fragment inside `team.activePlayers.nodes` (`Player` type) that caused `Fragment on NBAPlayer can't be spread inside Player`.
+- Set vs. Pro Daily Picker isolation (`missionScanner.ts`, `dailyPicksMath.ts`, `DailyPlayHub.tsx`): filtered and deduplicated cached Apollo `DecisivePlayerPickerTask` items by mode (`classifyPickerTaskMode` / `filterPickerTasksForMode`) so Pro pickers (`Classic: Daily Picker`, `Playmaker Picker`) never leak into Set / Common Daily Play.
+- Collection Quest `Load 1ST Instant & Auctions` / `Refresh Prices` (`questOptimizerMath.ts`, `App.tsx`, `CollectionsTab.tsx`): expanded live auction window from `<1h` to `<24h`, included `instant_value` secondary instant buys for Full Collection quests, and allowed Refresh Prices to re-price the closest in-season team collection.
+- Set Holo (+20%) / Shiny (+10%) card bonus fallback (`sorareClient.ts`): when Sorare returns `power = 1` on Common / Set cards, infers `1.20` for Holo and `1.10` for Shiny from `cardEditionName` so Set Solo/Squad lineups credit `+20%` and `+10%` bonuses.
+
 ## 2.7.5-exp11 (2026-11-22)
 
 Changed:

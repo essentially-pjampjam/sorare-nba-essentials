@@ -20,6 +20,16 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.5-exp12",
+    title: "v2.7.5-exp12: Daily Picker Fixes, 24h Quest Auctions & Set Holo/Shiny Bonuses",
+    items: [
+      "Fixed Not-owned Daily Picker roster scan (removed invalid NBAPlayer fragment on Player).",
+      "Fixed Pro pickers (Classic Daily Picker, Playmaker Picker) leaking from Sorare's SPA cache into Set / Common Daily Play.",
+      "Fixed Collection Quest 'Load 1ST Instant & Auctions' / 'Refresh Prices' (widened auction window from <1h to <24h, added instant_value scan for Full Collection, and enabled re-pricing).",
+      "Credited Set Holo (+20%) and Shiny (+10%) edition bonuses in Set Solo and Squad lineup projections even when Sorare's GraphQL power field returns 1.0.",
+    ],
+  },
+  {
     version: "2.7.5-exp11",
     title: "v2.7.5-exp11: Subtle Micro-Particles on Essence Bar",
     items: [
