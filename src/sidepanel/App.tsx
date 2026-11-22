@@ -1,7 +1,6 @@
 import { mergeApiAndDomLineups } from "../shared/domLineupMerge";
 import {
   AlertCircle,
-  AlignJustify,
   BookOpen,
   Zap,
   Heart,
@@ -1084,8 +1083,8 @@ export function App() {
       data-density={settings.density ?? "cozy"}
     >
       <div className={isDashboardMode ? "jam-dashboard-mode" : ""}>
-      <div ref={stickyHeaderRef} className="jam-sticky-wrap sticky top-0 z-30 px-2.5 pb-1.5 pt-2.5">
-        <header className="glass-chrome rounded-2xl px-3 py-2.5">
+      <div ref={stickyHeaderRef} className="jam-sticky-wrap sticky top-0 z-30 px-2.5 pb-1 pt-2">
+        <header className="glass-chrome rounded-2xl px-2.5 py-2">
           {/* Row 1: identity, username, Refresh, overflow menu */}
           <div className="flex items-center gap-2">
             {/* Logo with the connection bolt: blue = API key active (Fast Mode), gray = public mode. */}
@@ -1100,7 +1099,7 @@ export function App() {
               }
               aria-label={settings.sorareApiKey ? "Fast Mode active, open Settings" : "No API key, open Settings to add one"}
             >
-              <span className="jam-logo-badge flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg p-0.5">
+              <span className="jam-logo-badge flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg">
                 <img src="/logo.png" alt="pjampjam's Sorare NBA Essentials" className="h-full w-full object-contain" />
               </span>
               <span
@@ -1205,7 +1204,7 @@ export function App() {
                 type="button"
                 onClick={() => setShowHeaderMenu((v) => !v)}
                 className="glass-pill flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 transition hover:border-sky-400/50 hover:text-slate-100"
-                title="Search, currency, density, support, pop-out, settings"
+                title="Search, currency, support, pop-out, settings"
                 aria-label="More options"
                 aria-expanded={showHeaderMenu}
               >
@@ -1223,14 +1222,6 @@ export function App() {
                     </button>
                     <button type="button" onClick={() => void handleToggleCurrency()} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/8">
                       <Wallet className="h-3.5 w-3.5 text-slate-400" /> Currency <span className="ml-auto font-semibold">{settings.currency}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void updateSettings({ density: settings.density === "compact" ? "cozy" : "compact" })}
-                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/8"
-                    >
-                      <AlignJustify className="h-3.5 w-3.5 text-slate-400" /> Density
-                      <span className="ml-auto text-[10px] text-slate-400">{settings.density === "compact" ? "Compact" : "Cozy"}</span>
                     </button>
                     {!isDashboardMode && (
                       <button type="button" onClick={() => void openDashboardTab(activeTab)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/8">
@@ -1269,12 +1260,13 @@ export function App() {
             )}
 
           {/* Mode bar on every tab: Set (Common) | Limited | Rare | Super Rare | Unique | Essence */}
-          <div className="mt-2 space-y-1.5">
+          <div className="mt-1.5 space-y-1">
             <div className="grid grid-cols-6 gap-1">
               <button
                 type="button"
                 onClick={() => selectPlayMode("set")}
                 data-active={playMode === "set" ? "true" : undefined}
+                data-rarity="set"
                 title="Set (Common cards): Set lineups, packs, Squad, Set gallery and duplicates"
                 className={`jam-mode-pill h-7 truncate rounded-lg border px-1 text-[10.5px] font-medium transition ${
                   playMode === "set"
@@ -1292,6 +1284,7 @@ export function App() {
                     key={rarity}
                     type="button"
                     data-active={active ? "true" : undefined}
+                    data-rarity={rarity}
                     onClick={() => {
                       selectPlayMode("pro");
                       void handleSelectRarity(rarity);
@@ -1409,7 +1402,7 @@ export function App() {
           </div>
 
           {/* Accessible Tablist + Scan Age */}
-          <div className="mt-2 flex items-center justify-between gap-1 border-t border-white/8 pt-1.5 text-[11px]">
+          <div className="mt-1.5 flex items-center justify-between gap-1 border-t border-white/8 pt-1 text-[11px]">
             <div
               role="tablist"
               aria-label="Workspace views"

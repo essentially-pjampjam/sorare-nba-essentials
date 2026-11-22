@@ -2,6 +2,14 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
+## 2.7.5-exp14 (2026-11-22)
+
+Changed:
+- Logo C (`Hoops Hairline`) Applied Everywhere (`public/logo.png`, `public/icons/icon{16,32,48,128}.png`, `App.tsx`, `LoadingStage.tsx`, `sorareDetector.ts`): baked the royal-blue & crimson hairline-rimmed `logo3.png` squircle (with crisp 16px optical rim tuning) and removed redundant white box-in-box wrappers in the header, loading stage, and Sorare launcher.
+- Header & Liquid Tube Polish (`index.css`, `App.tsx`, `EssenceTubeBar.tsx`): active rarity pills now echo the Liquid Essence Tube color with a subtle bottom specular glow, etched 25%/50%/75% vial ticks are crisper in the dark unfilled chamber, the liquid meniscus pulses softly when Essence updates, and the sticky header is ~8px more compact.
+- Richer 5-Card Lineup Preview Tooltips (`LineupCardStrip.tsx`, `LineupsTab.tsx`): hovering any card in the 5-card artwork strip now shows `pts`, `L10`, `L5`, `GW games`, and `boost %`.
+- Removed Clutter (`App.tsx`, `CommandPaletteModal.tsx`): removed the confusing Cozy/Compact density toggle from the header `...` menu.
+
 ## 2.7.5-exp13 (2026-11-22)
 
 Changed:

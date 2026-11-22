@@ -20,6 +20,16 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.5-exp14",
+    title: "v2.7.5-exp14: Logo C (Hoops Hairline), Header Polish & Richer Card Tooltips",
+    items: [
+      "Applied Logo C (Hoops Hairline) across the toolbar, side panel header, loading card, and Sorare launcher without extra box-in-box borders.",
+      "Added matching bottom specular glow on the active rarity pill, crisper etched ticks and update pulse on the Liquid Essence Tube, and tighter header spacing.",
+      "Added L10, L5, GW games, and boost % hover tooltips on 5-card Lineup artwork previews.",
+      "Removed the confusing Cozy/Compact density toggle from the header menu.",
+    ],
+  },
+  {
     version: "2.7.5-exp13",
     title: "v2.7.5-exp13: Liquid Essence Glass Tube & logo3.png Facelift",
     items: [

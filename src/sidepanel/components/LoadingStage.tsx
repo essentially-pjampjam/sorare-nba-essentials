@@ -29,7 +29,7 @@ export function LoadingStage({
     >
       <div className="glass-chrome rounded-2xl p-4">
         <div className="flex items-center gap-3">
-          <span className="jam-logo-badge flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl p-1">
+          <span className="jam-logo-badge flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl">
             <img
               src="/logo.png"
               alt=""

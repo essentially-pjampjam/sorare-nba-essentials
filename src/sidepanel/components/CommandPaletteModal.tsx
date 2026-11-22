@@ -186,7 +186,7 @@ export function CommandPaletteModal({
         id: "nav-settings",
         group: "Tab",
         title: "Settings, Themes & API Key",
-        subtitle: "Switch color theme, Fast API Key & Density",
+        subtitle: "Switch color theme, Fast API Key & Alerts",
         onSelect: () => {
           onOpenSettings();
           onClose();

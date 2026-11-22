@@ -10,8 +10,27 @@ export interface LineupCardPreviewItem {
   starCost?: number | null;
   projectedPts?: number | null;
   avgMinutes?: number | null;
+  l10?: number | null;
+  l5?: number | null;
+  gamesInSlate?: number | null;
+  powerMultiplier?: number | null;
   badge?: string | null;
   isCaptain?: boolean;
+}
+
+function buildCardTooltip(card: LineupCardPreviewItem): string {
+  const parts: string[] = [card.playerName];
+  if (typeof card.projectedPts === "number") parts.push(`${card.projectedPts.toFixed(1)} pts`);
+  if (typeof card.l10 === "number") parts.push(`L10 ${card.l10.toFixed(1)}`);
+  if (typeof card.l5 === "number") parts.push(`L5 ${card.l5.toFixed(1)}`);
+  if (typeof card.gamesInSlate === "number") parts.push(`${card.gamesInSlate}G`);
+  if (typeof card.powerMultiplier === "number" && card.powerMultiplier > 1.005) {
+    parts.push(`+${Math.round((card.powerMultiplier - 1) * 100)}% boost`);
+  }
+  if (typeof card.avgMinutes === "number" && card.avgMinutes > 0) {
+    parts.push(`${Math.round(card.avgMinutes)} min`);
+  }
+  return parts.join(" • ");
 }
 
 interface LineupCardStripProps {
@@ -69,7 +88,7 @@ export function LineupCardStrip({ cards, compact = false }: LineupCardStripProps
           <div
             key={card.key}
             role="listitem"
-            title={`${card.playerName}${card.projectedPts ? ` (${card.projectedPts.toFixed(1)} pts)` : ""}`}
+            title={buildCardTooltip(card)}
             className={`jam-card-preview relative overflow-hidden rounded-lg border ${rarityFrameClass(card.rarity)} shadow-sm`}
           >
             {/* Card artwork container with fixed 5:7 aspect ratio to prevent CLS */}

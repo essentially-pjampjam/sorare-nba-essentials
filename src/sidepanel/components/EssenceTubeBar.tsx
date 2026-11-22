@@ -1,4 +1,4 @@
-import { useMemo, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Rarity } from "../../shared/types";
 
 export interface EssenceTubeBarProps {
@@ -108,6 +108,19 @@ export function EssenceTubeBar({
 }: EssenceTubeBarProps) {
   const clampedPct = Math.max(0, Math.min(100, Math.round(pct)));
   const fillPct = amount > 0 ? Math.max(3, clampedPct) : 0;
+  const prevAmountRef = useRef<number>(amount);
+  const [pulsing, setPulsing] = useState(false);
+
+  useEffect(() => {
+    if (prevAmountRef.current !== amount && amount > 0) {
+      prevAmountRef.current = amount;
+      setPulsing(true);
+      const t = window.setTimeout(() => setPulsing(false), 700);
+      return () => window.clearTimeout(t);
+    }
+    prevAmountRef.current = amount;
+    return undefined;
+  }, [amount]);
 
   const particles = useMemo(
     () => generateEssenceParticles(rarity, clampedPct, amount),
@@ -166,7 +179,11 @@ export function EssenceTubeBar({
             </span>
           )}
           {fillPct > 0 && fillPct < 100 && (
-            <span className="jam-essence-meniscus" aria-hidden="true" />
+            <span
+              className="jam-essence-meniscus"
+              data-pulse={pulsing ? "true" : undefined}
+              aria-hidden="true"
+            />
           )}
         </div>
         <span className="jam-essence-glass" aria-hidden="true" />

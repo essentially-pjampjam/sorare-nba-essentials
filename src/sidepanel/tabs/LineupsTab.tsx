@@ -1114,6 +1114,10 @@ export function LineupsTab({
                           pictureUrl: gc.pictureUrl,
                           starCost: gc.starCost,
                           projectedPts: gc.sorareClassicProjected ?? gc.l10,
+                          l10: gc.l10,
+                          l5: gc.l5,
+                          gamesInSlate: gc.teamSlug ? (gallery?.gamesPerTeam?.[gc.teamSlug] ?? null) : null,
+                          powerMultiplier: gc.powerMultiplier,
                           isCaptain: cmp.entry.captainCardSlug === gc.slug,
                         }))}
                       />
@@ -1683,6 +1687,10 @@ export function LineupsTab({
                           pictureUrl: s.evaluated.card.pictureUrl,
                           starCost: s.evaluated.card.starCost,
                           projectedPts: s.slotScore,
+                          l10: s.evaluated.card.l10,
+                          l5: s.evaluated.card.l5,
+                          gamesInSlate: s.evaluated.gamesInSlate,
+                          powerMultiplier: s.evaluated.card.powerMultiplier,
                           avgMinutes: dailyPool?.statsByName?.[normalizePlayerName(s.evaluated.card.playerName)]?.avgMinutes ?? null,
                           isCaptain: s.isCaptainOrMvp,
                         }))}
@@ -2232,6 +2240,10 @@ export function LineupsTab({
                     pictureUrl: slot.evaluated.card.pictureUrl,
                     starCost: slot.evaluated.card.starCost,
                     projectedPts: slot.slotScore,
+                    l10: slot.evaluated.card.l10,
+                    l5: slot.evaluated.card.l5,
+                    gamesInSlate: slot.evaluated.gamesInSlate,
+                    powerMultiplier: slot.evaluated.card.powerMultiplier,
                     badge: slot.isCaptainOrMvp ? (lineup.format === "daily_120_mvp" ? "MVP" : "C") : null,
                     isCaptain: slot.isCaptainOrMvp,
                   }))}
