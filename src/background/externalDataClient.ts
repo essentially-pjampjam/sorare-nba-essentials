@@ -159,7 +159,7 @@ export async function fetchExternalNbaContext(gwWindow?: GameWeekWindow | null):
   gamesPerTeam: Record<string, number>;
   scheduleByTeam: Record<string, TeamSlateSchedule>;
 }> {
-  const cacheKey = `espn_nba_context_v6:${gwWindow ? `${gwWindow.startIso}_${gwWindow.endIso}` : "next4d"}`;
+  const cacheKey = `espn_nba_context_v7:${gwWindow ? `${gwWindow.startIso}_${gwWindow.endIso}` : "next4d"}`;
   const cached = await getCached<{
     injuriesByName: Record<string, InjuryReportEntry>;
     gamesPerTeam: Record<string, number>;
@@ -185,6 +185,11 @@ export async function fetchExternalNbaContext(gwWindow?: GameWeekWindow | null):
       upcomingGames: number;
       liveClockLabel: string | null;
       odds: TeamGameOdds[];
+      rawGames: Array<{
+        date: string;
+        matchup: string;
+        odds: TeamGameOdds | null;
+      }>;
     }
   > = {};
 
@@ -272,12 +277,20 @@ export async function fetchExternalNbaContext(gwWindow?: GameWeekWindow | null):
               upcomingGames: 0,
               liveClockLabel: null,
               odds: [],
+              rawGames: [],
             };
           }
-          if (gameOdds) {
-            accByTeam[slug].odds.push(c.homeAway === "away" ? gameOdds.away : gameOdds.home);
+          const sideOdds = gameOdds ? (c.homeAway === "away" ? gameOdds.away : gameOdds.home) : null;
+          if (sideOdds) {
+            accByTeam[slug].odds.push(sideOdds);
           }
-          accByTeam[slug].matchups.push(`${prefix}${oppAbbr}`);
+          const matchupLabel = `${prefix}${oppAbbr}`;
+          accByTeam[slug].matchups.push(matchupLabel);
+          accByTeam[slug].rawGames.push({
+            date: dateStr,
+            matchup: matchupLabel,
+            odds: sideOdds,
+          });
           accByTeam[slug].oppAbbrs.push(oppAbbr);
           if (dateStr) accByTeam[slug].dates.push(dateStr);
           if (oppWin !== null) accByTeam[slug].oppWinPcts.push(oppWin);
@@ -309,6 +322,23 @@ export async function fetchExternalNbaContext(gwWindow?: GameWeekWindow | null):
     const difficultyTag: TeamSlateSchedule["difficultyTag"] =
       avgOppWin <= 0.45 ? "EASY" : avgOppWin >= 0.56 ? "TOUGH" : "NEUTRAL";
 
+    const sortedGames = [...acc.rawGames].sort((a, b) => a.date.localeCompare(b.date));
+    const gameContexts = sortedGames.map((g, idx) => {
+      let isBackToBack = false;
+      if (idx > 0 && g.date && sortedGames[idx - 1].date) {
+        const diff = Date.parse(g.date) - Date.parse(sortedGames[idx - 1].date);
+        if (diff > 0 && diff <= 86_400_000 * 1.1) isBackToBack = true;
+      }
+      return {
+        date: g.date,
+        matchup: g.matchup,
+        impliedTeamTotal: g.odds?.impliedTeamTotal ?? null,
+        spread: g.odds?.spread ?? null,
+        blowoutRisk: g.odds?.blowoutRisk ?? false,
+        isBackToBack,
+      };
+    });
+
     scheduleByTeam[slug] = {
       teamSlug: slug,
       teamName: acc.teamName,
@@ -327,6 +357,7 @@ export async function fetchExternalNbaContext(gwWindow?: GameWeekWindow | null):
       spread: firstOdds?.spread ?? null,
       impliedTeamTotal: firstItt,
       blowoutRisk: acc.odds.some((g) => g.blowoutRisk),
+      gameContexts,
       liveGames: acc.liveGames,
       completedGames: acc.completedGames,
       upcomingGames: acc.upcomingGames,

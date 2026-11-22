@@ -536,6 +536,21 @@ export function App() {
     document.documentElement.dataset.theme = settings.theme;
   }, [settings.theme]);
 
+  // Longevity auto-sync: quietly refresh stale live data (>15m old) when returning to the side panel
+  useEffect(() => {
+    const STALE_MS = 15 * 60_000;
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible") return;
+      const targetUser = (settings.username || detectedUsername || "").trim();
+      if (!targetUser || isGalleryLoading || !galleryResult) return;
+      if (Date.now() - galleryResult.fetchedAt >= STALE_MS) {
+        void loadGallery(targetUser, false, false);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [detectedUsername, galleryResult, isGalleryLoading, settings.username]);
+
   const updateSettings = useCallback(async (patch: Partial<UserSettings>) => {
     setSettings((prev) => ({
       ...prev,

@@ -2,6 +2,18 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
+## 2.7.5-exp4 (2026-11-22)
+
+Added:
+- Visual & UX Redesign: barely-see-through frosted glass top frame bar (`backdrop-filter: blur(14px)` with `prefers-reduced-transparency` fallback), tactile button hover/press micro-animations (`scale: 0.97`, compositor-only transitions, `:focus-visible` rings, `prefers-reduced-motion` safe), and compact `LineupsTab` sub-tab split (`Overview & Live | Builder | Upgrades & Schedule` for Pro; `Daily Play | Solo & Squad | Packs` for Set).
+- Visual 5-Card Lineup Previews & Range Bars (`LineupCardStrip.tsx`, `LineupRangeBar.tsx`): renders live Sorare card artwork (`pictureUrl`) with rarity frame glow and zero-CLS `aspect-[5/7]` across Open Lineups, Generated Pro Lineups, and Set Squads, paired with micro-SVG `p10-mean-p90` vs. cut-line range bars.
+- Live `rewardTiers`-driven Dollar/Essence EV & Reward Previews (`entryEvMath.ts`, `RewardPreviewStrip.tsx`): computes estimated Dollar ($) and Essence EV directly from live Sorare `rewardTiers` and closed-GW cutoffs, rendered as visual Cash/Essence tier chips inside Recommended Entry.
+- Per-Game Vegas & B2B Peak Order Statistics (`vegasMath.ts`, `externalDataClient.ts`, `lineupOptimizerMath.ts`): tracks per-game `impliedTeamTotal`, `spread`, `blowoutRisk`, and second-night `isBackToBack` inside `TeamSlateSchedule.gameContexts` and computes exact recursive Clark `E[max(X_1..X_k)]` peak multipliers.
+- Position-Aware "Who Steps Up" Injury Impact Panel (`injuryImpactMath.ts`, `InjuryImpactPanel.tsx`): ranks healthy teammates of `OUT`/`DOUBTFUL` starters weighted by exact/adjacent position match (`G`/`F`/`C`) in Pro `Upgrades & Schedule`.
+- Craft Clue EVOI Advisor (`craftAdvisorMath.ts`, `CraftTab.tsx`): recommends the "Best Clue to Use" based on Expected Value of Information (EVOI), entropy reduction, and average pool elimination %.
+- Vault "Unseal & Reseal" Profit Detector (`vaultSealingMath.ts`, `GalleryTab.tsx`): persists local baseline SP snapshots for sealed cards in `chrome.storage.local` and surfaces net SP gains against live `sealableFor` while respecting Sorare's 14-day unseal cooldown (`unsealableAt`).
+- Longevity Auto-Sync (`App.tsx`): automatically refreshes stale live gallery/schedule/injury context (>15m old) when returning to the side panel.
+
 ## 2.7.5-exp3 (2026-11-22)
 
 Added:

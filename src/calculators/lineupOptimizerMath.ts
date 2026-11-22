@@ -3,10 +3,12 @@ import { estimateSealingPoints } from "./sealingPoints";
 import {
   MIN_VIABLE_CASH_PCT,
   buildContestThresholds,
+  estimateTierRewardEv,
   evaluateContestEv,
   lineupStdDev,
   probabilityAtLeast,
 } from "./entryEvMath";
+import { computePerGamePeakMultiplier } from "./vegasMath";
 import type {
   BargainListing,
   NbaPosition,
@@ -519,7 +521,22 @@ export function evaluateCardForLineup(
   const l5 = card.l5 ?? null;
   const custom = customMap.get(normName) ?? null;
 
-  const peakMult = hasSchedule ? slatePeakMultiplier(gamesInSlate) : 1;
+  const sched = card.teamSlug ? scheduleByTeam?.[card.teamSlug] : undefined;
+  const context = slateContextAdjustments(sched);
+  const usePerGameOrderStats =
+    hasSchedule && Array.isArray(sched?.gameContexts) && sched.gameContexts.length > 0;
+  const peakMult = usePerGameOrderStats
+    ? computePerGamePeakMultiplier(sched!.gameContexts!, {
+        leagueAvgTotal: LEAGUE_AVG_TEAM_TOTAL,
+        ittElasticity: ITT_ELASTICITY,
+        b2bMultiplier: B2B_MULTIPLIER,
+        blowoutMultiplier: BLOWOUT_MULTIPLIER,
+        blowoutSpread: BLOWOUT_SPREAD,
+        cv: BASE_PLAYER_CV,
+      })
+    : hasSchedule
+      ? slatePeakMultiplier(gamesInSlate)
+      : 1;
   const avgAdjL10 = l10 !== null ? l10 * peakMult : null;
   const avgAdjL5 = l5 !== null ? l5 * peakMult : null;
 
@@ -566,12 +583,13 @@ export function evaluateCardForLineup(
 
   // A player whose team has no game in the slate cannot score.
   const noGame = hasSchedule && gamesInSlate === 0;
-  const sched = card.teamSlug ? scheduleByTeam?.[card.teamSlug] : undefined;
-  const context = slateContextAdjustments(sched);
   // No game this slate, or no NBA game at all this season (L10 is last season's): cannot score.
   const injuryAdjustedBase = noGame || isInactiveThisSeason(card) ? 0 : baseProjection * mult;
+  // When per-game order stats already folded Vegas/B2B into peakMult, avoid double-counting.
+  const appliedVegasMult = usePerGameOrderStats ? 1 : context.vegasMultiplier;
+  const appliedRestMult = usePerGameOrderStats ? 1 : context.restMultiplier;
   const effectiveScore =
-    injuryAdjustedBase * card.powerMultiplier * context.vegasMultiplier * context.restMultiplier;
+    injuryAdjustedBase * card.powerMultiplier * appliedVegasMult * appliedRestMult;
   const analytics = buildCardAnalytics({
     card,
     effectiveScore,
@@ -594,9 +612,9 @@ export function evaluateCardForLineup(
     ...analytics,
     boostSummary: {
       powerMultiplier: card.powerMultiplier,
-      slateMultiplier: hasSchedule ? slatePeakMultiplier(gamesInSlate) : 1,
-      vegasMultiplier: context.vegasMultiplier,
-      restMultiplier: context.restMultiplier,
+      slateMultiplier: peakMult,
+      vegasMultiplier: appliedVegasMult,
+      restMultiplier: appliedRestMult,
     },
     allSources: {
       sorareProjected: sorareProj,
@@ -1243,6 +1261,9 @@ export interface FormatRecommendationCandidate {
   cashPlaces?: number;
   topCashLabel?: string | null;
   rewardTiers?: LeaderboardBenchmark["rewardTiers"];
+  /** Live rewardTiers-driven expected cash ($) and Essence EV for this lineup. */
+  expectedCashUsd?: number;
+  expectedEssence?: number;
   /** Probability (%) of clearing the top-20% line. */
   top20Prob: number;
   /** Probability (%) of clearing the podium line. */
@@ -1347,6 +1368,18 @@ export function recommendBestFormat(
         )
       : 0;
     const ev = evaluateContestEv(top ? top.totalScore : null, sd, thresholds);
+    const tierEv =
+      top && bm?.rewardTiers?.length
+        ? estimateTierRewardEv({
+            mean: top.totalScore,
+            sd,
+            paidPlaces: bm.paidPlaces,
+            paidCutoffScore: thresholds.cashScore,
+            podiumScore: thresholds.podiumScore,
+            top1Score: bm.top1Score,
+            rewardTiers: bm.rewardTiers,
+          })
+        : null;
     const viable = ev.viable && top !== null && top.slots.length === 5;
     const cashCut = bm?.cashCutoffScore;
     const moneyProb =
@@ -1365,6 +1398,12 @@ export function recommendBestFormat(
       cashPlaces: bm?.cashPlaces,
       topCashLabel: bm?.topCashLabel ?? null,
       rewardTiers: bm?.rewardTiers,
+      ...(tierEv
+        ? {
+            expectedCashUsd: tierEv.expectedCashUsd,
+            expectedEssence: tierEv.expectedEssence,
+          }
+        : {}),
       expectedValueScore: ev.expectedValueScore,
       viable,
       essencePct: ev.cashProb,

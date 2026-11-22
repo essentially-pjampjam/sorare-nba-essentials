@@ -20,6 +20,17 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.5-exp4",
+    title: "v2.7.5-exp4: Glass UI, Card & Reward Previews, Sub-Tabs & EVOI",
+    items: [
+      "Redesigned the sticky top frame bar with barely-see-through frosted glass, tactile button press & hover micro-animations, and a cleaner compact Lineups sub-tab split (Overview & Live | Builder | Upgrades & Schedule for Pro; Daily Play | Solo & Squad | Packs for Set).",
+      "Added live Sorare 5-card artwork preview strips (with rarity frames) and micro-SVG p10-mean-p90 vs. cut-line range bars across Open Lineups, Generated Pro Lineups, and Set Squads.",
+      "Added live rewardTiers-driven Dollar ($) & Essence EV calculations and visual Reward Preview chips inside Recommended Entry, plus exact per-game Vegas/B2B peak order statistics across multi-game weeks.",
+      "Added Position-Aware 'Who Steps Up' Injury Impact Panel in Pro Upgrades & Schedule, Craft Clue EVOI Advisor ('Best Clue to Use') in Craft, and Vault 'Unseal & Reseal' Profit Detector (respecting the 14-day cooldown) in Gallery.",
+      "Added automatic stale-data longevity refresh (>15m) when returning to the side panel so live injuries, schedules, and artwork stay fresh on their own.",
+    ],
+  },
+  {
     version: "2.7.5-exp3",
     title: "v2.7.5-exp3: Optimizer Math, Pre-Lock Alerts & Guides Hub",
     items: [

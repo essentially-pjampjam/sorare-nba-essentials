@@ -16,7 +16,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { VaultGuide } from "../components/VaultGuide";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   evaluateStarTierShift,
   evaluateVaultVsSellRoi,
@@ -24,7 +24,12 @@ import {
   type VaultAdviceContext,
   isInactiveThisSeason,
 } from "../../calculators/lineupOptimizerMath";
-import { evaluateSealCandidates } from "../../calculators/vaultSealingMath";
+import {
+  evaluateSealCandidates,
+  evaluateUnsealResealOpportunities,
+  mergeSealedBaselineSnapshots,
+  type SealedBaselineMap,
+} from "../../calculators/vaultSealingMath";
 import {
   NBA_POSITION_LABELS,
   RARITY_META,
@@ -222,6 +227,38 @@ export function GalleryTab({
   }, [sourceCards, vaultContextBySlug]);
 
   const sealedCount = useMemo(() => sourceCards.filter((c) => c.sealed).length, [sourceCards]);
+
+  // Local baseline SP snapshots for sealed cards (persisted in chrome.storage.local)
+  const [sealedBaselines, setSealedBaselines] = useState<SealedBaselineMap>({});
+  useEffect(() => {
+    if (!gallery?.cards?.length) return;
+    let cancelled = false;
+    const key = `jamassist_sealed_sp_baselines_v1:${gallery.username || "default"}`;
+    void (async () => {
+      try {
+        const raw = await chrome.storage.local.get(key);
+        const existing = (raw?.[key] as SealedBaselineMap | undefined) ?? {};
+        const merged = mergeSealedBaselineSnapshots(existing, gallery.cards);
+        if (!cancelled) setSealedBaselines(merged);
+        if (JSON.stringify(existing) !== JSON.stringify(merged)) {
+          await chrome.storage.local.set({ [key]: merged });
+        }
+      } catch {
+        // Fallback for non-extension test environments
+        if (!cancelled) {
+          setSealedBaselines((prev) => mergeSealedBaselineSnapshots(prev, gallery.cards));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [gallery]);
+
+  const unsealResealOpps = useMemo(() => {
+    if (!gallery) return [];
+    return evaluateUnsealResealOpportunities(gallery.cards, sealedBaselines);
+  }, [gallery, sealedBaselines]);
 
   const filteredAndSorted = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -736,11 +773,61 @@ export function GalleryTab({
 
       {/* Sorare has no Common Vault: the sealing guide is for Pro cards only. */}
       {gallery && poolMode === "pro" && (
-        <div id="sec-g-vault">
+        <div id="sec-g-vault" className="space-y-2">
         <VaultGuide
           cards={gallery.cards}
           candidates={gallery.cards.filter((c) => !c.sealed && isSealCandidate(c, vaultContext(c)))}
         />
+        {unsealResealOpps.length > 0 && (
+          <div className="rounded-2xl border border-violet-400/25 bg-[#111726] p-2.5 text-[11px]">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-semibold text-violet-200">
+                Vault Unseal &amp; Reseal Profit Detector
+              </span>
+              <span className="jam-chip jam-chip-seal">
+                {unsealResealOpps.filter((o) => o.netSpGain > 0).length} SP gain
+              </span>
+            </div>
+            <p className="mt-0.5 text-[10px] text-slate-400">
+              Tracks local baseline SP snapshots against live sealableFor SP while respecting Sorare&apos;s 14-day cooldown (max 1 unseal / 14d per scarcity).
+            </p>
+            <div className="mt-1.5 space-y-1">
+              {unsealResealOpps.slice(0, 5).map((opp) => (
+                <div
+                  key={opp.cardSlug}
+                  className="flex items-center justify-between gap-2 rounded-lg border border-white/6 bg-[#0b101b] px-2 py-1 text-[10.5px]"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate font-semibold text-slate-100">
+                      {opp.playerName}{" "}
+                      <span className="text-[9.5px] font-normal text-slate-400">
+                        ({opp.rarity.replace("_", " ")})
+                      </span>
+                    </div>
+                    <div className="truncate text-[9.5px] text-slate-400">
+                      {opp.baselineSp} SP -&gt; {opp.liveSp} SP
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right tabular-nums">
+                    {opp.status === "PROFIT_READY" ? (
+                      <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300">
+                        +{opp.netSpGain} SP · Ready
+                      </span>
+                    ) : opp.status === "PROFIT_COOLDOWN" ? (
+                      <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold text-amber-200">
+                        +{opp.netSpGain} SP · {opp.cooldownDaysLeft}d CD
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-slate-400">
+                        {opp.netSpGain >= 0 ? `+${opp.netSpGain}` : opp.netSpGain} SP
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         </div>
       )}
 

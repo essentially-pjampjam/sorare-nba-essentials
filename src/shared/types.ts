@@ -422,6 +422,10 @@ export interface LeaderboardRewardTier {
   toRank: number;
   kind: RewardTierKind;
   label: string;
+  /** Numeric USD cash amount for this rank tier (when kind === "cash"). */
+  cashUsd?: number;
+  /** Numeric Essence quantity for this rank tier (when kind === "essence"). */
+  essenceQty?: number;
 }
 
 /** One NBA game on the daily slate (ESPN scoreboard, team slugs match Sorare's). */
@@ -486,6 +490,15 @@ export interface So5FixtureSummary {
   aasmState: string;
 }
 
+export interface TeamGameContext {
+  date: string;
+  matchup: string;
+  impliedTeamTotal: number | null;
+  spread: number | null;
+  blowoutRisk: boolean;
+  isBackToBack: boolean;
+}
+
 export interface TeamSlateSchedule {
   teamSlug: string;
   teamName: string;
@@ -509,6 +522,8 @@ export interface TeamSlateSchedule {
   impliedTeamTotal?: number | null;
   /** |spread| large enough that starters risk reduced 4th-quarter minutes. */
   blowoutRisk?: boolean;
+  /** Per-game Vegas & B2B context for exact peak-of-GW order statistics. */
+  gameContexts?: TeamGameContext[];
   upcomingGames?: number;
   liveClockLabel?: string | null;
 }

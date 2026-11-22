@@ -23,13 +23,17 @@ import {
   Wand2,
   Zap,
 } from "lucide-react";
-import { JumpBar } from "../components/JumpBar";
 import { StatusStrip } from "../components/StatusStrip";
 import { DailyPlayHub } from "../components/DailyPlayHub";
 import { SquadActivityCard } from "../components/SquadActivityCard";
 import { PackAdvisorCard } from "../components/PackAdvisorCard";
 import { ProProgressCard } from "../components/ProProgressCard";
 import { GoButton } from "../components/GoButton";
+import { LineupCardStrip } from "../components/LineupCardStrip";
+import { LineupRangeBar } from "../components/LineupRangeBar";
+import { RewardPreviewStrip } from "../components/RewardPreviewStrip";
+import { InjuryImpactPanel } from "../components/InjuryImpactPanel";
+import { evaluateInjuryBeneficiaries } from "../../calculators/injuryImpactMath";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildSetTeams,
@@ -276,6 +280,40 @@ export function LineupsTab({
     );
   }, [gallery]);
 
+  const [proSubTab, setProSubTab] = useState<"overview" | "builder" | "upgrades">(() => {
+    try {
+      const saved = localStorage.getItem("jamassist_lineups_pro_subtab");
+      return saved === "builder" || saved === "upgrades" ? saved : "overview";
+    } catch {
+      return "overview";
+    }
+  });
+  const selectProSubTab = (next: "overview" | "builder" | "upgrades") => {
+    setProSubTab(next);
+    try {
+      localStorage.setItem("jamassist_lineups_pro_subtab", next);
+    } catch {
+      // ignore storage failure
+    }
+  };
+
+  const [setSubTab, setSetSubTab] = useState<"daily" | "solo_squad" | "packs">(() => {
+    try {
+      const saved = localStorage.getItem("jamassist_lineups_set_subtab");
+      return saved === "solo_squad" || saved === "packs" ? saved : "daily";
+    } catch {
+      return "daily";
+    }
+  });
+  const selectSetSubTab = (next: "daily" | "solo_squad" | "packs") => {
+    setSetSubTab(next);
+    try {
+      localStorage.setItem("jamassist_lineups_set_subtab", next);
+    } catch {
+      // ignore storage failure
+    }
+  };
+
   const submittedCardsCount = useMemo(() => {
     if (!gallery) return 0;
     return gallery.cards.filter(
@@ -362,6 +400,13 @@ export function LineupsTab({
 
   // Live Daily Picker slate (today's games before the next 07:00 UTC reset + their rosters).
   const [dailyPool, setDailyPool] = useState<DailyPickerPool | null>(null);
+  const injuryImpacts = useMemo(() => {
+    if (!gallery) return [];
+    return evaluateInjuryBeneficiaries(gallery.cards, gallery.injuriesByName, {
+      rosterCards: dailyPool?.rosterCards,
+      gamesPerTeam: gallery.gamesPerTeam,
+    });
+  }, [dailyPool?.rosterCards, gallery]);
   const [dailyPoolLoading, setDailyPoolLoading] = useState(false);
   const loadDailyPool = useCallback((refresh: boolean) => {
     setDailyPoolLoading(true);
@@ -790,39 +835,77 @@ export function LineupsTab({
       </div>
       )}
 
-      <JumpBar
-        items={
-          arenaMode === "pro"
-            ? [
-                { id: "sec-progress", label: "Progress" },
-                { id: "sec-swaps", label: "Upgrade swaps" },
-                { id: "sec-entry", label: "Best contest" },
-                { id: "sec-pro-daily", label: "Daily Play" },
-                { id: "sec-builder", label: "Lineup builder" },
-                { id: "sec-market", label: "Market buys" },
-                { id: "sec-schedule", label: "Schedule" },
-                { id: "sec-guides", label: "Guides" },
-              ]
-            : [
-                { id: "sec-set-packs", label: "Packs" },
-                { id: "sec-set-squad", label: "Squad" },
-                { id: "sec-set-builder", label: "Team builder" },
-                { id: "sec-set-daily", label: "Daily Play" },
-                { id: "sec-set-guide", label: "Guide" },
-              ]
-        }
-      />
+      {/* Focused Sub-Tabs (reduces cognitive overload by splitting Overview, Builder, and Upgrades) */}
+      {arenaMode === "pro" ? (
+        <div
+          role="tablist"
+          aria-label="Pro lineup views"
+          className="jam-subtabs"
+        >
+          {(
+            [
+              { id: "overview", label: "Overview & Live" },
+              { id: "builder", label: "Builder" },
+              { id: "upgrades", label: "Upgrades & Schedule" },
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={proSubTab === t.id}
+              onClick={() => selectProSubTab(t.id)}
+              className="jam-subtab cursor-pointer"
+            >
+              {t.label}
+              {t.id === "upgrades" && injuryImpacts.length > 0 && (
+                <span className="rounded-full bg-rose-500/25 px-1.5 py-0.2 text-[9px] font-bold text-rose-200">
+                  {injuryImpacts.length}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div
+          role="tablist"
+          aria-label="Set lineup views"
+          className="jam-subtabs"
+        >
+          {(
+            [
+              { id: "daily", label: "Daily Play" },
+              { id: "solo_squad", label: "Solo & Squad" },
+              { id: "packs", label: "Packs" },
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={setSubTab === t.id}
+              onClick={() => selectSetSubTab(t.id)}
+              className="jam-subtab cursor-pointer"
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {arenaMode === "pro" && (
-        <>
+        <div
+          role="tabpanel"
+          aria-label="Overview & Live"
+          hidden={proSubTab !== "overview"}
+          className={proSubTab === "overview" ? "jam-panel-enter space-y-3" : "hidden"}
+        >
           <div id="sec-progress">
             <ProProgressCard gallery={gallery} />
           </div>
-        </>
-      )}
 
       {/* Current Submitted/Open Lineups & Upgrade Swaps */}
-      {arenaMode === "pro" && gallery && (
+      {gallery && (
         <details id="sec-swaps"
           open={currentLineupComparisons.length > 0}
           className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]"
@@ -989,6 +1072,32 @@ export function LineupsTab({
                       )}
                     </div>
                   </div>
+
+                  {/* Visual 5-Card Artwork Preview Strip & p10-mean-p90 Range Bar */}
+                  {submittedCards.length > 0 && (
+                    <div className="mt-2 space-y-1.5">
+                      <LineupCardStrip
+                        compact
+                        cards={submittedCards.slice(0, 5).map((gc) => ({
+                          key: gc.slug,
+                          playerName: gc.playerName,
+                          teamSlug: gc.teamSlug,
+                          rarity: gc.rarity,
+                          pictureUrl: gc.pictureUrl,
+                          starCost: gc.starCost,
+                          projectedPts: gc.sorareClassicProjected ?? gc.l10,
+                          isCaptain: cmp.entry.captainCardSlug === gc.slug,
+                        }))}
+                      />
+                      <LineupRangeBar
+                        p10={cmp.overlaySummary?.p10Floor ?? Math.max(0, cmp.currentProjected * 0.78)}
+                        mean={cmp.currentProjected}
+                        p90={cmp.overlaySummary?.p90Ceiling ?? cmp.currentProjected * 1.24}
+                        cutLine={essTarget}
+                        label={cmp.entry.leaderboardName}
+                      />
+                    </div>
+                  )}
                   <div className="mt-1 flex items-center gap-2 text-[9.5px] text-slate-400">
                     <div className="h-1 flex-1 overflow-hidden rounded-full bg-black/50">
                       <div
@@ -1155,7 +1264,7 @@ export function LineupsTab({
       )}
 
       {/* Optimal Entry Disclosure + Recommended Competition Priority */}
-      {arenaMode === "pro" && formatRec && (
+      {formatRec && (
         <div id="sec-entry" className="rounded-2xl border border-white/8 bg-[#101829] p-3">
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-start gap-2">
@@ -1245,23 +1354,25 @@ export function LineupsTab({
                 </tbody>
               </table>
               {(() => {
-                const tiers = formatRec.candidates[0]?.rewardTiers ?? [];
-                if (tiers.length === 0) return null;
-                const kinds: Array<{ kind: "cash" | "essence" | "xp"; name: string }> = [
-                  { kind: "cash", name: "Cash" },
-                  { kind: "essence", name: "Essence" },
-                  { kind: "xp", name: "XP" },
-                ];
-                const parts = kinds
-                  .map(({ kind, name }) => {
-                    const t = tiers.filter((x) => x.kind === kind);
-                    if (t.length === 0) return null;
-                    return `${name} #${t[0].fromRank}-${t[t.length - 1].toRank} (${t[0].label}${t.length > 1 ? ` to ${t[t.length - 1].label}` : ""})`;
-                  })
-                  .filter(Boolean);
+                const topCand = formatRec.candidates[0];
+                const tiers = topCand?.rewardTiers ?? [];
+                if (
+                  tiers.length === 0 &&
+                  !topCand?.expectedCashUsd &&
+                  !topCand?.expectedEssence
+                ) {
+                  return null;
+                }
                 return (
-                  <div className="mt-1 text-[9.5px] text-slate-400">
-                    Rewards ({formatRec.candidates[0].label}, live from Sorare, last GW): {parts.join(" • ")}
+                  <div className="mt-2 space-y-1 border-t border-white/6 pt-2">
+                    <div className="text-[9.5px] font-medium text-slate-400">
+                      Live Reward Preview ({topCand.label}, last GW):
+                    </div>
+                    <RewardPreviewStrip
+                      tiers={tiers}
+                      expectedCashUsd={topCand.expectedCashUsd}
+                      expectedEssence={topCand.expectedEssence}
+                    />
                   </div>
                 );
               })()}
@@ -1271,18 +1382,31 @@ export function LineupsTab({
       )}
 
       {/* Pro Daily Play pickers */}
-      {arenaMode === "pro" && (
-        <div id="sec-pro-daily"><DailyPlayHub gallery={gallery} pool={dailyPool} poolLoading={dailyPoolLoading} onRefreshPool={() => loadDailyPool(true)} missions={["pro_daily", "double_double", "rebounds"]} /></div>
+      <div id="sec-pro-daily"><DailyPlayHub gallery={gallery} pool={dailyPool} poolLoading={dailyPoolLoading} onRefreshPool={() => loadDailyPool(true)} missions={["pro_daily", "double_double", "rebounds"]} /></div>
+        </div>
       )}
 
       {/* SET / COMMON MODE WORKSPACE */}
       {arenaMode === "set_common" && (
         <div className="space-y-3">
           {/* Set packs: Daily Pack, Bronze+, Live Today, 3★+ odds */}
-          <div id="sec-set-packs"><PackAdvisorCard commonEssence={commonEssence} /></div>
+          <div
+            role="tabpanel"
+            aria-label="Packs"
+            hidden={setSubTab !== "packs"}
+            className={setSubTab === "packs" ? "jam-panel-enter" : "hidden"}
+          >
+            <div id="sec-set-packs"><PackAdvisorCard commonEssence={commonEssence} /></div>
+          </div>
 
-          {/* Set Squad: who has a team in the live stage */}
-          <div id="sec-set-squad"><SquadActivityCard mySlug={gallery?.username ?? null} /></div>
+          {/* Set Squad & Solo Team Builder */}
+          <div
+            role="tabpanel"
+            aria-label="Solo & Squad"
+            hidden={setSubTab !== "solo_squad"}
+            className={setSubTab === "solo_squad" ? "jam-panel-enter space-y-3" : "hidden"}
+          >
+            <div id="sec-set-squad"><SquadActivityCard mySlug={gallery?.username ?? null} /></div>
 
           {/* Configurable N Teams Auto-Builder for Solo / Squad */}
           <div id="sec-set-builder" className="space-y-2.5 rounded-2xl border border-white/8 bg-[#111726] p-3">
@@ -1504,21 +1628,38 @@ export function LineupsTab({
                         </button>
                         <GoButton url={buildSetPlayUrl("squad")} title="Open Set Squad on Sorare" />
                       </div>
-                      <div className="text-[11px] text-slate-300">
-                        {names.join(" • ")}
-                      </div>
+                      <LineupCardStrip
+                        compact
+                        cards={team.slots.map((s) => ({
+                          key: s.evaluated.card.slug,
+                          playerName: s.evaluated.card.playerName,
+                          teamSlug: s.evaluated.card.teamSlug,
+                          rarity: s.evaluated.card.rarity,
+                          pictureUrl: s.evaluated.card.pictureUrl,
+                          starCost: s.evaluated.card.starCost,
+                          projectedPts: s.slotScore,
+                          isCaptain: s.isCaptainOrMvp,
+                        }))}
+                      />
                     </div>
                   );
                 })}
               </div>
             )}
           </div>
+          </div>
 
           {/* Daily Play: Set Daily Picker (best / safe / risk picks, owned vs not owned) */}
-          <div id="sec-set-daily"><DailyPlayHub gallery={gallery} pool={dailyPool} poolLoading={dailyPoolLoading} onRefreshPool={() => loadDailyPool(true)} missions={["set_daily"]} /></div>
+          <div
+            role="tabpanel"
+            aria-label="Daily Play"
+            hidden={setSubTab !== "daily"}
+            className={setSubTab === "daily" ? "jam-panel-enter space-y-3" : "hidden"}
+          >
+              <div id="sec-set-daily"><DailyPlayHub gallery={gallery} pool={dailyPool} poolLoading={dailyPoolLoading} onRefreshPool={() => loadDailyPool(true)} missions={["set_daily"]} /></div>
 
-          {/* Set Quests & Arcade Guide */}
-          <details id="sec-set-guide" className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
+              {/* Set Quests & Arcade Guide */}
+              <details id="sec-set-guide" className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
             <summary className="flex w-full items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
               <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
                 <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-emerald-400" />
@@ -1550,12 +1691,19 @@ export function LineupsTab({
               </div>
             </div>
           </details>
+          </div>
         </div>
       )}
 
-      {/* PRO MODE: Format & Projection Reference Controls */}
+      {/* PRO MODE: Format & Projection Reference Controls (Builder & Upgrades Sub-Tabs) */}
       {arenaMode === "pro" && (
         <>
+          <div
+            role="tabpanel"
+            aria-label="Builder"
+            hidden={proSubTab !== "builder"}
+            className={proSubTab === "builder" ? "jam-panel-enter space-y-3" : "hidden"}
+          >
           <div id="sec-builder" className="space-y-2 rounded-2xl border border-white/8 bg-[#111726] p-3">
         <div className="grid grid-cols-3 gap-1 sm:grid-cols-5">
           {FORMAT_OPTIONS.map((opt) => {
@@ -1997,6 +2145,32 @@ export function LineupsTab({
                 </div>
               </div>
 
+              {/* Visual 5-Card Artwork Preview Strip + p10-mean-p90 Range Bar */}
+              <div className="mb-2.5 space-y-2">
+                <LineupCardStrip
+                  cards={lineup.slots.map((slot) => ({
+                    key: slot.evaluated.card.slug,
+                    playerName: slot.evaluated.card.playerName,
+                    teamSlug: slot.evaluated.card.teamSlug,
+                    rarity: slot.evaluated.card.rarity,
+                    pictureUrl: slot.evaluated.card.pictureUrl,
+                    starCost: slot.evaluated.card.starCost,
+                    projectedPts: slot.slotScore,
+                    badge: slot.isCaptainOrMvp ? (lineup.format === "daily_120_mvp" ? "MVP" : "C") : null,
+                    isCaptain: slot.isCaptainOrMvp,
+                  }))}
+                />
+                {typeof lineup.stdDev === "number" && lineup.stdDev > 0 && (
+                  <LineupRangeBar
+                    p10={Math.max(0, lineup.totalScore - 1.2816 * lineup.stdDev)}
+                    mean={lineup.totalScore}
+                    p90={lineup.totalScore + 1.2816 * lineup.stdDev}
+                    cutLine={lineup.odds.essenceTarget}
+                    label={`Lineup #${shownIdx + 1}`}
+                  />
+                )}
+              </div>
+
               {/* Estimated Win Odds Strip */}
               <div className="mb-2.5 grid grid-cols-3 gap-1.5 text-center text-[10px]">
                 <div className="rounded-lg border border-white/6 bg-[#0b101b] px-1 py-1">
@@ -2221,6 +2395,16 @@ export function LineupsTab({
         })
       )}
       </div>
+          </div>
+
+      {/* Position-Aware "Who Steps Up" Injury Impact Panel (Upgrades Sub-Tab) */}
+      <div
+        role="tabpanel"
+        aria-label="Upgrades & Schedule"
+        hidden={proSubTab !== "upgrades"}
+        className={proSubTab === "upgrades" ? "jam-panel-enter space-y-3" : "hidden"}
+      >
+          <InjuryImpactPanel impacts={injuryImpacts} />
 
       {/* Dual Lineup Market Buy Advisor (Out-of-Season 1-Slot Classic vs. In-Season) */}
       <details id="sec-market"
@@ -2478,7 +2662,15 @@ export function LineupsTab({
               )}
         </div>
       </details>
-      {/* Multi-Competition Portfolio Optimizer (Joint 3-Lineup Slate) */}
+      </div>
+
+      {/* Multi-Competition Portfolio Optimizer & Hybrid Budget (Builder Sub-Tab) */}
+      <div
+        role="tabpanel"
+        aria-label="Portfolio & Budget"
+        hidden={proSubTab !== "builder"}
+        className={proSubTab === "builder" ? "jam-panel-enter space-y-3" : "hidden"}
+      >
       {portfolio && portfolio.lineups.length > 0 && (
         <details className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
           <summary className="flex w-full items-center justify-between px-3 py-2.5 text-left text-xs hover:bg-white/[0.03]">
@@ -2768,11 +2960,13 @@ export function LineupsTab({
           )}
         </div>
       </details>
+      </div>
         </>
       )}
 
       {/* 4-Day Gameweek Schedule & Matchups */}
       {arenaMode === "pro" && sortedSchedule.length > 0 && (
+        <div hidden={proSubTab !== "upgrades"} className={proSubTab === "upgrades" ? "jam-panel-enter" : "hidden"}>
         <details id="sec-schedule" className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
           <summary className="flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
             <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
@@ -2841,9 +3035,14 @@ export function LineupsTab({
             ))}
           </div>
         </details>
+        </div>
       )}
 
       {/* Collapsible Boosting & Multiplier Guide (2026-27 Verified Rules) */}
+      <div
+        hidden={arenaMode === "pro" && proSubTab !== "upgrades"}
+        className={arenaMode !== "pro" || proSubTab === "upgrades" ? "space-y-3" : "hidden"}
+      >
       <details id="sec-guides" className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
         <summary className="flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
           <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
@@ -2923,6 +3122,7 @@ export function LineupsTab({
           ))}
         </div>
       </details>
+      </div>
     </div>
   );
 }

@@ -114,3 +114,114 @@ export function evaluateSealCandidates(
 
   return evaluations.sort((a, b) => b.score - a.score || b.sealingPoints - a.sealingPoints);
 }
+
+export interface SealedBaselineEntry {
+  sp: number;
+  recordedAt: number;
+}
+
+export type SealedBaselineMap = Record<string, SealedBaselineEntry>;
+
+export interface UnsealResealOpportunity {
+  cardSlug: string;
+  playerName: string;
+  rarity: GalleryCard["rarity"];
+  baselineSp: number;
+  liveSp: number;
+  netSpGain: number;
+  canUnsealNow: boolean;
+  cooldownDaysLeft: number;
+  unsealableAt: string | null;
+  status: "PROFIT_READY" | "PROFIT_COOLDOWN" | "FLAT_OR_LOSS";
+  reason: string;
+}
+
+/**
+ * Pure helper that updates local baseline SP snapshots for sealed cards:
+ * - When a card is first seen sealed with a live `sealingPoints` value, records it as baseline.
+ * - Drops cards that are no longer sealed so re-sealing starts fresh next time.
+ */
+export function mergeSealedBaselineSnapshots(
+  existing: SealedBaselineMap,
+  cards: GalleryCard[],
+  nowMs: number = Date.now(),
+): SealedBaselineMap {
+  const next: SealedBaselineMap = {};
+  const sealedSlugs = new Set<string>();
+  for (const c of cards) {
+    if (!c.sealed) continue;
+    sealedSlugs.add(c.slug);
+    const liveSp = typeof c.sealingPoints === "number" && c.sealingPoints > 0 ? c.sealingPoints : null;
+    if (existing[c.slug]) {
+      next[c.slug] = existing[c.slug];
+    } else if (liveSp !== null) {
+      next[c.slug] = { sp: liveSp, recordedAt: nowMs };
+    }
+  }
+  // Keep any existing entries for cards not in the current partial list? No, gallery holds all cards for the user.
+  for (const [slug, entry] of Object.entries(existing)) {
+    if (sealedSlugs.has(slug) && !next[slug]) {
+      next[slug] = entry;
+    }
+  }
+  return next;
+}
+
+/**
+ * Vault "Unseal & Reseal" Profit Detector:
+ * Compares each sealed card's recorded baseline SP against its live `sealableFor` SP
+ * and respects Sorare's `unsealableAt` 14-day cooldown per scarcity.
+ */
+export function evaluateUnsealResealOpportunities(
+  cards: GalleryCard[],
+  baselines: SealedBaselineMap,
+  nowMs: number = Date.now(),
+): UnsealResealOpportunity[] {
+  const out: UnsealResealOpportunity[] = [];
+  for (const c of cards) {
+    if (!c.sealed || !SEALABLE_RARITIES.has(c.rarity)) continue;
+    const liveSp = typeof c.sealingPoints === "number" && c.sealingPoints > 0 ? c.sealingPoints : 0;
+    const base = baselines[c.slug];
+    if (!base || liveSp <= 0) continue;
+
+    const netSpGain = liveSp - base.sp;
+    const unsealMs = c.unsealableAt ? Date.parse(c.unsealableAt) : NaN;
+    const canUnsealNow = !Number.isFinite(unsealMs) || unsealMs <= nowMs;
+    const cooldownDaysLeft = canUnsealNow
+      ? 0
+      : Math.max(1, Math.ceil((unsealMs - nowMs) / 86_400_000));
+
+    let status: UnsealResealOpportunity["status"] = "FLAT_OR_LOSS";
+    if (netSpGain > 0) {
+      status = canUnsealNow ? "PROFIT_READY" : "PROFIT_COOLDOWN";
+    }
+
+    const reason =
+      status === "PROFIT_READY"
+        ? `+${netSpGain} SP gain (${base.sp} -> ${liveSp} SP), ready to unseal & reseal (uses 14d ${c.rarity.replace("_", " ")} cooldown).`
+        : status === "PROFIT_COOLDOWN"
+          ? `+${netSpGain} SP gain (${base.sp} -> ${liveSp} SP), unsealable in ${cooldownDaysLeft}d.`
+          : `No SP gain (${base.sp} -> ${liveSp} SP): keep sealed.`;
+
+    out.push({
+      cardSlug: c.slug,
+      playerName: c.playerName,
+      rarity: c.rarity,
+      baselineSp: base.sp,
+      liveSp,
+      netSpGain,
+      canUnsealNow,
+      cooldownDaysLeft,
+      unsealableAt: c.unsealableAt ?? null,
+      status,
+      reason,
+    });
+  }
+
+  return out.sort((a, b) => {
+    const rank = (s: UnsealResealOpportunity["status"]) =>
+      s === "PROFIT_READY" ? 0 : s === "PROFIT_COOLDOWN" ? 1 : 2;
+    if (rank(a.status) !== rank(b.status)) return rank(a.status) - rank(b.status);
+    return b.netSpGain - a.netSpGain;
+  });
+}
