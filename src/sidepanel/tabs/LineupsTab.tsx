@@ -47,6 +47,7 @@ import {
   generateTopLineups,
   analyzeFocusStrength,
   getCompetitionEntryLimit,
+  normalizePlayerName,
   optimizeMultiCompetitionPortfolio,
   recommendBestFormat,
   resolveSyncedLineupCardSlugs,
@@ -105,6 +106,8 @@ interface LineupsTabProps {
   /** Global Set | Pro switch (top bar). When set, the tab's own switch is hidden. */
   mode?: "pro" | "set_common";
   onModeChange?: (mode: "pro" | "set_common") => void;
+  requestedSetSubTab?: { tab: "daily" | "solo_squad" | "packs"; seq: number } | null;
+  onConsumeRequestedSetSubTab?: () => void;
   commonEssence?: number;
   initialFormat?: LineupFormat;
   onToggleCutoffReminder?: (enabled: boolean) => void;
@@ -206,6 +209,8 @@ export function LineupsTab({
   initialArenaMode = "pro",
   mode,
   onModeChange,
+  requestedSetSubTab,
+  onConsumeRequestedSetSubTab,
   commonEssence,
   initialFormat = "contender_11",
   onToggleCutoffReminder,
@@ -230,6 +235,21 @@ export function LineupsTab({
   const [disjointLineups, setDisjointLineups] = useState(true);
   const [excludeSubmittedCards, setExcludeSubmittedCards] = useState(false);
   const [excludedCardSlugs, setExcludedCardSlugs] = useState<string[]>([]);
+  const [lockedCardSlugs, setLockedCardSlugs] = useState<string[]>([]);
+  const toggleLockCard = (slug: string, playerSlug?: string) => {
+    setLockedCardSlugs((prev) => {
+      if (prev.includes(slug)) return prev.filter((s) => s !== slug);
+      const withoutSamePlayer = playerSlug
+        ? prev.filter((s) => {
+            const existing = gallery?.cards.find((card) => card.slug === s);
+            return existing?.playerSlug !== playerSlug;
+          })
+        : prev;
+      if (withoutSamePlayer.length >= 5) return prev;
+      return [...withoutSamePlayer, slug];
+    });
+    setExcludedCardSlugs((prev) => prev.filter((s) => s !== slug));
+  };
   const [expandedSlotSlug, setExpandedSlotSlug] = useState<string | null>(null);
   const [setBuildMode, setSetBuildMode] = useState<SetBuildMode>("solo");
   const [setTeamCount, setSetTeamCount] = useState<number>(4);
@@ -313,6 +333,12 @@ export function LineupsTab({
       // ignore storage failure
     }
   };
+  useEffect(() => {
+    if (requestedSetSubTab) {
+      selectSetSubTab(requestedSetSubTab.tab);
+      onConsumeRequestedSetSubTab?.();
+    }
+  }, [requestedSetSubTab, onConsumeRequestedSetSubTab]);
 
   const submittedCardsCount = useMemo(() => {
     if (!gallery) return 0;
@@ -509,6 +535,7 @@ export function LineupsTab({
       ageFilter,
       excludeSubmittedCards,
       excludedCardSlugs: effectiveExcludedCardSlugs,
+      lockedCardSlugs,
       maxLineups: entryLimit,
       captainBonusPct: 0,
       benchmarks: gallery.leaderboardBenchmarks,
@@ -528,6 +555,7 @@ export function LineupsTab({
     format,
     gallery,
     lineupStrategy,
+    lockedCardSlugs,
     minInSeasonCards,
     projectionSource,
     rarityScope,
@@ -1382,7 +1410,7 @@ export function LineupsTab({
       )}
 
       {/* Pro Daily Play pickers */}
-      <div id="sec-pro-daily"><DailyPlayHub gallery={gallery} pool={dailyPool} poolLoading={dailyPoolLoading} onRefreshPool={() => loadDailyPool(true)} missions={["pro_daily", "double_double", "rebounds"]} /></div>
+      <div id="sec-pro-daily"><DailyPlayHub gallery={gallery} pool={dailyPool} poolLoading={dailyPoolLoading} onRefreshPool={() => loadDailyPool(true)} missions={["pro_daily", "double_double", "rebounds", "playmaker"]} /></div>
         </div>
       )}
 
@@ -1549,17 +1577,34 @@ export function LineupsTab({
                           <GoButton url={buildSetPlayUrl("arcade")} title="Open Set Solo play on Sorare" />
                         </span>
                       </div>
-                      <div className="text-[11px] text-slate-300">
-                        {lu.slots
-                          .map((sl) => {
-                            const t = sl.evaluated.card.teamSlug;
-                            const isToday = !dailyPool || (t !== null && dailyPool.window.teamSlugs.includes(t));
-                            const w = soloTiming === "today_first" && !isToday ? SET_SOLO_LATER_WEIGHT : 1;
-                            return `${sl.evaluated.card.playerName} ${(sl.slotScore / w).toFixed(0)}${
-                              soloTiming !== "today_only" ? (isToday ? " (today)" : " (tmrw)") : ""
-                            }`;
-                          })
-                          .join(" • ")}
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-300">
+                        {lu.slots.map((sl, idx) => {
+                          const t = sl.evaluated.card.teamSlug;
+                          const isToday = !dailyPool || (t !== null && dailyPool.window.teamSlugs.includes(t));
+                          const w = soloTiming === "today_first" && !isToday ? SET_SOLO_LATER_WEIGHT : 1;
+                          const avgMin = dailyPool?.statsByName?.[normalizePlayerName(sl.evaluated.card.playerName)]?.avgMinutes;
+                          return (
+                            <span key={sl.evaluated.card.slug} className="inline-flex items-center gap-1">
+                              {idx > 0 && <span className="text-slate-600">•</span>}
+                              <span>
+                                {sl.evaluated.card.playerName} {(sl.slotScore / w).toFixed(0)}
+                                {soloTiming !== "today_only" ? (isToday ? " (today)" : " (tmrw)") : ""}
+                              </span>
+                              {typeof avgMin === "number" && avgMin > 0 && (
+                                <span
+                                  className={
+                                    avgMin < 20
+                                      ? "rounded border border-amber-400/35 bg-amber-500/15 px-1 text-[9px] font-semibold text-amber-200"
+                                      : "rounded bg-white/8 px-1 text-[9px] font-medium text-slate-300"
+                                  }
+                                  title={avgMin < 20 ? `Bench role (${Math.round(avgMin)} min/game)` : `Season average ${Math.round(avgMin)} min/game`}
+                                >
+                                  {avgMin < 20 ? "Bench (<20m)" : `${Math.round(avgMin)}m`}
+                                </span>
+                              )}
+                            </span>
+                          );
+                        })}
                       </div>
                       {soloTiming !== "today_only" && (
                         <div className="mt-0.5 flex flex-wrap gap-x-2 text-[9.5px] text-sky-300">
@@ -1638,6 +1683,7 @@ export function LineupsTab({
                           pictureUrl: s.evaluated.card.pictureUrl,
                           starCost: s.evaluated.card.starCost,
                           projectedPts: s.slotScore,
+                          avgMinutes: dailyPool?.statsByName?.[normalizePlayerName(s.evaluated.card.playerName)]?.avgMinutes ?? null,
                           isCaptain: s.isCaptainOrMvp,
                         }))}
                       />
@@ -1880,6 +1926,17 @@ export function LineupsTab({
                 Skip Locked ({submittedCardsCount})
               </button>
             )}
+            {lockedCardSlugs.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setLockedCardSlugs([])}
+                className="inline-flex items-center gap-1 rounded-lg border border-sky-400/40 bg-sky-500/15 px-2 py-0.5 text-sky-200 hover:bg-sky-500/25"
+                title="Clear all manually locked (must-start) cards"
+              >
+                <Lock className="h-2.5 w-2.5" />
+                Reset ({lockedCardSlugs.length} locked)
+              </button>
+            )}
             {excludedCardSlugs.length > 0 && (
               <button
                 type="button"
@@ -2058,9 +2115,28 @@ export function LineupsTab({
       )}
       {built && built.lineups.length === 0 ? (
         <div className="rounded-xl border border-white/8 bg-[#111726] p-4 text-center text-xs text-slate-400">
-          Not enough eligible cards ({built.evaluatedPool.length} available) to
-          form a 5-card lineup under current filters. Try switching to{" "}
-          <strong>All Rarities</strong> or <strong>Uncapped</strong>.
+          {lockedCardSlugs.length > 0 ? (
+            <div className="space-y-2">
+              <div>
+                No valid 5-card lineup can fit your {lockedCardSlugs.length} locked must-start card
+                {lockedCardSlugs.length > 1 ? "s" : ""} under the current star, team, or season rules.
+              </div>
+              <button
+                type="button"
+                onClick={() => setLockedCardSlugs([])}
+                className="inline-flex items-center gap-1 rounded-lg border border-sky-400/40 bg-sky-500/15 px-2.5 py-1 text-[11px] font-semibold text-sky-200 hover:bg-sky-500/25"
+              >
+                <Lock className="h-3 w-3" />
+                Clear {lockedCardSlugs.length} locked card{lockedCardSlugs.length > 1 ? "s" : ""}
+              </button>
+            </div>
+          ) : (
+            <>
+              Not enough eligible cards ({built.evaluatedPool.length} available) to
+              form a 5-card lineup under current filters. Try switching to{" "}
+              <strong>All Rarities</strong> or <strong>Uncapped</strong>.
+            </>
+          )}
         </div>
       ) : (
         shownLineups.map((lineup, shownIdx) => {
@@ -2234,6 +2310,8 @@ export function LineupsTab({
                         gallery?.scheduleByTeam?.[c.teamSlug]?.difficultyTag
                       : undefined;
                   const isSlotOpen = expandedSlotSlug === `${lineup.rank}:${c.slug}`;
+                  const isLockedCard = lockedCardSlugs.includes(c.slug);
+                  const avgMinutes = dailyPool?.statsByName?.[normalizePlayerName(c.playerName)]?.avgMinutes;
 
                   return (
                     <PlayerCardRow
@@ -2255,6 +2333,28 @@ export function LineupsTab({
                       }
                       statusBadge={
                         <div className="flex flex-wrap items-center gap-1">
+                          {isLockedCard && (
+                            <span className="inline-flex shrink-0 items-center gap-0.5 rounded border border-sky-400/45 bg-sky-500/20 px-1 text-[9px] font-semibold text-sky-200">
+                              <Lock className="h-2 w-2" />
+                              Locked
+                            </span>
+                          )}
+                          {typeof avgMinutes === "number" && avgMinutes > 0 && (
+                            <span
+                              className={
+                                avgMinutes < 20
+                                  ? "shrink-0 rounded border border-amber-400/35 bg-amber-500/15 px-1 text-[9px] font-semibold text-amber-200"
+                                  : "shrink-0 rounded border border-white/10 bg-white/5 px-1 text-[9px] font-medium text-slate-300"
+                              }
+                              title={
+                                avgMinutes < 20
+                                  ? `Bench role (${Math.round(avgMinutes)} min/game)`
+                                  : `Season average ${Math.round(avgMinutes)} min/game`
+                              }
+                            >
+                              {avgMinutes < 20 ? "Bench (<20m)" : `${Math.round(avgMinutes)}m`}
+                            </span>
+                          )}
                           {inj && (
                             <span
                               className={`shrink-0 rounded border px-1 text-[9px] font-semibold ${inj.cls}`}
@@ -2370,19 +2470,40 @@ export function LineupsTab({
                                 </div>
                               )}
                             </div>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setExcludedCardSlugs((prev) =>
-                                  prev.includes(c.slug)
-                                    ? prev
-                                    : [...prev, c.slug],
-                                )
-                              }
-                              className="rounded border border-rose-400/40 bg-rose-500/15 px-2 py-0.5 text-[10px] font-semibold text-rose-200 hover:bg-rose-500/25"
-                            >
-                              Skip Card
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => toggleLockCard(c.slug, c.playerSlug)}
+                                disabled={!isLockedCard && lockedCardSlugs.length >= 5}
+                                className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] font-semibold transition disabled:opacity-40 ${
+                                  isLockedCard
+                                    ? "border-sky-400/50 bg-sky-500/20 text-sky-100 hover:bg-sky-500/30"
+                                    : "border-sky-400/35 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20"
+                                }`}
+                                title={
+                                  isLockedCard
+                                    ? "Remove must-start lock on this card"
+                                    : "Lock this card as a must-start in generated lineups (max 5)"
+                                }
+                              >
+                                <Lock className="h-2.5 w-2.5" />
+                                {isLockedCard ? "Unlock Card" : "Lock (Must-Start)"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setLockedCardSlugs((prev) => prev.filter((s) => s !== c.slug));
+                                  setExcludedCardSlugs((prev) =>
+                                    prev.includes(c.slug)
+                                      ? prev
+                                      : [...prev, c.slug],
+                                  );
+                                }}
+                                className="rounded border border-rose-400/40 bg-rose-500/15 px-2 py-0.5 text-[10px] font-semibold text-rose-200 hover:bg-rose-500/25"
+                              >
+                                Skip Card
+                              </button>
+                            </div>
                           </div>
                         ) : undefined
                       }

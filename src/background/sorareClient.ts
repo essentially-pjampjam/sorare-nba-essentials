@@ -1478,6 +1478,7 @@ export class SorareClient {
               l10: averageScore(type: LAST_TEN_PLAYED_SO5_AVERAGE_SCORE)
               l5: averageScore(type: LAST_FIVE_AVERAGE_ALL_AROUND_SCORE)
               daily: nextDailyFixtureProjectedScore
+              ... on NBAPlayer { gameplayTier }
             }
           }
         }`,
@@ -1493,13 +1494,14 @@ export class SorareClient {
           l10?: number | null;
           l5?: number | null;
           daily?: number | null;
+          gameplayTier?: string | null;
         }>;
       } | null;
     }
     const data = await this.postGraphQL<Record<string, RosterTeam | null>>(
       `query DailyPickerRosters { ${blocks.join("\n")} }`,
       {},
-      `daily_rosters_v2:${slugs.slice().sort().join(",")}`,
+      `daily_rosters_v3:${slugs.slice().sort().join(",")}`,
       signal,
     );
     const round1 = (v: number | null | undefined): number | null =>
@@ -1515,6 +1517,7 @@ export class SorareClient {
             pos === "basketball_guard" || pos === "basketball_forward" || pos === "basketball_center",
         );
         const l10 = round1(p.l10);
+        const rating = resolveStarRating(p.gameplayTier, l10);
         cards.push({
           slug: `roster:${p.slug}`,
           rarity: "common",
@@ -1531,8 +1534,9 @@ export class SorareClient {
           l5: round1(p.l5),
           sorareClassicProjected: null,
           sorareDailyProjected: round1(p.daily),
-          starCost: resolveStarRating(null, l10).stars,
-          starSource: "estimated",
+          starCost: rating.stars,
+          starSource: rating.source,
+          gameplayTier: p.gameplayTier ?? null,
         });
       }
     }

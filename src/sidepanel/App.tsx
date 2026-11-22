@@ -22,7 +22,7 @@ import {
   Wand2,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { analyzeCollections } from "../calculators/collectionEssenceMath";
 import {
   DEFAULT_SETTINGS,
@@ -53,6 +53,7 @@ import {
   fetchCraftPool,
   fetchGalleryForLineups,
   getDetectedUsername,
+  getSetPackAdvisor,
   getSettings,
   openDashboardTab,
   priceCollection,
@@ -64,19 +65,45 @@ import {
   saveSettings,
   scanCollections,
 } from "./api";
-import { CommandPaletteModal } from "./components/CommandPaletteModal";
-import { GuidesModal } from "./components/GuidesModal";
 import { LoadingStage } from "./components/LoadingStage";
-import { SettingsModal } from "./components/SettingsModal";
 import { SupportModal } from "./components/SupportModal";
 import { TierEditorModal } from "./components/TierEditorModal";
-import { WhatsNewModal } from "./components/WhatsNewModal";
-import { BargainsTab } from "./tabs/BargainsTab";
 import { CollectionsTab } from "./tabs/CollectionsTab";
-import { CraftTab } from "./tabs/CraftTab";
-import { GalleryTab } from "./tabs/GalleryTab";
-import { LineupsTab } from "./tabs/LineupsTab";
 import { formatRelativeAge } from "./utils/format";
+
+const BargainsTab = lazy(() =>
+  import("./tabs/BargainsTab").then((m) => ({ default: m.BargainsTab })),
+);
+const CraftTab = lazy(() =>
+  import("./tabs/CraftTab").then((m) => ({ default: m.CraftTab })),
+);
+const GalleryTab = lazy(() =>
+  import("./tabs/GalleryTab").then((m) => ({ default: m.GalleryTab })),
+);
+const LineupsTab = lazy(() =>
+  import("./tabs/LineupsTab").then((m) => ({ default: m.LineupsTab })),
+);
+
+const CommandPaletteModal = lazy(() =>
+  import("./components/CommandPaletteModal").then((m) => ({ default: m.CommandPaletteModal })),
+);
+const GuidesModal = lazy(() =>
+  import("./components/GuidesModal").then((m) => ({ default: m.GuidesModal })),
+);
+const SettingsModal = lazy(() =>
+  import("./components/SettingsModal").then((m) => ({ default: m.SettingsModal })),
+);
+const WhatsNewModal = lazy(() =>
+  import("./components/WhatsNewModal").then((m) => ({ default: m.WhatsNewModal })),
+);
+
+function getEssenceMoteCount(pct: number, amount: number): number {
+  if (amount <= 0) return 0;
+  if (pct < 8) return 1;
+  if (pct < 35) return 2;
+  if (pct < 70) return 4;
+  return 6;
+}
 
 type ActiveTab = "collections" | "craft" | "lineups" | "bargains" | "gallery";
 
@@ -140,6 +167,11 @@ export function App() {
   const [showWhatsNew, setShowWhatsNew] = useState<boolean>(false);
   const [showGuides, setShowGuides] = useState<boolean>(false);
   const [showHeaderMenu, setShowHeaderMenu] = useState<boolean>(false);
+  const [setPackTarget, setSetPackTarget] = useState<{ label: string; price: number }>({
+    label: "Bronze Pack",
+    price: 1000,
+  });
+  const [setSubTabNav, setSetSubTabNav] = useState<{ tab: "daily" | "solo_squad" | "packs"; seq: number } | null>(null);
   const selectPlayMode = (next: "pro" | "set") => {
     setPlayMode(next);
     try {
@@ -566,6 +598,27 @@ export function App() {
     document.documentElement.dataset.theme = settings.theme;
   }, [settings.theme]);
 
+  useEffect(() => {
+    if (playMode !== "set") return;
+    let cancelled = false;
+    getSetPackAdvisor()
+      .then((advisor) => {
+        if (cancelled) return;
+        const essencePacks = (advisor?.packs ?? [])
+          .filter((p) => p.currency === "COMMON_ESSENCE" && p.price > 0)
+          .sort((a, b) => a.price - b.price);
+        if (essencePacks.length > 0) {
+          const cheapest = essencePacks[0];
+          const label = /bronze/i.test(cheapest.title) ? "Bronze Pack" : cheapest.title;
+          setSetPackTarget({ label, price: cheapest.price });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [playMode]);
+
   // Longevity auto-sync: quietly refresh stale live data (>15m old) when returning to the side panel
   useEffect(() => {
     const STALE_MS = 15 * 60_000;
@@ -928,6 +981,23 @@ export function App() {
     Math.round((activeEssence / settings.craftThreshold) * 100),
   );
   const essenceGap = Math.max(0, settings.craftThreshold - activeEssence);
+  const craftReadyCount =
+    settings.craftThreshold > 0 ? Math.floor(activeEssence / settings.craftThreshold) : 0;
+  const commonEssenceVal = typeof settings.commonEssence === "number" ? settings.commonEssence : 0;
+  const setEssencePct = Math.min(
+    100,
+    Math.round((commonEssenceVal / Math.max(1, setPackTarget.price)) * 100),
+  );
+  const setEssenceGap = Math.max(0, setPackTarget.price - commonEssenceVal);
+  const setPackReadyCount =
+    setPackTarget.price > 0 ? Math.floor(commonEssenceVal / setPackTarget.price) : 0;
+  const isSetBar = playMode === "set";
+  const barAmount = isSetBar ? commonEssenceVal : activeEssence;
+  const barPct = isSetBar ? setEssencePct : essencePct;
+  const barFillPct = barAmount > 0 ? Math.max(2, barPct) : 0;
+  const barMoteCount = getEssenceMoteCount(barPct, barAmount);
+  const barRarity: Rarity | "set" = isSetBar ? "set" : activeRarity;
+  const barReady = isSetBar ? setEssenceGap === 0 : essenceGap === 0;
   const anyLoading =
     isLoading ||
     isCraftLoading ||
@@ -1270,44 +1340,93 @@ export function App() {
                 </div>
               )}
             </div>
-            {playMode === "pro" && (
-              <div className="flex items-center gap-2 text-[10px]">
+            <div className="flex items-center gap-2 text-[10px]">
+              <div className="jam-essence-wrap">
                 <div
                   className="jam-essence-track"
+                  data-rarity={barRarity}
                   role="progressbar"
-                  aria-label={`${RARITY_META[activeRarity].label} Essence progress toward Craft`}
-                  aria-valuenow={essencePct}
+                  aria-label={
+                    isSetBar
+                      ? `Set Essence progress toward ${setPackTarget.label}`
+                      : `${RARITY_META[activeRarity].label} Essence progress toward Craft`
+                  }
+                  aria-valuenow={barPct}
                   aria-valuemin={0}
                   aria-valuemax={100}
                 >
                   <div
                     className="jam-essence-fill"
-                    data-rarity={activeRarity}
-                    data-ready={essenceGap === 0 ? "true" : undefined}
-                    style={{ width: `${essencePct}%` }}
-                  >
-                    {essencePct > 0 && (
-                      <>
-                        <span className="jam-essence-mote jam-essence-mote-1" aria-hidden="true" />
-                        <span className="jam-essence-mote jam-essence-mote-2" aria-hidden="true" />
-                        <span className="jam-essence-mote jam-essence-mote-3" aria-hidden="true" />
-                        <span className="jam-essence-mote jam-essence-mote-4" aria-hidden="true" />
-                      </>
-                    )}
-                  </div>
+                    data-rarity={barRarity}
+                    data-ready={barReady ? "true" : undefined}
+                    data-empty={barFillPct === 0 ? "true" : undefined}
+                    style={{ width: `${barFillPct}%` }}
+                  />
                 </div>
-                {essenceGap === 0 ? (
-                  <span className="shrink-0 font-semibold text-emerald-300">Craft ready</span>
-                ) : (
-                  <span className="shrink-0 tabular-nums text-slate-400">{essenceGap.toLocaleString()} Essence to craft</span>
-                )}
-                {settings.walletBalance?.cashAmount !== null && settings.walletBalance?.cashAmount !== undefined && (
-                  <span className="shrink-0 tabular-nums text-emerald-300" title="Auto-synced from sorare.com sidebar wallet">
-                    {`${settings.walletBalance.cashSymbol ?? "€"}${settings.walletBalance.cashAmount.toFixed(2)}`}
-                  </span>
+                {barMoteCount > 0 && (
+                  <div
+                    className="jam-essence-particles"
+                    data-rarity={barRarity}
+                    style={{ width: `${barFillPct}%` }}
+                    aria-hidden="true"
+                  >
+                    {Array.from({ length: barMoteCount }, (_, idx) => (
+                      <span
+                        key={idx}
+                        className={`jam-essence-mote jam-essence-mote-${idx + 1}`}
+                        style={{ left: `${(((idx + 0.5) / barMoteCount) * 80 + 10).toFixed(1)}%` }}
+                      />
+                    ))}
+                  </div>
                 )}
               </div>
-            )}
+              {isSetBar ? (
+                setEssenceGap === 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      selectPlayMode("set");
+                      setActiveTab("lineups");
+                      setSetSubTabNav((prev) => ({ tab: "packs", seq: (prev?.seq ?? 0) + 1 }));
+                    }}
+                    className="shrink-0 cursor-pointer rounded px-1 py-px font-semibold text-emerald-300 underline decoration-emerald-400/50 underline-offset-2 transition hover:bg-emerald-500/15 hover:text-emerald-200"
+                    title="Open Set Packs & Mission Advisor"
+                  >
+                    {setPackReadyCount >= 2 ? `${setPackReadyCount}x Packs ready` : "Pack ready"}
+                  </button>
+                ) : (
+                  <span className="shrink-0 tabular-nums text-slate-400">
+                    {setEssenceGap.toLocaleString()} Essence to {setPackTarget.label}
+                  </span>
+                )
+              ) : (
+                <>
+                  {essenceGap === 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => navigateTab("craft")}
+                      className="shrink-0 cursor-pointer rounded px-1 py-px font-semibold text-emerald-300 underline decoration-emerald-400/50 underline-offset-2 transition hover:bg-emerald-500/15 hover:text-emerald-200"
+                      title="Open Craft tab"
+                    >
+                      {craftReadyCount >= 2 ? `${craftReadyCount}x Craft ready` : "Craft ready"}
+                    </button>
+                  ) : (
+                    <span className="shrink-0 tabular-nums text-slate-400">
+                      {essenceGap.toLocaleString()} Essence to craft
+                    </span>
+                  )}
+                  {settings.walletBalance?.cashAmount !== null &&
+                    settings.walletBalance?.cashAmount !== undefined && (
+                      <span
+                        className="shrink-0 tabular-nums text-emerald-300"
+                        title="Auto-synced from sorare.com sidebar wallet"
+                      >
+                        {`${settings.walletBalance.cashSymbol ?? "€"}${settings.walletBalance.cashAmount.toFixed(2)}`}
+                      </span>
+                    )}
+                </>
+              )}
+            </div>
           </div>
 
           {/* Accessible Tablist + Scan Age */}
@@ -1617,6 +1736,16 @@ export function App() {
           </div>
         )}
 
+        <Suspense
+          fallback={
+            <LoadingStage
+              title={loadingStageMeta.title}
+              subtitle={loadingStageMeta.subtitle}
+              progress={null}
+              rarity={progressAccentRarity}
+            />
+          }
+        >
         {!isActiveTabInitialLoading && activeTab === "craft" && (
           <div
             role="tabpanel"
@@ -1660,6 +1789,8 @@ export function App() {
             <LineupsTab
               mode={playMode === "set" ? "set_common" : "pro"}
               onModeChange={(m) => selectPlayMode(m === "set_common" ? "set" : "pro")}
+              requestedSetSubTab={setSubTabNav}
+              onConsumeRequestedSetSubTab={() => setSetSubTabNav(null)}
               commonEssence={settings.commonEssence}
               gallery={galleryResult}
               bargains={bargainsResult}
@@ -1780,35 +1911,54 @@ export function App() {
             />
           </div>
         )}
+        </Suspense>
       </main>
 
       {showSupport && <SupportModal onClose={() => setShowSupport(false)} />}
 
-      {showWhatsNew && (
-        <WhatsNewModal
-          version={version}
-          onClose={() => setShowWhatsNew(false)}
-        />
-      )}
+      <Suspense fallback={null}>
+        {showWhatsNew && (
+          <WhatsNewModal
+            version={version}
+            onClose={() => setShowWhatsNew(false)}
+          />
+        )}
 
-      {showGuides && <GuidesModal onClose={() => setShowGuides(false)} />}
+        {showGuides && <GuidesModal onClose={() => setShowGuides(false)} />}
 
-      {showCmdPalette && (
-        <CommandPaletteModal
-          galleryCards={[
-            ...(galleryResult?.cards ?? []),
-            ...(galleryResult?.commonCards ?? []),
-          ]}
-          collections={scanResult?.collections ?? []}
-          deals={allScannedBargains}
-          currency={settings.currency}
-          onSwitchTab={(t) => navigateTab(t)}
-          onOpenGuides={() => setShowGuides(true)}
-          onOpenSettings={() => setShowSettings(true)}
-          onOpenDashboard={() => void openDashboardTab(activeTab)}
-          onClose={() => setShowCmdPalette(false)}
-        />
-      )}
+        {showCmdPalette && (
+          <CommandPaletteModal
+            galleryCards={[
+              ...(galleryResult?.cards ?? []),
+              ...(galleryResult?.commonCards ?? []),
+            ]}
+            collections={scanResult?.collections ?? []}
+            deals={allScannedBargains}
+            currency={settings.currency}
+            onSwitchTab={(t) => navigateTab(t)}
+            onOpenGuides={() => setShowGuides(true)}
+            onOpenSettings={() => setShowSettings(true)}
+            onOpenDashboard={() => void openDashboardTab(activeTab)}
+            onClose={() => setShowCmdPalette(false)}
+          />
+        )}
+
+        {showSettings && (
+          <SettingsModal
+            version={version}
+            settings={settings}
+            focusApiKey={focusApiKeyInSettings}
+            onUpdateSettings={(patch) => void updateSettings(patch)}
+            onOpenTierEditor={() => setShowTierEditor(true)}
+            onClearCache={() => void clearCache()}
+            onReloadExtension={() => void reloadExtension()}
+            onClose={() => {
+              setFocusApiKeyInSettings(false);
+              setShowSettings(false);
+            }}
+          />
+        )}
+      </Suspense>
 
       {showTierEditor && (
         <TierEditorModal
@@ -1816,22 +1966,6 @@ export function App() {
           rules={settings.milestoneRulesByRarity[activeRarity] ?? []}
           onSave={handleSaveTiers}
           onClose={() => setShowTierEditor(false)}
-        />
-      )}
-
-      {showSettings && (
-        <SettingsModal
-          version={version}
-          settings={settings}
-          focusApiKey={focusApiKeyInSettings}
-          onUpdateSettings={(patch) => void updateSettings(patch)}
-          onOpenTierEditor={() => setShowTierEditor(true)}
-          onClearCache={() => void clearCache()}
-          onReloadExtension={() => void reloadExtension()}
-          onClose={() => {
-            setFocusApiKeyInSettings(false);
-            setShowSettings(false);
-          }}
         />
       )}
 

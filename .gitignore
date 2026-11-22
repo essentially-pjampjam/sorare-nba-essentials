@@ -33,3 +33,4 @@ EXPERIMENTAL.md
 .preview/
 scripts/ship-helper.mjs
 logo-concepts/
+*.af~lock~

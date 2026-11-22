@@ -146,7 +146,13 @@ export function DailyPlayHub({ gallery, pool, poolLoading, onRefreshPool, missio
         <GoButton url={missionUrl(info)} title={`Open ${info.title} on Sorare`} />
       </div>
       <div className="mb-1 text-[10px] text-slate-400">
-        {info.rule} • {info.reward} • {info.picks} pick{info.picks > 1 ? "s" : ""} • only your own {info.rarity} cards can be picked
+        {info.rule}
+        {info.maxStars != null && (
+          <span className="ml-1 inline-flex items-center rounded bg-amber-400/15 px-1 py-px font-semibold text-amber-200">
+            &lt;= {info.maxStars}★
+          </span>
+        )}{" "}
+        • {info.reward} • {info.picks} pick{info.picks > 1 ? "s" : ""} • only your own {info.rarity} cards can be picked
       </div>
       <div className="mb-1 flex flex-wrap items-center gap-2 text-[10px]">
         {snapshot && fresh ? (

@@ -42,12 +42,14 @@ async function readTab(tabId: number): Promise<PickerMissionsSnapshot | null> {
   return snapshot;
 }
 
-const MISSION_PAGE = /^https:\/\/sorare\.com\/nba\/(play(\/missions)?|series\/play)/;
+const MISSION_PAGE = /^https:\/\/sorare\.com\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?nba\/(play(\/missions)?|series\/play)/i;
 
 /** Reads the pickers from any open Sorare missions / Play tab (button in the panel). */
 export async function scanPickerMissionsFromOpenTabs(): Promise<PickerMissionsByMode> {
   if (!chrome.scripting) throw new Error("Reload the extension to grant the page-reading permission.");
-  const tabs = (await chrome.tabs.query({ url: ["https://sorare.com/nba/*"] })).filter((t) => t.url && MISSION_PAGE.test(t.url));
+  const tabs = (
+    await chrome.tabs.query({ url: ["https://sorare.com/nba/*", "https://sorare.com/*/nba/*"] })
+  ).filter((t) => t.url && MISSION_PAGE.test(t.url));
   if (tabs.length === 0) throw new Error("Open Sorare's Play missions (the Go button) in a tab, then scan again.");
   let found = 0;
   for (const tab of tabs) {

@@ -173,6 +173,8 @@ export interface AutoBuildOptions {
   ageFilter?: LineupAgeFilter;
   excludeSubmittedCards?: boolean;
   excludedCardSlugs?: string[];
+  /** Cards manually locked (must-start) by the manager into generated lineups. */
+  lockedCardSlugs?: string[];
   maxLineups: number;
   captainBonusPct?: number;
   benchmarks?: LeaderboardBenchmark[];
@@ -833,6 +835,7 @@ export function generateTopLineups(
   const capLimit =
     starCap !== null ? starCap : options.format === "daily_120_mvp" ? 120 : null;
 
+  const lockedSet = new Set(options.lockedCardSlugs ?? []);
   const excludedSet = new Set(options.excludedCardSlugs ?? []);
   const evaluatedPool = cards
     .filter((card) => {
@@ -850,7 +853,7 @@ export function generateTopLineups(
       if (options.excludeSubmittedCards && card.openedLineupIds && card.openedLineupIds.length > 0) {
         return false;
       }
-      if (excludedSet.has(card.slug)) {
+      if (excludedSet.has(card.slug) && !lockedSet.has(card.slug)) {
         return false;
       }
       return true;
@@ -923,10 +926,14 @@ export function generateTopLineups(
 
   const head = strategyPool.slice(0, targetPoolSize);
   const headSlugs = new Set(head.map((ev) => ev.card.slug));
+  const lockedExtras = strategyPool.filter(
+    (ev) => lockedSet.has(ev.card.slug) && !headSlugs.has(ev.card.slug),
+  );
+  for (const ev of lockedExtras) headSlugs.add(ev.card.slug);
   const budgetEnablers = strategyPool
     .filter((ev) => !headSlugs.has(ev.card.slug) && ev.card.starCost <= 2.0)
     .slice(0, 8);
-  const pool = [...head, ...budgetEnablers];
+  const pool = [...head, ...lockedExtras, ...budgetEnablers];
 
   const buildSuffixExtremesSum = (vals: number[], takeLargest: boolean): Float64Array => {
     const len = vals.length;
@@ -992,20 +999,76 @@ export function generateTopLineups(
       ),
     );
 
-    const n = available.length;
-    const effVals = available.map((ev) => ev.effectiveScore);
-    const sigmaVals = available.map((ev) => cardSigma(ev));
+    const lockedThisPass: EvaluatedLineupCard[] = [];
+    const lockedPlayersThisPass = new Set<string>();
+    const lockedSlugsThisPass = new Set<string>();
+    let lockedValid = true;
+    if (lockedSet.size > 0) {
+      for (const ev of available) {
+        if (!lockedSet.has(ev.card.slug)) continue;
+        if (lockedPlayersThisPass.has(ev.card.playerSlug) || lockedThisPass.length >= 5) {
+          lockedValid = false;
+          break;
+        }
+        lockedThisPass.push(ev);
+        lockedPlayersThisPass.add(ev.card.playerSlug);
+        lockedSlugsThisPass.add(ev.card.slug);
+      }
+    }
+    if (!lockedValid) break;
+    const hasLocked = lockedThisPass.length > 0;
+    const searchPool = hasLocked
+      ? available.filter((ev) => !lockedSlugsThisPass.has(ev.card.slug))
+      : available;
+
+    const chosen: EvaluatedLineupCard[] = [];
+    const chosenPlayers = new Set<string>();
+    const teamCounts = new Map<string, number>();
+    let initStarSum = 0;
+    let initInSeasonSum = 0;
+    let initScoreSum = 0;
+    let initSigmaSqSum = 0;
+    let initFloorContribSum = 0;
+    let initMaxEff = 0;
+    let initMaxSigma = 0;
+    for (const ev of lockedThisPass) {
+      const teamSlug = ev.card.teamSlug;
+      if (maxPerTeam > 0 && teamSlug && (teamCounts.get(teamSlug) ?? 0) >= maxPerTeam) {
+        lockedValid = false;
+        break;
+      }
+      initStarSum += ev.card.starCost;
+      if (starCap !== null && initStarSum > starCap) {
+        lockedValid = false;
+        break;
+      }
+      initInSeasonSum += ev.card.inSeasonEligible ? 1 : 0;
+      if (initInSeasonSum > inSeasonCapThisPass) {
+        lockedValid = false;
+        break;
+      }
+      const sig = cardSigma(ev);
+      initScoreSum += ev.effectiveScore;
+      initSigmaSqSum += sig * sig;
+      initFloorContribSum += cardFloorContrib(ev);
+      if (ev.effectiveScore > initMaxEff) initMaxEff = ev.effectiveScore;
+      if (sig > initMaxSigma) initMaxSigma = sig;
+      chosen.push(ev);
+      chosenPlayers.add(ev.card.playerSlug);
+      if (teamSlug) teamCounts.set(teamSlug, (teamCounts.get(teamSlug) ?? 0) + 1);
+    }
+    if (!lockedValid) break;
+
+    const n = searchPool.length;
+    const effVals = searchPool.map((ev) => ev.effectiveScore);
+    const sigmaVals = searchPool.map((ev) => cardSigma(ev));
     const sigmaSqVals = sigmaVals.map((s) => s * s);
-    const floorContribVals = available.map((ev) => cardFloorContrib(ev));
+    const floorContribVals = searchPool.map((ev) => cardFloorContrib(ev));
 
     const topEffSum = buildSuffixExtremesSum(effVals, true);
     const topSigmaSqSum = buildSuffixExtremesSum(sigmaSqVals, true);
     const bottomSigmaSqSum = buildSuffixExtremesSum(sigmaSqVals, false);
     const topFloorContribSum = buildSuffixExtremesSum(floorContribVals, true);
-
-    const chosen: EvaluatedLineupCard[] = [];
-    const chosenPlayers = new Set<string>();
-    const teamCounts = new Map<string, number>();
 
     const dfs = (
       startIdx: number,
@@ -1025,8 +1088,8 @@ export function generateTopLineups(
         // Validate cap rules
         if (starCap !== null && starSum > starCap) return;
         if (options.format === "daily_120_mvp") {
-          if (strategy === "proj" && nonMvpL10Sum > 120) return;
-          if (strategy !== "proj") {
+          if (strategy === "proj" && !hasLocked && nonMvpL10Sum > 120) return;
+          if (strategy !== "proj" || hasLocked) {
             let maxIdx = 0;
             for (let k = 1; k < chosen.length; k += 1) {
               if (chosen[k].effectiveScore > chosen[maxIdx].effectiveScore) maxIdx = k;
@@ -1107,7 +1170,7 @@ export function generateTopLineups(
       }
 
       for (let i = startIdx; i <= n - remainingNeed; i += 1) {
-        const candidate = available[i];
+        const candidate = searchPool[i];
         if (chosenPlayers.has(candidate.card.playerSlug)) continue;
 
         const teamSlug = candidate.card.teamSlug;
@@ -1124,7 +1187,7 @@ export function generateTopLineups(
           chosen.length === 0
             ? nonMvpL10Sum
             : nonMvpL10Sum + (candidate.card.l10 ?? 0);
-        if (strategy === "proj" && options.format === "daily_120_mvp" && nextNonMvpL10 > 120) {
+        if (strategy === "proj" && !hasLocked && options.format === "daily_120_mvp" && nextNonMvpL10 > 120) {
           continue;
         }
 
@@ -1154,7 +1217,17 @@ export function generateTopLineups(
       }
     };
 
-    dfs(0, 0, 0, 0, 0, 0, 0, 0, 0);
+    dfs(
+      0,
+      initStarSum,
+      0,
+      initInSeasonSum,
+      initScoreSum,
+      initSigmaSqSum,
+      initFloorContribSum,
+      initMaxEff,
+      initMaxSigma,
+    );
 
     if (!bestCombo) break;
     const pickedCombo = bestCombo as EvaluatedLineupCard[];

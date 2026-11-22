@@ -9,6 +9,7 @@ export interface LineupCardPreviewItem {
   pictureUrl?: string | null;
   starCost?: number | null;
   projectedPts?: number | null;
+  avgMinutes?: number | null;
   badge?: string | null;
   isCaptain?: boolean;
 }
@@ -121,8 +122,24 @@ export function LineupCardStrip({ cards, compact = false }: LineupCardStripProps
                   {shortLastName(card.playerName)}
                 </div>
                 {typeof card.projectedPts === "number" && (
-                  <div className="text-[9px] font-bold tabular-nums text-emerald-300">
-                    {card.projectedPts.toFixed(1)}
+                  <div className="flex items-center justify-center gap-1 text-[9px] font-bold tabular-nums">
+                    <span className="text-emerald-300">{card.projectedPts.toFixed(1)}</span>
+                    {typeof card.avgMinutes === "number" && card.avgMinutes > 0 && (
+                      <span
+                        className={
+                          card.avgMinutes < 20
+                            ? "rounded bg-amber-500/30 px-0.5 text-[7.5px] font-semibold text-amber-200"
+                            : "text-[8px] font-medium text-slate-300"
+                        }
+                        title={
+                          card.avgMinutes < 20
+                            ? `Bench role (${Math.round(card.avgMinutes)} min/game)`
+                            : `Season average ${Math.round(card.avgMinutes)} min/game`
+                        }
+                      >
+                        {card.avgMinutes < 20 ? "Bench" : `${Math.round(card.avgMinutes)}m`}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>

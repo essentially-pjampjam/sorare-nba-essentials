@@ -20,6 +20,16 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.5-exp7",
+    title: "v2.7.5-exp7: Playmaker Picker, Set Essence Bar, Rarity Motes & Must-Start Locks",
+    items: [
+      "Added Playmaker Picker support: parses Sorare's named gameplay tiers (DNP Plus -> 1.5 stars, Reserve, Roster, Impact, Star, GOAT/Icon) into live star caps, switches count-stat odds (assists, rebounds, steals, blocks) to a Negative Binomial CDF for accurate low-mean rankings, fetches live gameplayTier on not-owned Daily Picker rosters, and supports localized /<lang>/nba/ mission URLs.",
+      "Redesigned the Essence progress bar (8px track, quarter hairline ticks, luminous leading cap, non-clipping rarity-themed particle motifs for Limited, Rare, Super Rare, Unique, and Set) with clickable 'Craft ready' / '2x Craft ready' navigation.",
+      "Added the Set / Common Essence progress bar in Set mode targeting the Bronze Pack (1,000 Essence or cheapest live Common Essence pack) with clickable 'Pack ready' navigation to Set Packs and zero sticky header height jump when switching between Set and Pro.",
+      "Added Manual Lock (Must-Start) alongside Skip Card in Pro Lineups Builder, season-average minutes chips (e.g. 32m or Bench (<20m)) on Pro and Set lineup slots, and lazy-loaded modals/tabs for a smaller, snappier sidepanel bundle.",
+    ],
+  },
+  {
     version: "2.7.5-exp6",
     title: "v2.7.5-exp6: New PPs Logo Everywhere, Rarity-Colored Essence Bar & Loading Stage",
     items: [

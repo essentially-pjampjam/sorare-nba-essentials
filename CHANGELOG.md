@@ -2,6 +2,18 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
+## 2.7.5-exp7 (2026-11-22)
+
+Added:
+- Playmaker Picker & Live Tier Parsing (`dailyPicksMath.ts`, `DailyPlayHub.tsx`, `sorareClient.ts`, `missionScanner.ts`): added a `Playmaker Picker` preset (`<= 1.5★`, `4+ assists`), mapped named Sorare gameplay tiers (`DNP`, `DNP Plus`, `Reserve`, `Reserve+`, `Roster`, `Roster Plus`, `Impact`, `Impact Plus`, `Star`, `Star Plus`, `GOAT`, `Icon`) to `maxStars` in `parsePickerMission`, displayed the resolved star cap (`<= 1.5★`) beside the rule text in `DailyPlayHub`, requested `gameplayTier` on `activePlayers.nodes` in `DailyPickerRosters` for live star caps on not-owned players, and supported localized `/<lang>/nba/...` Sorare URLs in `missionScanner.ts`.
+- Set / Common Essence Bar & Rarity-Differentiated Essence Meter (`index.css`, `App.tsx`): added a matching Set / Common Essence progress bar in Set mode (brushed silver/platinum gradient + silver dust motes targeting the cheapest `COMMON_ESSENCE` pack / default `1,000` Bronze Pack, with clickable `Pack ready` / `2x Packs ready` jumping to Set Packs and Pro cash balance hidden), eliminating sticky header height jumps between Set and Pro.
+- Manual Lock (Must-Start) & Projected Minutes Chips (`lineupOptimizerMath.ts`, `LineupsTab.tsx`, `LineupCardStrip.tsx`): added a `Lock (Must-Start)` toggle alongside `Skip Card` (wired through `generateTopLineups` with cap/disjoint/120+MVP support) and `32m` / `Bench (<20m)` season-average minutes chips on Pro and Set lineup slots.
+
+Improved / Fixed:
+- Count-Stat Odds & `points.` Regex (`dailyPicksMath.ts`): replaced the Normal approximation in `probabilityStatAtLeast` with an overdispersed Poisson (Negative Binomial) CDF for accurate low-mean assist/rebound/steal/block probabilities, and fixed `STAT_WORDS` `points` matching (`/\bpoints?\b(?!\s+per)/`) when descriptions end with a period.
+- Essence Bar Polish (`index.css`, `App.tsx`): upgraded track height to `8px` with `25%/50%/75%` hairline ticks, `520ms` ease-out width transitions, `2%` minimum visible fill, luminous leading-edge cap, non-clipping sibling particle overlay with fill-scaled mote counts (gold embers for Limited, plasma streaks for Rare, diamond shards for Super Rare, prismatic sheen + violet/gold star motes + luminous border for Unique, silver dust for Set, respecting `prefers-reduced-motion`), and clickable `Craft ready` / `2x Craft ready` jumping to the Craft tab.
+- Code Splitting & Repo Hygiene (`App.tsx`, `.gitignore`): lazy-loaded heavy modals (`GuidesModal`, `SettingsModal`, `CommandPaletteModal`, `WhatsNewModal`) and secondary tabs with `React.lazy` + `Suspense` (bringing main `sidepanel.js` from 557 kB down to 332 kB, well under Vite's 500 kB limit), deleted untracked `logo.af~lock~`, and added `*.af~lock~` to `.gitignore`.
+
 ## 2.7.5-exp6 (2026-11-22)
 
 Changed:
