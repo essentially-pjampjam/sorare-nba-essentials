@@ -2,6 +2,12 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
+## 2.7.5-exp13 (2026-11-22)
+
+Changed:
+- Liquid Essence Glass Tube & Randomized Particle Shine (`EssenceTubeBar.tsx`, `App.tsx`, `index.css`): replaced the flat 8px bar and 6 evenly spaced dots with a cylindrical glass vial featuring a dark smoky unfilled liquid chamber, etched measurement ticks, top glass specular reflection, glowing curved liquid meniscus, flowing caustic wave, glowing `Craft ready` / `Pack ready` pills, and up to 18 procedurally randomized rising micro-bubbles + 4-point star-shine glints (compositor-only, `prefers-reduced-motion` safe).
+- Minimalistic `logo3.png` Facelift (`public/logo.png`, `public/icons/icon{16,32,48,128}.png`, `logo-concepts/`): optically centered pjampjam's crimson `PPs` + royal-blue script `essentials` artwork inside a crisp Ivory Squircle with subtle specular rim for high contrast on both dark and light Chrome UI (plus Obsidian Glass and Hoops Hairline alternates saved in `logo-concepts/`).
+
 ## 2.7.5-exp12 (2026-11-22)
 
 Fixed:

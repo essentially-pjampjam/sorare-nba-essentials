@@ -67,6 +67,7 @@ import {
 } from "./api";
 import { LoadingStage } from "./components/LoadingStage";
 import { SupportModal } from "./components/SupportModal";
+import { EssenceTubeBar } from "./components/EssenceTubeBar";
 import { TierEditorModal } from "./components/TierEditorModal";
 import { CollectionsTab } from "./tabs/CollectionsTab";
 import { formatRelativeAge } from "./utils/format";
@@ -96,14 +97,6 @@ const SettingsModal = lazy(() =>
 const WhatsNewModal = lazy(() =>
   import("./components/WhatsNewModal").then((m) => ({ default: m.WhatsNewModal })),
 );
-
-function getEssenceMoteCount(pct: number, amount: number): number {
-  if (amount <= 0) return 0;
-  if (pct < 8) return 1;
-  if (pct < 35) return 2;
-  if (pct < 70) return 4;
-  return 6;
-}
 
 type ActiveTab = "collections" | "craft" | "lineups" | "bargains" | "gallery";
 
@@ -1008,8 +1001,6 @@ export function App() {
   const isSetBar = playMode === "set";
   const barAmount = isSetBar ? commonEssenceVal : activeEssence;
   const barPct = isSetBar ? setEssencePct : essencePct;
-  const barFillPct = barAmount > 0 ? Math.max(2, barPct) : 0;
-  const barMoteCount = getEssenceMoteCount(barPct, barAmount);
   const barRarity: Rarity | "set" = isSetBar ? "set" : activeRarity;
   const barReady = isSetBar ? setEssenceGap === 0 : essenceGap === 0;
   const anyLoading =
@@ -1357,45 +1348,17 @@ export function App() {
               )}
             </div>
             <div className="flex items-center gap-2 text-[10px]">
-              <div className="jam-essence-wrap">
-                <div
-                  className="jam-essence-track"
-                  data-rarity={barRarity}
-                  role="progressbar"
-                  aria-label={
-                    isSetBar
-                      ? `Set Essence progress toward ${setPackTarget.label}`
-                      : `${RARITY_META[activeRarity].label} Essence progress toward Craft`
-                  }
-                  aria-valuenow={barPct}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                >
-                  <div
-                    className="jam-essence-fill"
-                    data-rarity={barRarity}
-                    data-ready={barReady ? "true" : undefined}
-                    data-empty={barFillPct === 0 ? "true" : undefined}
-                    style={{ width: `${barFillPct}%` }}
-                  />
-                </div>
-                {barMoteCount > 0 && (
-                  <div
-                    className="jam-essence-particles"
-                    data-rarity={barRarity}
-                    style={{ width: `${barFillPct}%` }}
-                    aria-hidden="true"
-                  >
-                    {Array.from({ length: barMoteCount }, (_, idx) => (
-                      <span
-                        key={idx}
-                        className={`jam-essence-mote jam-essence-mote-${idx + 1}`}
-                        style={{ left: `${(((idx + 0.5) / barMoteCount) * 80 + 10).toFixed(1)}%` }}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
+              <EssenceTubeBar
+                rarity={barRarity}
+                pct={barPct}
+                amount={barAmount}
+                ready={barReady}
+                ariaLabel={
+                  isSetBar
+                    ? `Set Essence progress toward ${setPackTarget.label}`
+                    : `${RARITY_META[activeRarity].label} Essence progress toward Craft`
+                }
+              />
               {isSetBar ? (
                 setEssenceGap === 0 ? (
                   <button
@@ -1405,7 +1368,7 @@ export function App() {
                       setActiveTab("lineups");
                       setSetSubTabNav((prev) => ({ tab: "packs", seq: (prev?.seq ?? 0) + 1 }));
                     }}
-                    className="shrink-0 cursor-pointer rounded px-1 py-px font-semibold text-emerald-300 underline decoration-emerald-400/50 underline-offset-2 transition hover:bg-emerald-500/15 hover:text-emerald-200"
+                    className="jam-ready-pill shrink-0 cursor-pointer rounded-full px-2 py-0.5 font-semibold text-emerald-200 transition"
                     title="Open Set Packs & Mission Advisor"
                   >
                     {setPackReadyCount >= 2 ? `${setPackReadyCount}x Packs ready` : "Pack ready"}
@@ -1421,7 +1384,7 @@ export function App() {
                     <button
                       type="button"
                       onClick={() => navigateTab("craft")}
-                      className="shrink-0 cursor-pointer rounded px-1 py-px font-semibold text-emerald-300 underline decoration-emerald-400/50 underline-offset-2 transition hover:bg-emerald-500/15 hover:text-emerald-200"
+                      className="jam-ready-pill shrink-0 cursor-pointer rounded-full px-2 py-0.5 font-semibold text-emerald-200 transition"
                       title="Open Craft tab"
                     >
                       {craftReadyCount >= 2 ? `${craftReadyCount}x Craft ready` : "Craft ready"}

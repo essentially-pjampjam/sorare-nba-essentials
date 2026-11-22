@@ -20,6 +20,15 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.5-exp13",
+    title: "v2.7.5-exp13: Liquid Essence Glass Tube & logo3.png Facelift",
+    items: [
+      "Upgraded the Essence bar into a cylindrical glass tube of liquid Essence with a dark smoky unfilled chamber, glowing meniscus edge, flowing liquid sheen, and up to 18 randomized rising bubbles + 4-point star-shine glints.",
+      "Polished Craft ready / Pack ready into a glowing emerald glass pill.",
+      "Applied a minimalistic Ivory Squircle facelift of logo3.png across the extension logo and all icon sizes for crisp dark and light toolbar contrast.",
+    ],
+  },
+  {
     version: "2.7.5-exp12",
     title: "v2.7.5-exp12: Daily Picker Fixes, 24h Quest Auctions & Set Holo/Shiny Bonuses",
     items: [
