@@ -66,6 +66,7 @@ import {
 } from "./api";
 import { CommandPaletteModal } from "./components/CommandPaletteModal";
 import { GuidesModal } from "./components/GuidesModal";
+import { LoadingStage } from "./components/LoadingStage";
 import { SettingsModal } from "./components/SettingsModal";
 import { SupportModal } from "./components/SupportModal";
 import { TierEditorModal } from "./components/TierEditorModal";
@@ -117,10 +118,13 @@ export function App() {
   >({});
   const [bargainMode, setBargainMode] = useState<BargainMode>("instant_value");
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isCollectionsInitialScan, setIsCollectionsInitialScan] =
+    useState<boolean>(false);
   const [isCraftLoading, setIsCraftLoading] = useState<boolean>(false);
   const [isGalleryLoading, setIsGalleryLoading] = useState<boolean>(false);
   const [isPricingGallery, setIsPricingGallery] = useState<boolean>(false);
   const [isBargainsLoading, setIsBargainsLoading] = useState<boolean>(false);
+  const [isWatchlistChecking, setIsWatchlistChecking] = useState<boolean>(false);
   const [isQuestDealsLoading, setIsQuestDealsLoading] =
     useState<boolean>(false);
   const [hasLoadedQuestDeals, setHasLoadedQuestDeals] =
@@ -157,6 +161,7 @@ export function App() {
     }
     setActiveTab(tab);
   };
+  const [initialized, setInitialized] = useState<boolean>(false);
   // The sticky header's height feeds --jam-header-h so the quick-jump bars stick right below it.
   const stickyHeaderRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -167,7 +172,7 @@ export function App() {
     );
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [initialized]);
   const [editingUsername, setEditingUsername] = useState<boolean>(false);
   const [hasUnseenWhatsNew, setHasUnseenWhatsNew] = useState<boolean>(() => {
     try {
@@ -182,7 +187,8 @@ export function App() {
   const [showCmdPalette, setShowCmdPalette] = useState<boolean>(false);
   const [focusApiKeyInSettings, setFocusApiKeyInSettings] =
     useState<boolean>(false);
-  const [initialized, setInitialized] = useState<boolean>(false);
+  const scanResultRef = useRef<ScanResult | null>(null);
+  scanResultRef.current = scanResult;
 
   const isDashboardMode = useMemo(() => {
     try {
@@ -224,6 +230,14 @@ export function App() {
       const clean = username.trim().toLowerCase();
       if (!clean) return;
       if (!cacheOnly) {
+        const current = scanResultRef.current;
+        const hadMatching = Boolean(
+          current &&
+            current.rarity === rarity &&
+            current.inSeasonOnly === inSeasonOnly,
+        );
+        setProgress(null);
+        setIsCollectionsInitialScan(!hadMatching);
         setIsLoading(true);
         setError(null);
       }
@@ -249,6 +263,7 @@ export function App() {
       } finally {
         if (!cacheOnly) {
           setIsLoading(false);
+          setIsCollectionsInitialScan(false);
         }
       }
     },
@@ -257,6 +272,7 @@ export function App() {
 
   const loadCraftPool = useCallback(
     async (rarity: Rarity, currency: Currency, forceRefresh = false) => {
+      setProgress(null);
       setIsCraftLoading(true);
       setError(null);
       try {
@@ -279,6 +295,7 @@ export function App() {
       const clean = username.trim().toLowerCase();
       if (!clean) return;
       if (!cacheOnly) {
+        setProgress(null);
         setIsGalleryLoading(true);
         setError(null);
       }
@@ -315,6 +332,7 @@ export function App() {
     ) => {
       setBargainMode(mode);
       if (!cacheOnly) {
+        setProgress(null);
         setIsBargainsLoading(true);
         setError(null);
       }
@@ -346,6 +364,7 @@ export function App() {
   );
 
   const handleLoadQuestDeals = useCallback(async () => {
+    setProgress(null);
     setIsQuestDealsLoading(true);
     setError(null);
     try {
@@ -510,22 +529,30 @@ export function App() {
         }
         const initialUser = loaded.username || safeDetected || "";
         setUsernameDraft(initialUser);
-        setInitialized(true);
 
-        // Cache-only on startup so opening Side Panel never blasts Sorare with automatic API calls
+        // Cache-only on startup so opening Side Panel never blasts Sorare with automatic API calls.
+        // Wait briefly for local cache reads before showing the workspace so the UI never flashes empty.
+        const cacheHydrationTasks: Promise<unknown>[] = [
+          loadBargains(loaded.selectedRarity, "instant_value", loaded.currency, false, true),
+        ];
         if (initialUser) {
-          void runScan(
-            initialUser,
-            loaded.selectedRarity,
-            loaded.currency,
-            loaded.inSeasonOnly,
-            false,
-            true,
+          cacheHydrationTasks.push(
+            runScan(
+              initialUser,
+              loaded.selectedRarity,
+              loaded.currency,
+              loaded.inSeasonOnly,
+              false,
+              true,
+            ),
+            loadGallery(initialUser, false, true),
           );
-          void loadGallery(initialUser, false, true);
         }
-        // Also hydrate cached Deals instantaneously on startup (zero network calls)
-        void loadBargains(loaded.selectedRarity, "instant_value", loaded.currency, false, true);
+        await Promise.race([
+          Promise.allSettled(cacheHydrationTasks),
+          new Promise<void>((resolve) => window.setTimeout(resolve, 2500)),
+        ]);
+        setInitialized(true);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
         setInitialized(true);
@@ -727,10 +754,13 @@ export function App() {
 
   const handleCancelScan = async () => {
     await cancelScan();
+    setProgress(null);
     setIsLoading(false);
+    setIsCollectionsInitialScan(false);
     setIsCraftLoading(false);
     setIsGalleryLoading(false);
     setIsBargainsLoading(false);
+    setIsWatchlistChecking(false);
     setIsQuestDealsLoading(false);
     setPricingSlug(null);
   };
@@ -904,7 +934,73 @@ export function App() {
     isGalleryLoading ||
     isPricingGallery ||
     isBargainsLoading ||
+    isWatchlistChecking ||
     isQuestDealsLoading;
+
+  const hasCollectionsData = Boolean(
+    scanResult &&
+      scanResult.rarity === activeRarity &&
+      scanResult.inSeasonOnly === settings.inSeasonOnly,
+  );
+  const hasCraftData = Boolean(
+    craftPool && craftPool.rarity === activeRarity && craftPool.currency === settings.currency,
+  );
+  const hasLineupsOrGalleryData = Boolean(galleryResult);
+  const hasBargainsData = Boolean(
+    bargainsResult &&
+      bargainsResult.rarity === activeRarity &&
+      bargainsResult.currency === settings.currency,
+  );
+
+  const isActiveTabInitialLoading =
+    !initialized ||
+    (activeTab === "collections" &&
+      isLoading &&
+      (isCollectionsInitialScan || !hasCollectionsData)) ||
+    (activeTab === "craft" && isCraftLoading && !hasCraftData) ||
+    (activeTab === "lineups" && isGalleryLoading && !hasLineupsOrGalleryData) ||
+    (activeTab === "bargains" && isBargainsLoading && !hasBargainsData) ||
+    (activeTab === "gallery" && isGalleryLoading && !hasLineupsOrGalleryData);
+
+  const loadingStageMeta = useMemo(() => {
+    if (!initialized) {
+      return {
+        title: "Loading Sorare NBA Essentials",
+        subtitle: "Restoring cached workspace & settings...",
+      };
+    }
+    const rarityLabel = RARITY_META[activeRarity].label;
+    if (activeTab === "collections") {
+      return {
+        title: `Scanning ${rarityLabel} Collections`,
+        subtitle: "Loading collections, League Quests & market floors...",
+      };
+    }
+    if (activeTab === "craft") {
+      return {
+        title: `Loading ${rarityLabel} Craft Pool`,
+        subtitle: "Fetching craft candidates & clue probabilities...",
+      };
+    }
+    if (activeTab === "bargains") {
+      return {
+        title: `Scanning ${rarityLabel} Market Deals`,
+        subtitle: "Fetching live instant buys & ending auctions...",
+      };
+    }
+    if (activeTab === "gallery") {
+      return {
+        title: playMode === "set" ? "Loading Set Gallery" : `Loading ${rarityLabel} Gallery`,
+        subtitle: "Fetching cards, sealed state & season stats...",
+      };
+    }
+    return {
+      title: playMode === "set" ? "Loading Set Lineups" : `Loading ${rarityLabel} Lineups`,
+      subtitle: "Fetching cards, NBA schedule, Vegas odds & injuries...",
+    };
+  }, [activeRarity, activeTab, initialized, playMode]);
+
+  const progressAccentRarity: Rarity | "set" = playMode === "set" ? "set" : activeRarity;
 
   return (
     <div
@@ -1159,33 +1255,34 @@ export function App() {
               ) : (
                 <div
                   className="glass-pill flex h-7 min-w-0 items-center gap-1 rounded-lg px-1.5"
-                  title="Your Sorare Essence (auto-syncs from sorare.com sidebar, or click to type)"
+                  title={`${RARITY_META[activeRarity].label} Essence (auto-syncs from sorare.com sidebar, or click to type)`}
                 >
-                  <Sparkles className="h-3 w-3 shrink-0 text-amber-400" />
+                  <Sparkles className={`h-3 w-3 shrink-0 ${RARITY_META[activeRarity].accentClass}`} />
                   <input
                     type="number"
                     min={0}
                     step={1}
                     value={activeEssence}
                     onChange={(e) => handleEssenceChange(e.target.value)}
-                    className="w-full min-w-0 bg-transparent text-[11px] font-semibold text-slate-100 focus:outline-none"
-                    aria-label="Current Essence balance"
+                    className="w-full min-w-0 bg-transparent text-[11px] font-semibold tabular-nums text-slate-100 focus:outline-none"
+                    aria-label={`Current ${RARITY_META[activeRarity].label} Essence balance`}
                   />
                 </div>
               )}
             </div>
-            {playMode === "pro" && (activeTab === "collections" || activeTab === "craft" || activeTab === "bargains") && (
+            {playMode === "pro" && (
               <div className="flex items-center gap-2 text-[10px]">
                 <div
                   className="jam-essence-track"
                   role="progressbar"
-                  aria-label="Essence progress toward Craft"
+                  aria-label={`${RARITY_META[activeRarity].label} Essence progress toward Craft`}
                   aria-valuenow={essencePct}
                   aria-valuemin={0}
                   aria-valuemax={100}
                 >
                   <div
                     className="jam-essence-fill"
+                    data-rarity={activeRarity}
                     data-ready={essenceGap === 0 ? "true" : undefined}
                     style={{ width: `${essencePct}%` }}
                   >
@@ -1330,7 +1427,7 @@ export function App() {
 
       <main className="p-3">
         {/* Optional local API key onboarding card */}
-        {initialized &&
+        {!isActiveTabInitialLoading &&
           !settings.sorareApiKey &&
           !settings.apiKeyPromptDismissed && (
             <div className="mb-3 rounded-xl border border-amber-400/25 bg-[#111726] p-2.5 text-xs">
@@ -1383,33 +1480,45 @@ export function App() {
             </div>
           )}
 
-        {anyLoading && (
+        {anyLoading && !isActiveTabInitialLoading && (
           <div className="glass-pill mb-3 space-y-1.5 rounded-xl border-sky-400/30 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">
             <div className="flex items-center justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-2">
+              <div role="status" aria-live="polite" className="flex min-w-0 items-center gap-2">
                 <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-sky-300" />
                 <span className="truncate">
                   {progress?.message ?? "Loading Sorare NBA data..."}
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => void handleCancelScan()}
-                className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-white/15 bg-slate-950/60 px-2 py-0.5 text-[10px] font-medium text-slate-200 hover:border-sky-400/50 hover:bg-slate-800"
-              >
-                <X className="h-3 w-3" />
-                Cancel
-              </button>
-            </div>
-            {progress && progress.total > 0 && (
-              <div className="jam-essence-track">
-                <div
-                  className="jam-essence-fill"
-                  style={{
-                    width: `${Math.max(10, Math.min(100, Math.round((progress.completed / progress.total) * 100)))}%`,
-                  }}
-                />
+              <div className="flex shrink-0 items-center gap-2">
+                {progress && progress.total > 0 && (
+                  <span className="tabular-nums text-[10.5px] font-semibold text-sky-200">
+                    {Math.min(100, Math.round((progress.completed / progress.total) * 100))}%
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void handleCancelScan()}
+                  className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-white/15 bg-slate-950/60 px-2 py-0.5 text-[10px] font-medium text-slate-200 hover:border-sky-400/50 hover:bg-slate-800"
+                >
+                  <X className="h-3 w-3" />
+                  Cancel
+                </button>
               </div>
+            </div>
+            {progress && progress.total > 0 ? (
+              <progress
+                className="jam-progress"
+                data-rarity={progressAccentRarity}
+                value={Math.min(progress.completed, progress.total)}
+                max={progress.total}
+                aria-label="Scan progress"
+              />
+            ) : (
+              <progress
+                className="jam-progress"
+                data-rarity={progressAccentRarity}
+                aria-label="Scan in progress"
+              />
             )}
           </div>
         )}
@@ -1421,7 +1530,17 @@ export function App() {
           </div>
         )}
 
-        {initialized && activeTab === "collections" && (
+        {isActiveTabInitialLoading && (
+          <LoadingStage
+            title={loadingStageMeta.title}
+            subtitle={loadingStageMeta.subtitle}
+            progress={progress}
+            rarity={progressAccentRarity}
+            onCancel={initialized && anyLoading ? () => void handleCancelScan() : undefined}
+          />
+        )}
+
+        {!isActiveTabInitialLoading && activeTab === "collections" && (
           <div
             role="tabpanel"
             id="panel-collections"
@@ -1491,14 +1610,14 @@ export function App() {
               onToggleInSeasonOnly={() => void handleToggleInSeasonOnly()}
               searchQuery={searchQuery}
               onSearchQueryChange={setSearchQuery}
-              hasScanned={Boolean(scanResult)}
+              hasScanned={hasCollectionsData}
               hasUsername={Boolean((settings.username || usernameDraft).trim())}
               isLoading={isLoading}
             />
           </div>
         )}
 
-        {initialized && activeTab === "craft" && (
+        {!isActiveTabInitialLoading && activeTab === "craft" && (
           <div
             role="tabpanel"
             id="panel-craft"
@@ -1530,7 +1649,7 @@ export function App() {
           </div>
         )}
 
-        {initialized && activeTab === "lineups" && (
+        {!isActiveTabInitialLoading && activeTab === "lineups" && (
           <div
             role="tabpanel"
             id="panel-lineups"
@@ -1584,7 +1703,7 @@ export function App() {
           </div>
         )}
 
-        {initialized && activeTab === "bargains" && (
+        {!isActiveTabInitialLoading && activeTab === "bargains" && (
           <div
             role="tabpanel"
             id="panel-bargains"
@@ -1603,18 +1722,18 @@ export function App() {
               collectionNeedSlugs={collectionNeedSlugs}
               rarity={activeRarity}
               currency={settings.currency}
-              isLoading={isBargainsLoading}
+              isLoading={isBargainsLoading || isWatchlistChecking}
               gallery={galleryResult}
               watchlist={settings.watchlist ?? []}
               watchlistAlerts={settings.watchlistAlerts ?? []}
               onUpdateWatchlist={(next) => void updateSettings({ watchlist: next })}
               onRunWatchlistCheck={() => {
-                setIsBargainsLoading(true);
+                setIsWatchlistChecking(true);
                 void runWatchlistCheck()
                   .then((alerts) =>
                     setSettings((prev) => ({ ...prev, watchlistAlerts: alerts })),
                   )
-                  .finally(() => setIsBargainsLoading(false));
+                  .finally(() => setIsWatchlistChecking(false));
               }}
               onClearWatchlistAlerts={() => {
                 void clearWatchlistAlerts().then(() =>
@@ -1633,7 +1752,7 @@ export function App() {
             />
           </div>
         )}
-        {initialized && activeTab === "gallery" && (
+        {!isActiveTabInitialLoading && activeTab === "gallery" && (
           <div
             role="tabpanel"
             id="panel-gallery"

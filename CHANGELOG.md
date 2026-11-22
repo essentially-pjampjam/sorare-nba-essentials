@@ -2,6 +2,13 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
+## 2.7.5-exp6 (2026-11-22)
+
+Changed:
+- Unified PPs Essentials Brand Logo (`public/logo.png`, `public/icons/icon{16,32,48,128}.png`, `sidepanel.html`): rendered concept `05-pps-bold-icon-first` crisply across Chrome toolbar, `chrome://extensions`, notifications, side panel header, popped-out dashboard favicon, and the Sorare NBA bottom-right launcher.
+- Consistent Pro Header Essence & Wallet Bar + Rarity Colors (`App.tsx`, `index.css`): the Pro Essence progress bar and synced wallet cash balance now stay visible across all Pro tabs (including Lineups and Gallery) instead of hiding on tab switch, remain hidden in Set/Common mode, and color-code both the Essence icon and progress fill to match the selected rarity (`Limited` amber, `Rare` red/rose, `Super Rare` sky blue, `Unique` violet).
+- Full-Stage Loading & Native Progress Bar (`LoadingStage.tsx`, `App.tsx`, `index.css`): startup cache hydration and initial tab scans now render a dedicated loading progress stage with a native `<progress>` bar (smooth indeterminate-to-determinate transitions and reduced-motion support) before revealing the full tab UI, eliminating empty-state flicker and stale progress text.
+
 ## 2.7.5-exp5 (2026-11-22)
 
 Added:

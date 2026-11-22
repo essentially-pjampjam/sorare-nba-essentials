@@ -20,6 +20,16 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.5-exp6",
+    title: "v2.7.5-exp6: New PPs Logo Everywhere, Rarity-Colored Essence Bar & Loading Stage",
+    items: [
+      "Rolled out the new high-legibility PPs Essentials red/white/blue squircle logo across the Chrome toolbar, extensions list, side panel header, popped-out dashboard tab favicon, and Sorare NBA bottom-right launcher.",
+      "Kept the Pro Essence progress line and synced wallet cash balance consistently visible across every Pro tab (including Lineups and Gallery) while keeping them hidden in Set/Common mode.",
+      "Color-coded both the Pro Essence icon and progress bar fill to match each rarity (Limited amber, Rare crimson, Super Rare sky blue, Unique violet).",
+      "Added a full-stage native progress bar loading screen on startup and initial tab scans so scanning always shows live progress first and then reveals the complete UI cleanly with zero empty flicker.",
+    ],
+  },
+  {
     version: "2.7.5-exp5",
     title: "v2.7.5-exp5: NBA-Only Glass Launcher, Tab Polish, Essence Motes & Scan Boost",
     items: [

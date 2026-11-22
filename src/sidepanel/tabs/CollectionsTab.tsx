@@ -535,7 +535,7 @@ export function CollectionsTab({
   if (!hasScanned && !isLoading) {
     return (
       <div className="rounded-2xl border border-white/8 bg-[#111726] p-6 text-center">
-        <Sparkles className="mx-auto mb-2.5 h-7 w-7 text-amber-400" />
+        <Sparkles className={`mx-auto mb-2.5 h-7 w-7 ${rarityMeta.accentClass}`} />
         <h2 className="text-sm font-semibold text-slate-100">
           {hasUsername
             ? `Ready to Scan ${rarityMeta.label}`
@@ -580,11 +580,11 @@ export function CollectionsTab({
 
         <div className="rounded-xl border border-white/8 bg-[#111726] p-3">
           <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-slate-400">
-            <Sparkles className="h-3 w-3 text-amber-400" />
+            <Sparkles className={`h-3 w-3 ${rarityMeta.accentClass}`} />
             Live Quest Essence
           </div>
           <div className="mt-1 flex items-baseline gap-1.5">
-            <span className="text-lg font-semibold text-amber-300">
+            <span className={`text-lg font-semibold ${rarityMeta.accentClass}`}>
               {questEval.totalLiveQuestEssence.toLocaleString()}
             </span>
             <span className="text-[11px] text-slate-400">Essence</span>
@@ -644,7 +644,7 @@ export function CollectionsTab({
         <div className="rounded-2xl border border-white/8 bg-[#111726] p-3">
           <div className="mb-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-slate-400">
             <span className="inline-flex items-center gap-1.5 text-slate-200">
-              <Sparkles className="h-3.5 w-3.5 text-amber-400" />
+              <Sparkles className={`h-3.5 w-3.5 ${rarityMeta.accentClass}`} />
               Nearing Goal Radar
             </span>
             <span>Real Quests &amp; Bonus %</span>

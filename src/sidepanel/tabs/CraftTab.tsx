@@ -170,7 +170,7 @@ export function CraftTab({
   if (!craftPool && !isLoading) {
     return (
       <div className="rounded-2xl border border-dashed border-white/10 bg-[#111726] p-5 text-center">
-        <Sparkles className="mx-auto mb-2 h-7 w-7 text-amber-400" />
+        <Sparkles className={`mx-auto mb-2 h-7 w-7 ${rarityMeta.accentClass}`} />
         <h3 className="text-sm font-semibold text-slate-100">
           {rarityMeta.label} Craft Reveal & EV Advisor
         </h3>
@@ -287,7 +287,7 @@ export function CraftTab({
 
         <div className="rounded-xl border border-white/8 bg-[#111726] p-2.5">
           <div className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-slate-400">
-            <Sparkles className="h-3 w-3 text-amber-400" />
+            <Sparkles className={`h-3 w-3 ${rarityMeta.accentClass}`} />
             Expected Value
           </div>
           {evaluation.expectedValueCents !== null ? (

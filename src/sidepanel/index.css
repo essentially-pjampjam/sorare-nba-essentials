@@ -348,9 +348,140 @@ dialog::backdrop {
   overflow: hidden;
 }
 
+.jam-essence-fill[data-rarity="limited"] {
+  background: linear-gradient(90deg, #d97706 0%, #fbbf24 68%, #fde68a 100%);
+  box-shadow: 0 0 10px rgba(251, 191, 36, 0.48);
+}
+
+.jam-essence-fill[data-rarity="rare"] {
+  background: linear-gradient(90deg, #be123c 0%, #f43f5e 68%, #fda4af 100%);
+  box-shadow: 0 0 10px rgba(244, 63, 94, 0.5);
+}
+
+.jam-essence-fill[data-rarity="super_rare"] {
+  background: linear-gradient(90deg, #0284c7 0%, #38bdf8 68%, #7dd3fc 100%);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.48);
+}
+
+.jam-essence-fill[data-rarity="unique"] {
+  background: linear-gradient(90deg, #6d28d9 0%, #a78bfa 68%, #ddd6fe 100%);
+  box-shadow: 0 0 10px rgba(167, 139, 250, 0.52);
+}
+
 .jam-essence-fill[data-ready="true"] {
-  background: linear-gradient(90deg, #059669 0%, #34d399 68%, #a7f3d0 100%);
-  box-shadow: 0 0 12px rgba(52, 211, 153, 0.55);
+  filter: brightness(1.1);
+}
+
+/* Native <progress> bar for scanning / loading (determinate & indeterminate) */
+.jam-progress {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 0.4375rem;
+  border: 0 solid;
+  border-radius: 9999px;
+  overflow: clip;
+  container-type: inline-size;
+  background: rgba(2, 6, 23, 0.78);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.58);
+  --progress-bar-radius: 9999px;
+  --progress-bar-fill: linear-gradient(90deg, #0284c7 0%, #38bdf8 68%, #7dd3fc 100%);
+  --progress-bar-indeterminate-size: 36%;
+  --progress-bar-indeterminate-animation-duration: 1.35s;
+}
+
+.jam-progress[data-rarity="limited"] {
+  --progress-bar-fill: linear-gradient(90deg, #d97706 0%, #fbbf24 68%, #fde68a 100%);
+}
+
+.jam-progress[data-rarity="rare"] {
+  --progress-bar-fill: linear-gradient(90deg, #be123c 0%, #f43f5e 68%, #fda4af 100%);
+}
+
+.jam-progress[data-rarity="super_rare"] {
+  --progress-bar-fill: linear-gradient(90deg, #0284c7 0%, #38bdf8 68%, #7dd3fc 100%);
+}
+
+.jam-progress[data-rarity="unique"] {
+  --progress-bar-fill: linear-gradient(90deg, #6d28d9 0%, #a78bfa 68%, #ddd6fe 100%);
+}
+
+.jam-progress[data-rarity="set"] {
+  --progress-bar-fill: linear-gradient(90deg, #737373 0%, #bdbdbd 68%, #ececec 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jam-progress {
+    --progress-bar-indeterminate-animation-duration: 10s;
+  }
+}
+
+.jam-progress:dir(rtl) {
+  --progress-bar-indeterminate-animation: jam-progress-indeterminate var(--progress-bar-indeterminate-animation-duration) infinite linear reverse;
+}
+
+.jam-progress:indeterminate {
+  --progress-bar-animation: var(
+    --progress-bar-indeterminate-animation,
+    jam-progress-indeterminate var(--progress-bar-indeterminate-animation-duration) infinite linear
+  );
+}
+
+.jam-progress::-webkit-progress-bar {
+  background: transparent;
+}
+
+.jam-progress::-webkit-progress-value {
+  background: var(--progress-bar-fill);
+  border-radius: var(--progress-bar-radius);
+  transition: inline-size 0.3s ease-out;
+  animation: var(--progress-bar-animation, none);
+}
+
+.jam-progress::-moz-progress-bar {
+  background: var(--progress-bar-fill);
+  border-radius: var(--progress-bar-radius);
+  transition: inline-size 0.3s ease-out;
+  animation: var(--progress-bar-animation, none);
+}
+
+@keyframes jam-progress-indeterminate {
+  from,
+  to {
+    inline-size: var(--progress-bar-indeterminate-size);
+    margin-right: auto;
+  }
+  from {
+    translate: -100%;
+  }
+  to {
+    translate: 100cqi;
+  }
+}
+
+.jam-skeleton-bar {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 25%,
+    rgba(255, 255, 255, 0.09) 50%,
+    rgba(255, 255, 255, 0.04) 75%
+  );
+  background-size: 200% 100%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .jam-skeleton-bar {
+    animation: jam-skeleton-shimmer 1.8s ease-in-out infinite;
+  }
+}
+
+@keyframes jam-skeleton-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
 }
 
 .jam-essence-fill::after {
