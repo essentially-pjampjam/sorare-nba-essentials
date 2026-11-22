@@ -163,7 +163,7 @@ export function App() {
     label: "Bronze Pack",
     price: 1000,
   });
-  const [setSubTabNav, setSetSubTabNav] = useState<{ tab: "daily" | "solo_squad" | "packs"; seq: number } | null>(null);
+  const [setSubTabNav, setSetSubTabNav] = useState<{ tab: "daily" | "solo_squad" | "packs" | "overview"; seq: number } | null>(null);
   const selectPlayMode = (next: "pro" | "set") => {
     setPlayMode(next);
     try {
@@ -174,14 +174,37 @@ export function App() {
     // Collections, Craft and Deals are Pro-only (Limited and up).
     if (next === "set") setActiveTab((t) => (t === "collections" || t === "craft" || t === "bargains" ? "lineups" : t));
   };
-  const navigateTab = (tab: ActiveTab) => {
-    if (tab === "collections" || tab === "craft" || tab === "bargains") {
+  const navigateTab = (
+    tab: ActiveTab,
+    mode?: "pro" | "set",
+    subTab?: "daily" | "packs" | "overview",
+  ) => {
+    if (mode === "pro" || mode === "set") {
+      setPlayMode(mode);
+      try {
+        localStorage.setItem("jamassist_play_mode", mode);
+      } catch {
+        // per-device convenience only
+      }
+    } else if (tab === "collections" || tab === "craft" || tab === "bargains") {
       setPlayMode("pro");
       try {
         localStorage.setItem("jamassist_play_mode", "pro");
       } catch {
         // per-device convenience only
       }
+    }
+    if (subTab === "daily" || subTab === "packs" || subTab === "overview") {
+      try {
+        if (subTab === "overview") {
+          localStorage.setItem("jamassist_lineups_pro_subtab", "overview");
+        } else {
+          localStorage.setItem("jamassist_lineups_set_subtab", subTab);
+        }
+      } catch {
+        // ignore storage failure
+      }
+      setSetSubTabNav((prev) => ({ tab: subTab, seq: (prev?.seq ?? 0) + 1 }));
     }
     setActiveTab(tab);
   };
@@ -495,8 +518,8 @@ export function App() {
       (partial) => {
         setScanResult(partial);
       },
-      (tab) => {
-        navigateTab(tab);
+      (tab, mode, subTab) => {
+        navigateTab(tab, mode, subTab);
       },
       (essenceByRarity, commonEssence) => {
         setSettings((prev) => ({
@@ -538,7 +561,7 @@ export function App() {
         const [loaded, detected, pendingRaw] = await Promise.all([
           getSettings(),
           getDetectedUsername(),
-          chrome.storage.local.get("jamassist_pending_tab"),
+          chrome.storage.local.get(["jamassist_pending_tab", "jamassist_pending_nav"]),
         ]);
         setSettings(loaded);
         const safeDetected =
@@ -552,7 +575,14 @@ export function App() {
         const pendingTab = pendingRaw?.jamassist_pending_tab as
           | ActiveTab
           | undefined;
-        const resolvedTab = urlTab ?? pendingTab;
+        const pendingNav = pendingRaw?.jamassist_pending_nav as
+          | {
+              tab?: ActiveTab;
+              mode?: "pro" | "set";
+              subTab?: "daily" | "packs" | "overview";
+            }
+          | undefined;
+        const resolvedTab = urlTab ?? pendingNav?.tab ?? pendingTab;
         if (
           resolvedTab === "craft" ||
           resolvedTab === "collections" ||
@@ -560,9 +590,9 @@ export function App() {
           resolvedTab === "bargains" ||
           resolvedTab === "gallery"
         ) {
-          navigateTab(resolvedTab);
-          if (pendingTab) {
-            void chrome.storage.local.remove("jamassist_pending_tab");
+          navigateTab(resolvedTab, pendingNav?.mode, pendingNav?.subTab);
+          if (pendingTab || pendingNav) {
+            void chrome.storage.local.remove(["jamassist_pending_tab", "jamassist_pending_nav"]);
           }
         }
         const initialUser = loaded.username || safeDetected || "";

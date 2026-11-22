@@ -1,4 +1,5 @@
 import { evaluateAlertEvents } from "../calculators/alertTrackerMath";
+import { mergeApiAndDomLineups } from "../shared/domLineupMerge";
 import type {
   AlertPreferences,
   AlertTrackerConfig,
@@ -10,6 +11,7 @@ import type {
   TrackedAlertEvent,
   UserSettings,
 } from "../shared/types";
+import { getSavedPageLineups, openPageLineupsAsEntries } from "./lineupScanner";
 
 /** Alarm that runs the alert & price tracker (cutoff / daily reset reminders, surges, injuries). */
 export const ALERT_TRACKER_ALARM_NAME = "jamassist-alert-tracker";
@@ -79,28 +81,74 @@ interface CachedGalleryLike {
   gamesPerTeam?: Record<string, number>;
 }
 
-/** Last snapshot, else the last cached gallery for the user (expired TTL is fine here). */
+/** Last snapshot, else the last cached gallery for the user (expired TTL is fine here), merged with live page-synced lineups. */
 async function readSnapshot(username: string, currency: "EUR" | "USD"): Promise<TrackerSnapshot | null> {
   const galleryKeys = username
     ? [`jamassist_cache:gallery_v7:${username}`, `gallery_v7:${username}`]
     : [];
-  const raw = await chrome.storage.local.get([SNAPSHOT_KEY, ...galleryKeys]);
-  const snap = raw[SNAPSHOT_KEY] as TrackerSnapshot | undefined;
-  if (snap) return snap;
-  for (const key of galleryKeys) {
-    const envelope = raw[key] as { value?: CachedGalleryLike } | undefined;
-    const g = envelope?.value;
-    if (g?.cards) {
-      return {
-        cards: g.cards,
-        currentLineups: g.currentLineups ?? [],
-        fixtures: g.fixtures ?? [],
-        currency,
-        injuriesByName: g.injuriesByName,
-        gamesPerTeam: g.gamesPerTeam,
-      };
+  const [raw, pageSnap] = await Promise.all([
+    chrome.storage.local.get([SNAPSHOT_KEY, ...galleryKeys]),
+    getSavedPageLineups(username || undefined),
+  ]);
+  const pageEntries = openPageLineupsAsEntries(pageSnap);
+  const pageFixtures: So5FixtureSummary[] = [];
+  if (pageSnap) {
+    const seenFixtures = new Set<string>();
+    for (const l of pageSnap.lineups) {
+      if (l.fixtureState === "opened" && l.cutOffDate) {
+        const fSlug = l.fixtureSlug || "page-open-gw";
+        if (seenFixtures.has(fSlug)) continue;
+        seenFixtures.add(fSlug);
+        pageFixtures.push({
+          slug: fSlug,
+          displayName: l.fixtureName || "Open Game Week",
+          aasmState: "opened",
+          cutOffDate: l.cutOffDate,
+          endDate: l.endDate ?? l.cutOffDate,
+        });
+      }
     }
   }
+
+  let base: TrackerSnapshot | null = (raw[SNAPSHOT_KEY] as TrackerSnapshot | undefined) ?? null;
+  if (!base) {
+    for (const key of galleryKeys) {
+      const envelope = raw[key] as { value?: CachedGalleryLike } | undefined;
+      const g = envelope?.value;
+      if (g?.cards) {
+        base = {
+          cards: g.cards,
+          currentLineups: g.currentLineups ?? [],
+          fixtures: g.fixtures ?? [],
+          currency,
+          injuriesByName: g.injuriesByName,
+          gamesPerTeam: g.gamesPerTeam,
+        };
+        break;
+      }
+    }
+  }
+
+  if (base) {
+    return {
+      ...base,
+      currentLineups:
+        pageEntries.length > 0
+          ? mergeApiAndDomLineups(base.currentLineups, pageEntries, "live")
+          : base.currentLineups,
+      fixtures: base.fixtures.length > 0 ? base.fixtures : pageFixtures,
+    };
+  }
+
+  if (pageEntries.length > 0 || pageFixtures.length > 0) {
+    return {
+      cards: [],
+      currentLineups: pageEntries,
+      fixtures: pageFixtures,
+      currency,
+    };
+  }
+
   return null;
 }
 

@@ -327,6 +327,8 @@ export interface CurrentLineupEntry {
   cardSlugs: string[];
   captainCardSlug: string | null;
   playerNames?: string[];
+  /** Per-starter NBA team slugs aligned with cardSlugs / playerNames when known (from Apollo page cache). */
+  teamSlugs?: Array<string | null>;
   source?: "api" | "dom" | "page";
   /** DOM-synced extras (from the content script parser). */
   contestKind?: "arena" | "pro";
@@ -359,6 +361,8 @@ export interface PageLineup {
   endDate: string | null;
   cardSlugs: string[];
   playerNames: string[];
+  /** Per-starter NBA team slugs aligned with cardSlugs / playerNames when available in Sorare's page cache. */
+  teamSlugs?: Array<string | null>;
   rank: number | null;
   liveProjectedRank: number | null;
   score: number | null;
@@ -834,6 +838,10 @@ export type BackgroundRequest =
         rarity: CardRarity;
         seasonYear: number;
         isCaptain: boolean;
+        pictureUrl?: string | null;
+        starCost?: number | null;
+        projectedPts?: number | null;
+        teamSlug?: string | null;
       }>;
       /** Optional verified Sorare route to open before showing the HUD (Go actions). */
       targetUrl?: string;
@@ -844,6 +852,8 @@ export type BackgroundRequest =
   | {
       type: "OPEN_SIDE_PANEL";
       targetTab?: "collections" | "craft" | "lineups" | "bargains" | "gallery";
+      targetMode?: "pro" | "set";
+      targetSubTab?: "daily" | "packs" | "overview";
     }
   | {
       type: "OPEN_DASHBOARD_TAB";
@@ -864,6 +874,7 @@ export type BackgroundRequest =
       url: string;
       isCraftPage: boolean;
       username: string | null;
+      syncDailies?: boolean;
     }
   | { type: "RELOAD_EXTENSION" }
   | { type: "OPEN_URL_IN_ACTIVE_TAB"; url: string }

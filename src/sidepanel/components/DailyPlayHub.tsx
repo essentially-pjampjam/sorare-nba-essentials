@@ -292,6 +292,10 @@ export function DailyPlayHub({ gallery, pool, poolLoading, onRefreshPool, missio
                         rarity: idea.card.rarity,
                         seasonYear: idea.card.seasonYear,
                         isCaptain: false,
+                        pictureUrl: idea.card.pictureUrl,
+                        starCost: idea.card.starCost,
+                        projectedPts: idea.expected,
+                        teamSlug: idea.card.teamSlug,
                       },
                     ])
                   }

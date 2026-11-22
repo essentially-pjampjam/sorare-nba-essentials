@@ -46,8 +46,28 @@ function readLineupsFromPage(): PageReadResult {
     const appearances = (Array.isArray(apKey ? l[apKey] : null) ? (l[apKey as string] as unknown[]) : [])
       .map(deref)
       .filter((a): a is Entity => a !== null);
-    const cardSlugs = appearances.map((a) => str(deref(a.anyCard)?.slug)).filter(Boolean);
-    const playerNames = appearances.map((a) => str(deref(a.anyPlayer)?.displayName)).filter(Boolean);
+    const cardSlugs: string[] = [];
+    const playerNames: string[] = [];
+    const teamSlugs: Array<string | null> = [];
+    for (const a of appearances) {
+      const card = deref(a.anyCard);
+      const player = deref(a.anyPlayer);
+      const cSlug = str(card?.slug);
+      const pName = str(player?.displayName) || str(card?.name);
+      if (!cSlug && !pName) continue;
+      const team =
+        deref(card?.anyTeam) ??
+        deref(card?.team) ??
+        deref(player?.activeClub) ??
+        deref(player?.anyTeam) ??
+        deref(a.anyTeam);
+      const tSlug = str(team?.slug);
+      if (cSlug) cardSlugs.push(cSlug);
+      if (pName) {
+        playerNames.push(pName);
+        teamSlugs.push(tSlug || null);
+      }
+    }
     const leaderboardSlug = str(lb?.slug);
     if (!leaderboardSlug && cardSlugs.length === 0) continue;
     lineups.push({
@@ -62,6 +82,7 @@ function readLineupsFromPage(): PageReadResult {
       endDate: str(fixture?.endDate) || null,
       cardSlugs: cardSlugs.slice(0, 5),
       playerNames: playerNames.slice(0, 5),
+      teamSlugs: teamSlugs.some(Boolean) ? teamSlugs.slice(0, 5) : undefined,
       rank: num(ranking?.ranking),
       liveProjectedRank: num(ranking?.liveProjectedRanking),
       score: num(ranking?.score),
@@ -173,6 +194,7 @@ export function openPageLineupsAsEntries(snap: PageLineupSnapshot | null): Curre
       draft: false,
       cardSlugs: l.cardSlugs,
       playerNames: l.playerNames,
+      ...(l.teamSlugs ? { teamSlugs: l.teamSlugs } : {}),
       captainCardSlug: null,
       source: "page" as const,
       fixtureSlug: l.fixtureSlug,

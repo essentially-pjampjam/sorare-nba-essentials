@@ -250,8 +250,10 @@ export function findPreLockLineupRisks(
   for (const lineup of currentLineups) {
     const starters: Array<{ name: string; normName: string; teamSlug: string | null; knownCard: boolean }> = [];
     const seenInLineup = new Set<string>();
+    const lineupTeams = lineup.teamSlugs ?? [];
 
-    for (const slug of lineup.cardSlugs) {
+    for (let i = 0; i < lineup.cardSlugs.length; i += 1) {
+      const slug = lineup.cardSlugs[i];
       const card = cardBySlug.get(slug);
       if (!card) continue;
       const norm = normalizeName(card.playerName);
@@ -260,20 +262,23 @@ export function findPreLockLineupRisks(
       starters.push({
         name: card.playerName,
         normName: norm,
-        teamSlug: card.teamSlug,
+        teamSlug: card.teamSlug ?? lineupTeams[i] ?? null,
         knownCard: true,
       });
     }
-    for (const rawName of lineup.playerNames ?? []) {
+    const rawNames = lineup.playerNames ?? [];
+    for (let i = 0; i < rawNames.length; i += 1) {
+      const rawName = rawNames[i];
       const norm = normalizeName(rawName);
       if (!norm || seenInLineup.has(norm)) continue;
       seenInLineup.add(norm);
       const card = cardByNormName.get(norm);
+      const fallbackTeamSlug = lineupTeams[i] ?? null;
       starters.push({
         name: card?.playerName ?? rawName,
         normName: norm,
-        teamSlug: card?.teamSlug ?? null,
-        knownCard: Boolean(card),
+        teamSlug: card?.teamSlug ?? fallbackTeamSlug,
+        knownCard: Boolean(card || fallbackTeamSlug),
       });
     }
 

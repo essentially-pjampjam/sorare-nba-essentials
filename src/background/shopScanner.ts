@@ -25,13 +25,13 @@ function readPacksFromPage(): FoundPack[] {
     const title = typeof v.title === "string" ? v.title : "";
     // Reward packs (Squad / mission rewards) have no price: they are not shop offers.
     const price = typeof v.price === "number" ? v.price : 0;
-    if (!slug || !title || !slug.startsWith("divination-") || price <= 0) continue;
+    if (!slug || !title || !/^(?:divination-|[a-z0-9]+-(?:nba|special-offers)-)/.test(slug) || price <= 0) continue;
     out.push({ slug, title, endDate: typeof v.endDate === "string" ? v.endDate : null });
   }
   return out;
 }
 
-const STANDARD_PACK_RE = /^divination-nba-(gold|silver|bronze)(-pack|-live-today-\d{4}-\d{2}-\d{2})$/;
+const STANDARD_PACK_RE = /^[a-z0-9]+-nba-(gold|silver|bronze)(-pack|-live-today-\d{4}-\d{2}-\d{2})$/;
 
 /** Standard and Live Today packs come from the public API already; everything else is special. */
 export function isSpecialPackSlug(slug: string): boolean {
@@ -72,13 +72,32 @@ export async function syncPacksFromOpenTabs(): Promise<void> {
   await Promise.all(tabs.map((t) => (t.id ? readPacksTab(t.id).catch(() => undefined) : undefined)));
 }
 
-/** Notices new special packs whenever a Sorare Set page loads. */
+const SET_SERIES_PAGE_RE = /^https:\/\/sorare\.com\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?nba\/series(\/|$)/i;
+
+/** Silently reads Daily Pack claim status & Bronze+ progress from a Set tab when available. */
+export async function syncShopStatusFromTab(tabId: number): Promise<SetShopStatus | null> {
+  if (!chrome.scripting?.executeScript) return null;
+  const [result] = await chrome.scripting.executeScript({ target: { tabId }, world: "MAIN", func: readShopStatusFromPage });
+  const data = result?.result as SetShopStatus | { error: string } | undefined;
+  if (!data || "error" in data) return null;
+  await chrome.storage.local.set({ [SHOP_STATUS_KEY]: data });
+  return data;
+}
+
+/** Notices new special packs and Daily Pack claim status whenever a Sorare Set page loads. */
 export function watchShopPages(): void {
   if (!chrome.tabs?.onUpdated || !chrome.scripting) return;
   chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
-    if (!tab.url || !tab.url.startsWith("https://sorare.com/nba/series")) return;
+    if (!tab.url || !SET_SERIES_PAGE_RE.test(tab.url)) return;
     if (info.status !== "complete" && !info.url) return;
-    setTimeout(() => void readPacksTab(tabId).catch(() => undefined), 4000);
+    setTimeout(() => {
+      void readPacksTab(tabId).catch(() => undefined);
+      void syncShopStatusFromTab(tabId).catch(() => undefined);
+    }, 2200);
+    setTimeout(() => {
+      void readPacksTab(tabId).catch(() => undefined);
+      void syncShopStatusFromTab(tabId).catch(() => undefined);
+    }, 4500);
   });
 }
 

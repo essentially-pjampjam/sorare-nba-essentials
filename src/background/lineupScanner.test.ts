@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { PageLineup, PageLineupSnapshot } from "../shared/types";
-import { isFullLineupsOverviewUrl, mergePageLineups } from "./lineupScanner";
+import { DEFAULT_SETTINGS } from "../shared/constants";
+import { findPreLockLineupRisks } from "../calculators/alertTrackerMath";
+import { runAlertTracker } from "./alertTracker";
+import { isFullLineupsOverviewUrl, mergePageLineups, openPageLineupsAsEntries } from "./lineupScanner";
 import { isEncryptedSecret } from "./secretStore";
+import { isSpecialPackSlug } from "./shopScanner";
 
 function makeLineup(overrides: Partial<PageLineup> = {}): PageLineup {
   return {
@@ -72,6 +76,111 @@ describe("lineupScanner mergePageLineups & URL classification", () => {
     );
     expect(next.lineups.map((l) => l.id).sort()).toEqual(["lu-1", "lu-2", "lu-3"]);
     expect(next.lineups.find((l) => l.id === "lu-2")?.name).toBe("Edited #2");
+  });
+
+  it("preserves teamSlugs from PageLineup into CurrentLineupEntry so 0G pre-lock risk detection works without a gallery load", () => {
+    const snap: PageLineupSnapshot = {
+      userSlug: "pjampjam",
+      scannedAt: 3000,
+      lineups: [
+        makeLineup({
+          id: "lu-teams",
+          cardSlugs: ["c-1", "c-2"],
+          playerNames: ["Luka Doncic", "Victor Wembanyama"],
+          teamSlugs: ["dallas-mavericks", "san-antonio-spurs"],
+        }),
+      ],
+    };
+    const entries = openPageLineupsAsEntries(snap);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.teamSlugs).toEqual(["dallas-mavericks", "san-antonio-spurs"]);
+
+    const risks = findPreLockLineupRisks(
+      entries,
+      [], // empty gallery (not loaded yet)
+      {},
+      { "dallas-mavericks": 2, "san-antonio-spurs": 0 },
+    );
+    expect(risks.flagged).toEqual(["Victor Wembanyama (0G)"]);
+    expect(risks.affectedLineupIds).toEqual(["page:lu-teams"]);
+  });
+
+  it("runAlertTracker reads page_lineups_v1 and synthesizes the open fixture when no gallery snapshot exists yet", async () => {
+    const store: Record<string, unknown> = {
+      page_lineups_v1: {
+        userSlug: "pjampjam",
+        scannedAt: 3000,
+        lineups: [
+          makeLineup({
+            id: "lu-page-only",
+            fixtureSlug: "nba-gw-12",
+            fixtureName: "Game Week 12",
+            fixtureState: "opened",
+            cutOffDate: "2026-11-23T01:00:00Z",
+            cardSlugs: ["c-1", "c-2"],
+            playerNames: ["Luka Doncic", "Victor Wembanyama"],
+            teamSlugs: ["dallas-mavericks", "san-antonio-spurs"],
+          }),
+        ],
+      } satisfies PageLineupSnapshot,
+    };
+    const prevChrome = (globalThis as { chrome?: unknown }).chrome;
+    (globalThis as { chrome?: unknown }).chrome = {
+      storage: {
+        local: {
+          get: async (keys: string | string[]) => {
+            const list = Array.isArray(keys) ? keys : [keys];
+            return Object.fromEntries(list.map((k) => [k, store[k]]));
+          },
+          set: async (patch: Record<string, unknown>) => {
+            Object.assign(store, patch);
+          },
+        },
+      },
+    };
+    try {
+      const nowMs = Date.parse("2026-11-23T00:30:00Z"); // 30m before cutOffDate
+      const events = await runAlertTracker(
+        {
+          ...DEFAULT_SETTINGS,
+          username: "pjampjam",
+          alertsEnabled: true,
+          cutoffReminderEnabled: true,
+        },
+        {
+          "victor wembanyama": {
+            playerName: "Victor Wembanyama",
+            normalizedName: "victor wembanyama",
+            teamName: "San Antonio Spurs",
+            status: "OUT",
+            rawStatus: "Out",
+            comment: "Rest",
+          },
+        },
+        nowMs,
+      );
+      const cutoffEvent = events.find((e) => e.kind === "gw_cutoff");
+      expect(cutoffEvent).toBeDefined();
+      expect(cutoffEvent?.title).toContain("1 lineup risk");
+      expect(cutoffEvent?.message).toContain("Victor Wembanyama (OUT)");
+      expect(cutoffEvent?.lineupIds).toEqual(["page:lu-page-only"]);
+    } finally {
+      (globalThis as { chrome?: unknown }).chrome = prevChrome;
+    }
+  });
+});
+
+describe("shopScanner isSpecialPackSlug", () => {
+  it("recognizes special packs across both divination and future <set>-nba- prefixes while filtering standard and Live Today packs", () => {
+    expect(isSpecialPackSlug("divination-nba-emirates-cup-platinum")).toBe(true);
+    expect(isSpecialPackSlug("hoops-nba-all-star-special-pack")).toBe(true);
+    expect(isSpecialPackSlug("genesis27-nba-playoffs-pack")).toBe(true);
+
+    expect(isSpecialPackSlug("divination-nba-bronze-pack")).toBe(false);
+    expect(isSpecialPackSlug("hoops-nba-gold-pack")).toBe(false);
+    expect(isSpecialPackSlug("divination-nba-silver-live-today-2026-11-22")).toBe(false);
+    expect(isSpecialPackSlug("hoops-nba-bronze-live-today-2027-01-15")).toBe(false);
+    expect(isSpecialPackSlug("divination-nba-daily-free")).toBe(false);
   });
 });
 

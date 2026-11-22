@@ -68,8 +68,8 @@ import { SorareClient } from "./sorareClient";
 import { getSavedSquadSnapshot, scanSquadFromOpenTab } from "./squadScanner";
 import { decryptSecret, isEncryptedSecret, MASK_PREFIX, maskSecret, sealForStorage } from "./secretStore";
 import { openPageLineupsAsEntries, syncLineupsFromOpenTabs, watchLineupPages } from "./lineupScanner";
-import { getDiscoveredPacks, getSavedShopStatus, scanShopStatusFromOpenTab, syncPacksFromOpenTabs, watchShopPages } from "./shopScanner";
-import { getSavedPickerMissions, scanPickerMissionsFromOpenTabs, watchMissionPages } from "./missionScanner";
+import { getDiscoveredPacks, getSavedShopStatus, scanShopStatusFromOpenTab, syncPacksFromOpenTabs, syncShopStatusFromTab, watchShopPages } from "./shopScanner";
+import { getSavedPickerMissions, scanPickerMissionsFromOpenTabs, syncMissionTab, watchMissionPages } from "./missionScanner";
 import { applySealedOverrides, syncSealedStatesFromOpenTabs, watchSealedStates } from "./cardStateScanner";
 
 const SETTINGS_KEY = "jamassist_settings_v2";
@@ -1413,6 +1413,7 @@ async function fetchBargainsResult(
 
 async function handleMessage(
   msg: BackgroundRequest,
+  sender?: chrome.runtime.MessageSender,
 ): Promise<BackgroundResponse<unknown>> {
   try {
     switch (msg.type) {
@@ -1458,6 +1459,16 @@ async function handleMessage(
         if (msg.isCraftPage === true) {
           await chrome.storage.local.set({ [PENDING_TAB_KEY]: "craft" });
           broadcastMessage({ type: "SWITCH_TAB", tab: "craft" });
+        }
+        const tabId = sender?.tab?.id;
+        const pageUrl = msg.url || sender?.tab?.url || "";
+        if (typeof tabId === "number" && /^https:\/\/sorare\.com\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?nba\//i.test(pageUrl)) {
+          if (/\/nba\/(play(\/missions)?|series\/play)/i.test(pageUrl)) {
+            void syncMissionTab(tabId);
+          }
+          if (/\/nba\/series(\/|$)/i.test(pageUrl)) {
+            void syncShopStatusFromTab(tabId);
+          }
         }
         return { ok: true, data: true };
       }
@@ -1967,8 +1978,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Open Side Panel synchronously on message receipt before any `await` so Chrome preserves the user gesture token
   if (req.type === "OPEN_SIDE_PANEL") {
     if (req.targetTab) {
-      void chrome.storage.local.set({ [PENDING_TAB_KEY]: req.targetTab });
-      broadcastMessage({ type: "SWITCH_TAB", tab: req.targetTab });
+      void chrome.storage.local.set({
+        [PENDING_TAB_KEY]: req.targetTab,
+        ...(req.targetMode || req.targetSubTab
+          ? {
+              jamassist_pending_nav: {
+                tab: req.targetTab,
+                mode: req.targetMode,
+                subTab: req.targetSubTab,
+              },
+            }
+          : {}),
+      });
+      broadcastMessage({
+        type: "SWITCH_TAB",
+        tab: req.targetTab,
+        ...(req.targetMode ? { mode: req.targetMode } : {}),
+        ...(req.targetSubTab ? { subTab: req.targetSubTab } : {}),
+      });
     }
     if (sender.tab?.id !== undefined) {
       chrome.sidePanel
@@ -1991,7 +2018,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
-  void handleMessage(req)
+  void handleMessage(req, sender)
     .then(sendResponse)
     .catch((err) =>
       sendResponse({

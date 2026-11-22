@@ -2,6 +2,18 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
+## 2.7.5-exp16 (2026-11-22)
+
+Added:
+- On-Page Daily Checklist Overlay (`sorareDetector.ts`, `shopScanner.ts`, `missionScanner.ts`, `index.ts`, `App.tsx`, `LineupsTab.tsx`): added a zero-API-call `Dailies • N left` pill in the bottom-right Sorare NBA dock that reads cached Set Shop (`set_shop_status_v1`) and Daily Picker (`picker_missions_v1`) states after the 07:00 UTC reset, auto-syncs `set_shop_status_v1` and `picker_missions_v1` when visiting or interacting with Sorare Set Shop / Missions pages, opens a unified glass checklist with `All | Set | Pro` filter tabs (auto-selecting `Set` on `/nba/series/*` and `Pro` on `/nba/play/*`), routes `Packs` / `Picks` directly to the matching Side Panel mode (`Set -> Packs`, `Set -> Daily Play`, `Pro -> Overview & Live`) and `Go ↗` to Sorare, supports Escape / outside-click light-dismiss, and automatically disappears once all dailies are done.
+- Smart Placement & Next-Slot Drawer-Load Wait in Lineup Helper HUD (`sorareDetector.ts`, `LineupsTab.tsx`, `DailyPlayHub.tsx`, `api.ts`, `types.ts`): `Fill Next` and `Find` now isolate searches to the open Sorare drawer (preventing background-page false clicks), reset stale drawer search text from previous slots, wait for Sorare's drawer to place the card (`Placing...`) and load the next slot's card list (`Loading slot...` / `Loading cards...` up to ~3.2s), and display player portraits (`pictureUrl`), star cost (`★`), projected points, and season year inside the `.glass-chrome` HUD.
+
+Improved / Fixed:
+- Responsive Glass Card Overlay Badges & Shadow DOM Typography (`sorareDetector.ts`): upgraded `.jamassist-card-overlay-pill` on `sorare.com` card tiles with frosted dark glass (`backdrop-filter: blur(8px)`), semantic border accents (gold for `Draft 26'`, emerald for `1ST`, sky for `🔥` hot form), container-width responsive scaling (`< 115px` tiles show a single compact tag with `max-width` ellipsis truncation), and `font-family: inherit` on Shadow DOM form controls.
+- Future Set Pack Prefix Longevity (`shopScanner.ts`, `lineupScanner.test.ts`): broadened Set pack discovery from hardcoded `divination-` to any `<set>-nba-` series prefix (`/^[a-z0-9]+-nba-/`).
+- Pre-Lock `0G` Alert Without Prior Gallery Load (`lineupScanner.ts`, `alertTracker.ts`, `alertTrackerMath.ts`, `types.ts`, `lineupScanner.test.ts`): extracts index-aligned per-starter `teamSlugs` from Sorare's Apollo page cache and merges `page_lineups_v1` (plus synthesized open GW fixtures) inside `runAlertTracker` so `findPreLockLineupRisks` flags `0G` and `OUT` starters even before a gallery load.
+- `v2.7.5` Docs Sync (`README.md`, `CHROMEWEBSTORE.md`): updated `README.md` and `CHROMEWEBSTORE.md` for `v2.7.5` (dedicated Fast Mode lightning bolt button, `< 24h` Quest auction window, and new `v2.7.5` tools).
+
 ## 2.7.5-exp15 (2026-11-22)
 
 Changed:

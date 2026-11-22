@@ -447,6 +447,176 @@ import {
     hotMap: {},
   };
 
+  interface StoredPickerTask {
+    title: string;
+    description: string;
+    mode: string;
+    slug: string;
+    picks: number;
+    state: string;
+  }
+
+  interface StoredPickerSnapshot {
+    mode: "pro" | "set";
+    tasks: StoredPickerTask[];
+    scannedAt: number;
+  }
+
+  type StoredPickerMissionsByMode = Partial<Record<"pro" | "set", StoredPickerSnapshot>>;
+
+  interface StoredShopStatus {
+    dailyPackClaimed: boolean | null;
+    bronzePlusProgress: number | null;
+    bronzePlusTarget: number | null;
+    scannedAt: number;
+  }
+
+  let storedPickerMissions: StoredPickerMissionsByMode = {};
+  let storedShopStatus: StoredShopStatus | null = null;
+  let dailyPanelFilter: "all" | "set" | "pro" = "all";
+  let dailyPanelOpen = false;
+  let dailyPillBtnEl: HTMLButtonElement | null = null;
+  let dailyPopoverEl: HTMLDivElement | null = null;
+
+  function lastDailyResetMs(nowMs = Date.now()): number {
+    const d = new Date(nowMs);
+    d.setUTCHours(7, 0, 0, 0);
+    if (d.getTime() > nowMs) {
+      d.setUTCDate(d.getUTCDate() - 1);
+    }
+    return d.getTime();
+  }
+
+  interface DailyChecklistItem {
+    id: string;
+    mode: "set" | "pro";
+    modeBadge: string;
+    title: string;
+    sub: string;
+    done: boolean;
+    known: boolean;
+    url: string;
+    tab: "lineups";
+    subTab: "daily" | "packs" | "overview";
+    panelBtnLabel: string;
+    panelBtnTitle: string;
+  }
+
+  function isTaskCompletedState(rawState: string): boolean {
+    const s = rawState.trim().toUpperCase();
+    return (
+      s === "COMPLETED" ||
+      s === "CLAIMED" ||
+      s === "FULFILLED" ||
+      s === "DONE" ||
+      s === "SUBMITTED" ||
+      s === "LOCKED" ||
+      s === "PLAYED"
+    );
+  }
+
+  function buildDailyChecklistItems(): DailyChecklistItem[] {
+    const resetMs = lastDailyResetMs();
+    const items: DailyChecklistItem[] = [];
+
+    // 1. Set Free Daily Pack
+    const shopFresh = Boolean(storedShopStatus && storedShopStatus.scannedAt >= resetMs);
+    const packClaimed = shopFresh && storedShopStatus?.dailyPackClaimed === true;
+    const packKnown = shopFresh && storedShopStatus?.dailyPackClaimed !== null;
+    items.push({
+      id: "set_daily_pack",
+      mode: "set",
+      modeBadge: "SET",
+      title: "Free Daily Pack",
+      sub: packClaimed ? "Claimed today" : packKnown ? "Ready to claim in Shop" : "Open Set Shop to check",
+      done: packClaimed,
+      known: packKnown,
+      url: "https://sorare.com/nba/series/market",
+      tab: "lineups",
+      subTab: "packs",
+      panelBtnLabel: "Packs",
+      panelBtnTitle: "Open Set Pack Advisor in the Side Panel",
+    });
+
+    // 2. Set Daily Picker
+    const setSnap = storedPickerMissions.set;
+    const setFresh = Boolean(setSnap && setSnap.scannedAt >= resetMs && Array.isArray(setSnap.tasks) && setSnap.tasks.length > 0);
+    if (setFresh && setSnap) {
+      for (const t of setSnap.tasks) {
+        const done = isTaskCompletedState(t.state);
+        items.push({
+          id: `set_task_${t.slug || t.title}`,
+          mode: "set",
+          modeBadge: "SET",
+          title: t.title || "Set Daily Picker",
+          sub: done ? "Picked today" : `${t.picks || 1} pick • Beat L10 + 7 & 20+ pts`,
+          done,
+          known: Boolean(t.state),
+          url: "https://sorare.com/nba/series/play?missions=play",
+          tab: "lineups",
+          subTab: "daily",
+          panelBtnLabel: "Picks",
+          panelBtnTitle: "Open Set Daily Play suggestions in the Side Panel",
+        });
+      }
+    } else {
+      items.push({
+        id: "set_daily_picker_default",
+        mode: "set",
+        modeBadge: "SET",
+        title: "Set Daily Picker",
+        sub: "1 Common pick • Beat L10 + 7 & 20+ pts",
+        done: false,
+        known: false,
+        url: "https://sorare.com/nba/series/play?missions=play",
+        tab: "lineups",
+        subTab: "daily",
+        panelBtnLabel: "Picks",
+        panelBtnTitle: "Open Set Daily Play suggestions in the Side Panel",
+      });
+    }
+
+    // 3. Pro Daily Pickers (Limited+)
+    const proSnap = storedPickerMissions.pro;
+    const proFresh = Boolean(proSnap && proSnap.scannedAt >= resetMs && Array.isArray(proSnap.tasks) && proSnap.tasks.length > 0);
+    if (proFresh && proSnap) {
+      for (const t of proSnap.tasks) {
+        const done = isTaskCompletedState(t.state);
+        items.push({
+          id: `pro_task_${t.slug || t.title}`,
+          mode: "pro",
+          modeBadge: "PRO",
+          title: t.title || "Pro Daily Picker",
+          sub: done ? "Picked today" : `${t.picks || 3} picks • Limited`,
+          done,
+          known: Boolean(t.state),
+          url: "https://sorare.com/nba/play/missions/play/limited",
+          tab: "lineups",
+          subTab: "overview",
+          panelBtnLabel: "Picks",
+          panelBtnTitle: "Open Pro Daily Play suggestions in the Side Panel",
+        });
+      }
+    } else {
+      items.push({
+        id: "pro_daily_picker_default",
+        mode: "pro",
+        modeBadge: "PRO",
+        title: "Pro Daily Pickers",
+        sub: "Daily Picker & stat missions • 3 picks",
+        done: false,
+        known: false,
+        url: "https://sorare.com/nba/play/missions/play/limited",
+        tab: "lineups",
+        subTab: "overview",
+        panelBtnLabel: "Picks",
+        panelBtnTitle: "Open Pro Daily Play suggestions in the Side Panel",
+      });
+    }
+
+    return items;
+  }
+
   const DRAFT_26_SLUGS = new Set<string>([
     "ebuka-okorie-20070410",
     "karim-lopez-20070412",
@@ -508,9 +678,14 @@ import {
   }
 
   try {
-    // Only read non-secret auto-open flags & public slug lookup; API keys stay isolated from content scripts
+    // Only read non-secret auto-open flags, public slug lookup & cached daily missions/shop status; API keys stay isolated
     chrome.storage.local.get(
-      ["jamassist_content_flags_v1", "jamassist_overlay_lookup_v1"],
+      [
+        "jamassist_content_flags_v1",
+        "jamassist_overlay_lookup_v1",
+        "picker_missions_v1",
+        "set_shop_status_v1",
+      ],
       (raw) => {
         const f = raw?.jamassist_content_flags_v1 as
           | {
@@ -527,6 +702,13 @@ import {
           };
         }
         applyRawOverlayLookup(raw?.jamassist_overlay_lookup_v1);
+        if (raw?.picker_missions_v1 && typeof raw.picker_missions_v1 === "object") {
+          storedPickerMissions = raw.picker_missions_v1 as StoredPickerMissionsByMode;
+        }
+        if (raw?.set_shop_status_v1 && typeof raw.set_shop_status_v1 === "object") {
+          storedShopStatus = raw.set_shop_status_v1 as StoredShopStatus;
+        }
+        renderDailyChecklistOverlay();
         window.setTimeout(() => {
           document
             .querySelectorAll<HTMLElement>("[data-jamassist-decorated]")
@@ -548,6 +730,15 @@ import {
           autoOpenOnSorare: f.autoOpenOnSorare ?? false,
           autoShowInPageWizards: f.autoShowInPageWizards ?? true,
         };
+        renderDailyChecklistOverlay();
+      }
+      if (changes.picker_missions_v1?.newValue) {
+        storedPickerMissions = changes.picker_missions_v1.newValue as StoredPickerMissionsByMode;
+        renderDailyChecklistOverlay();
+      }
+      if (changes.set_shop_status_v1?.newValue) {
+        storedShopStatus = changes.set_shop_status_v1.newValue as StoredShopStatus;
+        renderDailyChecklistOverlay();
       }
       if (changes.jamassist_overlay_lookup_v1?.newValue) {
         applyRawOverlayLookup(changes.jamassist_overlay_lookup_v1.newValue);
@@ -586,6 +777,9 @@ import {
     if (existing) existing.remove();
     pillEl = null;
     badgeSubEl = null;
+    dailyPillBtnEl = null;
+    dailyPopoverEl = null;
+    dailyPanelOpen = false;
     const hud = document.getElementById("jamassist-lineup-hud");
     if (hud) {
       clearActiveTileHighlight();
@@ -598,6 +792,163 @@ import {
         .querySelectorAll<HTMLElement>("[data-jamassist-decorated]")
         .forEach((el) => delete el.dataset.jamassistDecorated);
     }
+  }
+
+  function renderDailyChecklistOverlay(): void {
+    if (!dailyPillBtnEl || !dailyPopoverEl) return;
+    if (!autoOpenFlags.autoShowInPageWizards || !isNbaSorareUrl(window.location.href)) {
+      dailyPillBtnEl.classList.add("hidden");
+      dailyPopoverEl.classList.add("hidden");
+      return;
+    }
+
+    const allItems = buildDailyChecklistItems();
+    const pendingItems = allItems.filter((it) => !it.done);
+
+    // Auto-disappear once all daily tasks are completed today (zero screen clutter).
+    if (pendingItems.length === 0) {
+      dailyPillBtnEl.classList.add("hidden");
+      dailyPopoverEl.classList.add("hidden");
+      dailyPanelOpen = false;
+      return;
+    }
+
+    dailyPillBtnEl.classList.remove("hidden");
+    dailyPillBtnEl.textContent = `Dailies • ${pendingItems.length} left`;
+    dailyPillBtnEl.title = `${pendingItems.length} Sorare NBA daily mission${pendingItems.length === 1 ? "" : "s"} left before 07:00 UTC reset`;
+    dailyPillBtnEl.classList.toggle("active", dailyPanelOpen);
+
+    if (!dailyPanelOpen) {
+      dailyPopoverEl.classList.add("hidden");
+      return;
+    }
+    dailyPopoverEl.classList.remove("hidden");
+
+    while (dailyPopoverEl.firstChild) {
+      dailyPopoverEl.removeChild(dailyPopoverEl.firstChild);
+    }
+
+    const hdr = document.createElement("div");
+    hdr.className = "daily-hdr";
+    const hdrTitle = document.createElement("span");
+    hdrTitle.className = "daily-title";
+    hdrTitle.textContent = `Today's Dailies (${pendingItems.length} left)`;
+
+    const filterRow = document.createElement("div");
+    filterRow.className = "daily-filters";
+    const filterModes: Array<{ id: "all" | "set" | "pro"; label: string }> = [
+      { id: "all", label: "All" },
+      { id: "set", label: "Set" },
+      { id: "pro", label: "Pro" },
+    ];
+    for (const fm of filterModes) {
+      const fBtn = document.createElement("button");
+      fBtn.type = "button";
+      fBtn.className = `daily-filter-btn${dailyPanelFilter === fm.id ? " active" : ""}`;
+      fBtn.textContent = fm.label;
+      fBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        dailyPanelFilter = fm.id;
+        renderDailyChecklistOverlay();
+      });
+      filterRow.appendChild(fBtn);
+    }
+
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "daily-close";
+    closeBtn.textContent = "×";
+    closeBtn.title = "Close Dailies checklist";
+    closeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      dailyPanelOpen = false;
+      renderDailyChecklistOverlay();
+    });
+
+    const hdrRight = document.createElement("div");
+    hdrRight.className = "daily-hdr-right";
+    hdrRight.append(filterRow, closeBtn);
+    hdr.append(hdrTitle, hdrRight);
+    dailyPopoverEl.appendChild(hdr);
+
+    const visibleItems = allItems.filter(
+      (it) => dailyPanelFilter === "all" || it.mode === dailyPanelFilter,
+    );
+
+    const list = document.createElement("div");
+    list.className = "daily-list";
+    for (const item of visibleItems) {
+      const row = document.createElement("div");
+      row.className = `daily-row${item.done ? " done" : ""}`;
+
+      const left = document.createElement("div");
+      left.className = "daily-row-left";
+
+      const badge = document.createElement("span");
+      badge.className = `daily-mode-badge ${item.mode}`;
+      badge.textContent = item.modeBadge;
+
+      const textCol = document.createElement("div");
+      textCol.className = "daily-row-text";
+      const t = document.createElement("div");
+      t.className = "daily-row-title";
+      t.textContent = item.title;
+      const s = document.createElement("div");
+      s.className = "daily-row-sub";
+      s.textContent = item.sub;
+      textCol.append(t, s);
+
+      left.append(badge, textCol);
+
+      const actions = document.createElement("div");
+      actions.className = "daily-row-actions";
+
+      if (item.done) {
+        const donePill = document.createElement("span");
+        donePill.className = "daily-done-pill";
+        donePill.textContent = "✓ Done";
+        actions.appendChild(donePill);
+      } else {
+        const picksBtn = document.createElement("button");
+        picksBtn.type = "button";
+        picksBtn.className = "daily-act-btn picks";
+        picksBtn.textContent = item.panelBtnLabel;
+        picksBtn.title = item.panelBtnTitle;
+        picksBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          try {
+            chrome.runtime.sendMessage({
+              type: "OPEN_SIDE_PANEL",
+              targetTab: item.tab,
+              targetMode: item.mode,
+              targetSubTab: item.subTab,
+            });
+          } catch {
+            // Ignore
+          }
+        });
+
+        const goBtn = document.createElement("button");
+        goBtn.type = "button";
+        goBtn.className = "daily-act-btn go";
+        goBtn.textContent = "Go ↗";
+        goBtn.title = `Open ${item.title} on Sorare`;
+        goBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          window.location.assign(item.url);
+        });
+
+        actions.append(picksBtn, goBtn);
+      }
+
+      row.append(left, actions);
+      list.appendChild(row);
+    }
+
+    const note = document.createElement("div");
+    note.className = "daily-note";
+    note.textContent = "0 extra API calls • Syncs automatically when you open Sorare missions or Shop.";
+    dailyPopoverEl.append(list, note);
   }
 
   function syncBottomLauncherVisibility(refreshText = false): void {
@@ -636,6 +987,10 @@ import {
     style.textContent = `
       :host {
         all: initial;
+      }
+      button,
+      input {
+        font-family: inherit;
       }
       .wrap {
         position: fixed;
@@ -769,7 +1124,216 @@ import {
           inset 0 1px 0 rgba(255, 255, 255, 0.14),
           0 4px 12px -4px rgba(0, 0, 0, 0.5);
       }
+      .daily-pill {
+        height: 28px;
+        padding: 0 9px;
+        border-radius: 10px;
+        border: 1px solid rgba(251, 191, 36, 0.38);
+        background: linear-gradient(180deg, rgba(251, 191, 36, 0.18) 0%, rgba(245, 158, 11, 0.08) 100%);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+        color: #fde68a;
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        white-space: nowrap;
+        display: inline-flex;
+        align-items: center;
+        cursor: pointer;
+        transition:
+          color 150ms ease-out,
+          border-color 150ms ease-out,
+          background 150ms ease-out,
+          box-shadow 150ms ease-out,
+          scale 150ms ease-out,
+          translate 150ms ease-out;
+      }
+      .daily-pill:hover,
+      .daily-pill.active {
+        color: #fef3c7;
+        border-color: rgba(251, 191, 36, 0.72);
+        background: linear-gradient(180deg, rgba(251, 191, 36, 0.28) 0%, rgba(245, 158, 11, 0.14) 100%);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.20),
+          0 4px 14px -4px rgba(251, 191, 36, 0.35);
+      }
+      .daily-popover {
+        position: fixed;
+        right: 18px;
+        bottom: 66px;
+        width: 296px;
+        z-index: 2147483647;
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: linear-gradient(180deg, rgba(26, 29, 35, 0.92) 0%, rgba(15, 17, 21, 0.96) 100%);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.16),
+          0 20px 44px -10px rgba(0, 0, 0, 0.78);
+        backdrop-filter: blur(16px) saturate(150%);
+        -webkit-backdrop-filter: blur(16px) saturate(150%);
+        padding: 11px 12px;
+        color: #f1f5f9;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, ui-sans-serif, system-ui, sans-serif;
+      }
+      .daily-hdr {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+        margin-bottom: 8px;
+      }
+      .daily-title {
+        font-size: 11.5px;
+        font-weight: 700;
+        color: #fbbf24;
+      }
+      .daily-hdr-right {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .daily-filters {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        padding: 2px;
+        border-radius: 8px;
+        background: rgba(11, 16, 27, 0.75);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      .daily-filter-btn {
+        background: transparent;
+        border: none;
+        border-radius: 6px;
+        padding: 2px 6px;
+        font-size: 9.5px;
+        font-weight: 600;
+        color: #94a3b8;
+        cursor: pointer;
+      }
+      .daily-filter-btn:hover {
+        color: #e2e8f0;
+      }
+      .daily-filter-btn.active {
+        background: rgba(56, 189, 248, 0.20);
+        color: #e0f2fe;
+      }
+      .daily-close {
+        background: transparent;
+        border: none;
+        color: #94a3b8;
+        font-size: 14px;
+        line-height: 1;
+        padding: 2px 4px;
+        cursor: pointer;
+      }
+      .daily-close:hover {
+        color: #ffffff;
+      }
+      .daily-list {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      .daily-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 6px 8px;
+        border-radius: 10px;
+        background: rgba(17, 23, 38, 0.75);
+        border: 1px solid rgba(255, 255, 255, 0.07);
+      }
+      .daily-row.done {
+        opacity: 0.56;
+      }
+      .daily-row-left {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-width: 0;
+        flex: 1;
+      }
+      .daily-mode-badge {
+        font-size: 8.5px;
+        font-weight: 800;
+        padding: 2px 5px;
+        border-radius: 5px;
+        letter-spacing: 0.03em;
+        flex-shrink: 0;
+      }
+      .daily-mode-badge.set {
+        background: rgba(217, 217, 217, 0.16);
+        color: #ececec;
+        border: 1px solid rgba(217, 217, 217, 0.35);
+      }
+      .daily-mode-badge.pro {
+        background: rgba(251, 191, 36, 0.16);
+        color: #fde68a;
+        border: 1px solid rgba(251, 191, 36, 0.38);
+      }
+      .daily-row-text {
+        min-width: 0;
+        flex: 1;
+      }
+      .daily-row-title {
+        font-size: 10.5px;
+        font-weight: 600;
+        color: #f8fafc;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .daily-row-sub {
+        font-size: 9.5px;
+        color: #94a3b8;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .daily-row-actions {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        flex-shrink: 0;
+      }
+      .daily-act-btn {
+        border-radius: 7px;
+        padding: 3px 6px;
+        font-size: 9.5px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .daily-act-btn.picks {
+        background: rgba(52, 211, 153, 0.16);
+        border: 1px solid rgba(52, 211, 153, 0.38);
+        color: #a7f3d0;
+      }
+      .daily-act-btn.picks:hover {
+        background: rgba(52, 211, 153, 0.26);
+      }
+      .daily-act-btn.go {
+        background: rgba(56, 189, 248, 0.16);
+        border: 1px solid rgba(56, 189, 248, 0.38);
+        color: #bae6fd;
+      }
+      .daily-act-btn.go:hover {
+        background: rgba(56, 189, 248, 0.26);
+      }
+      .daily-done-pill {
+        font-size: 9.5px;
+        font-weight: 700;
+        color: #34d399;
+      }
+      .daily-note {
+        margin-top: 7px;
+        padding-top: 6px;
+        border-top: 1px solid rgba(255, 255, 255, 0.07);
+        font-size: 9px;
+        color: #94a3b8;
+      }
       .pill:focus-visible,
+      .daily-pill:focus-visible,
       .min-btn:focus-visible {
         outline: 2px solid #38bdf8;
         outline-offset: 2px;
@@ -877,6 +1441,13 @@ import {
       minimized = !minimized;
       text.classList.toggle("hidden", minimized);
       pill.classList.toggle("minimized", minimized);
+      if (minimized) {
+        dailyPanelOpen = false;
+      }
+      renderDailyChecklistOverlay();
+      if (minimized && dailyPillBtnEl) {
+        dailyPillBtnEl.classList.add("hidden");
+      }
       minBtn.textContent = minimized ? "+" : "−";
     });
 
@@ -945,10 +1516,37 @@ import {
       }
     });
 
-    wrap.append(pill, dashBtn, minBtn);
-    shadow.append(style, wrap);
+    const dailyBtn = document.createElement("button");
+    dailyBtn.type = "button";
+    dailyBtn.className = "daily-pill hidden";
+    dailyPillBtnEl = dailyBtn;
+    dailyBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      // Auto-select context tab on first open based on current Sorare URL
+      if (!dailyPanelOpen) {
+        dailyPanelFilter = isSetModePage()
+          ? "set"
+          : /\/nba\/(play|lineups|pro)/i.test(window.location.pathname)
+            ? "pro"
+            : "all";
+        schedulePageDailiesSync();
+      }
+      dailyPanelOpen = !dailyPanelOpen;
+      renderDailyChecklistOverlay();
+    });
+
+    const dailyPop = document.createElement("div");
+    dailyPop.className = "daily-popover hidden";
+    dailyPop.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
+    dailyPopoverEl = dailyPop;
+
+    wrap.append(pill, dailyBtn, dashBtn, minBtn);
+    shadow.append(style, dailyPop, wrap);
     document.body.appendChild(host);
     updateOverlayUI();
+    renderDailyChecklistOverlay();
   }
 
   function checkPendingLineupHud(): void {
@@ -993,14 +1591,56 @@ import {
     void decorateSorareCardTiles();
   }
 
-  // Trigger optional auto-open on user click when on craft / configured pages
+  let dailiesSyncTimerA: number | null = null;
+  let dailiesSyncTimerB: number | null = null;
+  function schedulePageDailiesSync(): void {
+    const href = window.location.href;
+    if (!/\/nba\/(play(\/missions)?|series(\/|$))/i.test(href)) return;
+    const sendSync = () => {
+      if (!isContextValid()) return;
+      try {
+        chrome.runtime.sendMessage({
+          type: "SORARE_PAGE_CONTEXT",
+          url: window.location.href,
+          isCraftPage: isCraftRoute(),
+          username: detectUsername(),
+          syncDailies: true,
+        });
+      } catch {
+        // Ignore
+      }
+    };
+    if (dailiesSyncTimerA !== null) window.clearTimeout(dailiesSyncTimerA);
+    if (dailiesSyncTimerB !== null) window.clearTimeout(dailiesSyncTimerB);
+    dailiesSyncTimerA = window.setTimeout(sendSync, 1200);
+    dailiesSyncTimerB = window.setTimeout(sendSync, 3000);
+  }
+
+  // Trigger optional auto-open on user click when on craft / configured pages, light-dismiss popover, and re-sync dailies after in-page claims/submissions
   document.addEventListener(
     "click",
-    () => {
+    (ev) => {
       tryAutoOpenOnGesture();
+      schedulePageDailiesSync();
+      if (dailyPanelOpen) {
+        const root = document.getElementById("jamassist-sorare-root");
+        const target = (ev as { target?: unknown } | undefined)?.target;
+        if (root && target !== root) {
+          dailyPanelOpen = false;
+          renderDailyChecklistOverlay();
+        }
+      }
     },
     { capture: true, passive: true },
   );
+
+  window.addEventListener("keydown", (ev) => {
+    const key = (ev as { key?: string } | undefined)?.key;
+    if (key === "Escape" && dailyPanelOpen) {
+      dailyPanelOpen = false;
+      renderDailyChecklistOverlay();
+    }
+  });
 
   function extractPlayerSlugFromHref(href: string): string | null {
     const queryMatch = href.match(
@@ -1069,27 +1709,48 @@ import {
                 container.style.position = "relative";
               }
 
+              const compactTile = rect.width < 115;
               const pill = document.createElement("div");
               pill.className = "jamassist-card-overlay-pill";
-              pill.textContent = tags.slice(0, 2).join(" • ");
+              pill.textContent = compactTile ? tags[0] : tags.slice(0, 2).join(" • ");
               pill.style.position = "absolute";
-              pill.style.top = "6px";
-              pill.style.left = "6px";
+              pill.style.top = compactTile ? "5px" : "7px";
+              pill.style.left = compactTile ? "5px" : "7px";
+              pill.style.maxWidth = "calc(100% - 14px)";
+              pill.style.overflow = "hidden";
+              pill.style.textOverflow = "ellipsis";
+              pill.style.whiteSpace = "nowrap";
               pill.style.zIndex = "20";
               pill.style.pointerEvents = "none";
-              pill.style.padding = "2px 6px";
+              pill.style.padding = compactTile ? "1.5px 5.5px" : "2.5px 7.5px";
               pill.style.borderRadius = "999px";
-              pill.style.fontSize = "10px";
+              pill.style.fontSize = compactTile ? "9px" : "10px";
               pill.style.fontWeight = "700";
               pill.style.letterSpacing = "0.01em";
-              pill.style.background = "rgba(11, 13, 18, 0.88)";
-              pill.style.color = tags[0].includes("Draft")
-                ? "#fcd34d"
-                : tags[0].includes("1ST")
+              pill.style.fontFamily =
+                '-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, ui-sans-serif, system-ui, sans-serif';
+              pill.style.background =
+                "linear-gradient(180deg, rgba(20, 24, 34, 0.90) 0%, rgba(10, 12, 18, 0.95) 100%)";
+              pill.style.backdropFilter = "blur(8px) saturate(140%)";
+              const isDraft = tags[0].includes("Draft");
+              const isFirst = tags[0].includes("1ST");
+              const isHot = tags[0].includes("🔥");
+              pill.style.color = isDraft
+                ? "#fde68a"
+                : isFirst
                   ? "#6ee7b7"
-                  : "#e2e8f0";
-              pill.style.border = "1px solid rgba(251, 191, 36, 0.45)";
-              pill.style.boxShadow = "0 2px 8px rgba(0, 0, 0, 0.45)";
+                  : isHot
+                    ? "#7dd3fc"
+                    : "#e2e8f0";
+              pill.style.border = isDraft
+                ? "1px solid rgba(251, 191, 36, 0.55)"
+                : isFirst
+                  ? "1px solid rgba(52, 211, 153, 0.52)"
+                  : isHot
+                    ? "1px solid rgba(56, 189, 248, 0.48)"
+                    : "1px solid rgba(255, 255, 255, 0.22)";
+              pill.style.boxShadow =
+                "inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 4px 12px rgba(0, 0, 0, 0.55)";
               container.appendChild(pill);
             }
             resolve();
@@ -1115,6 +1776,7 @@ import {
     }
     syncBottomLauncherVisibility(true);
     reportContext();
+    renderDailyChecklistOverlay();
     if (isNbaSorareUrl(window.location.href)) {
       void decorateSorareCardTiles();
     }
@@ -1149,6 +1811,10 @@ import {
     rarity: string;
     seasonYear: number;
     isCaptain: boolean;
+    pictureUrl?: string | null;
+    starCost?: number | null;
+    projectedPts?: number | null;
+    teamSlug?: string | null;
   }
 
   function clearActiveTileHighlight(): void {
@@ -1232,6 +1898,40 @@ import {
     return false;
   }
 
+  function getVisibleDrawerRoots(): HTMLElement[] {
+    return Array.from(
+      document.querySelectorAll(
+        '[role="dialog"], [aria-modal="true"], [class*="drawer" i], [class*="modal" i]',
+      ),
+    ).filter(isElementVisible);
+  }
+
+  function isDrawerLoadingCards(): boolean {
+    const drawerRoots = getVisibleDrawerRoots();
+    if (drawerRoots.length === 0) return false;
+    for (const root of drawerRoots) {
+      const hasBusy = Array.from(
+        root.querySelectorAll(
+          '[aria-busy="true"], [role="progressbar"], [class*="skeleton" i], [class*="spinner" i], [class*="loading" i]',
+        ),
+      ).some(isElementVisible);
+      if (hasBusy) return true;
+    }
+    const searchInput = findDrawerSearchInput();
+    const hasFilterText = Boolean(searchInput && searchInput.value.trim().length > 0);
+    if (!hasFilterText) {
+      const hasAnyVisibleCard = drawerRoots.some((root) =>
+        Array.from(
+          root.querySelectorAll(
+            'img[src*="assets.sorare.com"], [data-card-slug], a[href*="/nba/cards/"]',
+          ),
+        ).some(isElementVisible),
+      );
+      if (!hasAnyVisibleCard) return true;
+    }
+    return false;
+  }
+
   function findCardTile(slot: LineupHighlightSlot): HTMLElement | null {
     const slugLower = slot.cardSlug.trim().toLowerCase();
     const normName = normalizeNameForMatch(slot.playerName);
@@ -1241,11 +1941,10 @@ import {
         ? normName.replace(/\s+/g, "-")
         : "";
 
-    const drawerRoots = Array.from(
-      document.querySelectorAll('[role="dialog"], [class*="drawer" i], [class*="modal" i]'),
-    ).filter(isElementVisible);
-    const searchRoots =
-      drawerRoots.length > 0 ? [...drawerRoots, document.body] : [document.body];
+    const drawerRoots = getVisibleDrawerRoots();
+    // When a Sorare slot drawer/dialog is open, restrict search strictly to the open drawer
+    // so we never click a background card on document.body while the drawer is loading cards.
+    const searchRoots = drawerRoots.length > 0 ? drawerRoots : [document.body];
 
     if (slugLower) {
       for (const root of searchRoots) {
@@ -1346,6 +2045,8 @@ import {
     autoHighlightFirst = false,
   ): void {
     clearActiveTileHighlight();
+    dailyPanelOpen = false;
+    renderDailyChecklistOverlay();
     const existing = document.getElementById("jamassist-lineup-hud");
     if (existing) existing.remove();
     const resolvedSlots: LineupHighlightSlot[] =
@@ -1368,19 +2069,24 @@ import {
     const style = document.createElement("style");
     style.textContent = `
       :host { all: initial; }
+      button, input { font-family: inherit; }
       .hud {
         position: fixed;
         right: 18px;
         bottom: 66px;
-        width: 280px;
+        width: 304px;
         z-index: 2147483647;
         border-radius: 16px;
-        border: 1px solid rgba(255,255,255,0.12);
-        background: linear-gradient(180deg, #1b1e24, #121418);
-        box-shadow: inset 0 1px 0 rgba(255,255,255,0.14), 0 18px 40px rgba(0,0,0,0.72);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: linear-gradient(180deg, rgba(26, 29, 35, 0.92) 0%, rgba(16, 18, 22, 0.96) 100%);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.16),
+          0 20px 44px -10px rgba(0, 0, 0, 0.78);
+        backdrop-filter: blur(16px) saturate(150%);
+        -webkit-backdrop-filter: blur(16px) saturate(150%);
         padding: 11px 12px;
         color: #f4f4f5;
-        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, ui-sans-serif, system-ui, sans-serif;
       }
       .hdr {
         display: flex;
@@ -1398,25 +2104,36 @@ import {
       .list { display: flex; flex-direction: column; gap: 5px; }
       .row {
         display: flex; align-items: center; justify-content: space-between; gap: 6px;
-        font-size: 11px; padding: 5px 7px; border-radius: 9px;
-        background: #1d2027; border: 1px solid rgba(255,255,255,0.06);
+        font-size: 11px; padding: 5px 7px; border-radius: 10px;
+        background: rgba(17, 23, 38, 0.78); border: 1px solid rgba(255, 255, 255, 0.07);
+        transition: border-color 150ms ease-out, background 150ms ease-out, opacity 150ms ease-out;
       }
-      .row.active { border-color: rgba(16,185,129,0.55); background: #1c2824; }
-      .row.done { opacity: 0.55; }
+      .row.active { border-color: rgba(16, 185, 129, 0.58); background: rgba(16, 185, 129, 0.12); }
+      .row.done { opacity: 0.52; }
       .row-left { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; cursor: pointer; }
       .row-left input { accent-color: #10b981; cursor: pointer; flex-shrink: 0; }
+      .thumb {
+        width: 24px; height: 24px; border-radius: 6px; overflow: hidden;
+        background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.12);
+        display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        font-size: 8.5px; font-weight: 700; color: #94a3b8;
+      }
+      .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
       .slot-tag {
         font-size: 9px; font-weight: 700; color: #cbd5e1;
         background: rgba(255,255,255,0.08); border-radius: 5px; padding: 1px 4px; flex-shrink: 0;
       }
       .cap-tag { color: #fbbf24; font-weight: 800; font-size: 9px; flex-shrink: 0; }
-      .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+      .name-wrap { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.15; }
+      .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: #f8fafc; }
+      .sub-meta { font-size: 9px; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .row.done .name { text-decoration: line-through; color: #71717a; }
       .find-btn {
         background: rgba(56,189,248,0.16); color: #7dd3fc; border: 1px solid rgba(56,189,248,0.3);
         border-radius: 6px; font-size: 9.5px; font-weight: 600; padding: 2px 6px; cursor: pointer; flex-shrink: 0;
       }
-      .find-btn:hover { background: rgba(56,189,248,0.28); }
+      .find-btn:hover:not(:disabled) { background: rgba(56,189,248,0.28); }
+      .find-btn:disabled { opacity: 0.45; cursor: default; }
       .footer {
         margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08);
         display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -1427,7 +2144,7 @@ import {
         border: none; border-radius: 8px; font-size: 10.5px; font-weight: 700;
         padding: 5px 9px; cursor: pointer; flex-shrink: 0;
       }
-      .fill-btn:hover { filter: brightness(1.08); }
+      .fill-btn:hover:not(:disabled) { filter: brightness(1.08); }
       .fill-btn:disabled { opacity: 0.45; cursor: default; filter: none; }
     `;
 
@@ -1445,11 +2162,21 @@ import {
     m.textContent = `Proj: ${projectedTotal.toFixed(1)} pts • Assisted Stepper`;
     left.append(t, m);
 
+    let stepBusy = false;
+    let activeTimers: number[] = [];
+    function clearStepTimers(): void {
+      for (const timer of activeTimers) {
+        window.clearTimeout(timer);
+      }
+      activeTimers = [];
+    }
+
     const closeBtn = document.createElement("button");
     closeBtn.type = "button";
     closeBtn.className = "close";
     closeBtn.textContent = "×";
     closeBtn.addEventListener("click", () => {
+      clearStepTimers();
       clearActiveTileHighlight();
       host.remove();
     });
@@ -1468,14 +2195,20 @@ import {
 
     const checkboxes: HTMLInputElement[] = [];
     const rows: HTMLDivElement[] = [];
+    const findButtons: HTMLButtonElement[] = [];
 
     function syncActiveRow(): void {
       const nextIdx = checkboxes.findIndex((cb) => !cb.checked);
       rows.forEach((r, i) => r.classList.toggle("active", i === nextIdx));
+      findButtons.forEach((fb) => {
+        fb.disabled = stepBusy;
+      });
       if (nextIdx === -1) {
         fillNextBtn.disabled = true;
         fillNextBtn.textContent = "All Picked";
         statusEl.textContent = "All slots checked. Review & Confirm on Sorare.";
+      } else if (stepBusy) {
+        fillNextBtn.disabled = true;
       } else {
         fillNextBtn.disabled = false;
         const target = resolvedSlots[nextIdx];
@@ -1483,42 +2216,152 @@ import {
       }
     }
 
-    function locateSlot(slot: LineupHighlightSlot, andClick: boolean, onSuccess?: () => void): void {
-      const immediateTile = findCardTile(slot);
-      if (immediateTile) {
-        highlightTile(immediateTile);
-        if (andClick) {
-          immediateTile.click();
-          onSuccess?.();
-          statusEl.textContent = `Selected ${slot.playerName} - advance to next slot.`;
-        } else {
-          statusEl.textContent = `Highlighted ${slot.playerName}.`;
+    /**
+     * Waits until Sorare's React drawer finishes placing the clicked card (the clicked tile
+     * disappears/detaches/disables) and the next slot's card list finishes loading before
+     * unlocking the next step, preventing rapid clicks while the next slot drawer is loading.
+     */
+    function waitForPlacementConfirm(clickedTile: HTMLElement, playerName: string, onDone: () => void): void {
+      const startMs = Date.now();
+      let sawTilePlaced = false;
+      let placedAtMs = 0;
+      const poll = () => {
+        const now = Date.now();
+        const elapsed = now - startMs;
+        if (!sawTilePlaced) {
+          const tileGone =
+            !clickedTile.isConnected ||
+            !isElementVisible(clickedTile) ||
+            clickedTile.hasAttribute("disabled") ||
+            clickedTile.getAttribute("aria-disabled") === "true" ||
+            clickedTile.getAttribute("aria-selected") === "true";
+          if (tileGone || elapsed >= 800) {
+            sawTilePlaced = true;
+            placedAtMs = now;
+          } else {
+            fillNextBtn.textContent = "Placing...";
+            statusEl.textContent = `Waiting for Sorare to place ${playerName}...`;
+            const id = window.setTimeout(poll, 110);
+            activeTimers.push(id);
+            return;
+          }
         }
-        return;
-      }
+
+        const sincePlaced = now - placedAtMs;
+        if (isDrawerLoadingCards() && sincePlaced < 1100) {
+          fillNextBtn.textContent = "Loading slot...";
+          statusEl.textContent = `Placed ${playerName} - loading next slot cards...`;
+          const id = window.setTimeout(poll, 120);
+          activeTimers.push(id);
+          return;
+        }
+
+        stepBusy = false;
+        onDone();
+        statusEl.textContent = `Placed ${playerName} - ready for next slot.`;
+      };
+      const firstId = window.setTimeout(poll, 140);
+      activeTimers.push(firstId);
+    }
+
+    /**
+     * Searches and polls for the target card tile up to ~3.2s while Sorare's drawer loads cards
+     * after the previous placement.
+     */
+    function locateSlot(slot: LineupHighlightSlot, andClick: boolean, onSuccess?: () => void): void {
+      if (stepBusy) return;
+      clearStepTimers();
 
       const searchInput = findDrawerSearchInput();
+      const targetNorm = normalizeNameForMatch(slot.playerName);
+      const currentInputNorm = searchInput ? normalizeNameForMatch(searchInput.value) : "";
+      const hasStaleFilter = Boolean(
+        searchInput &&
+          currentInputNorm.length > 0 &&
+          currentInputNorm !== targetNorm &&
+          !targetNorm.includes(currentInputNorm),
+      );
+
+      // Only accept an immediate match when the drawer is not actively loading and does not hold
+      // a stale search filter from the previous slot.
+      if (!hasStaleFilter && !isDrawerLoadingCards()) {
+        const immediateTile = findCardTile(slot);
+        if (immediateTile) {
+          highlightTile(immediateTile);
+          if (andClick) {
+            stepBusy = true;
+            fillNextBtn.textContent = "Placing...";
+            syncActiveRow();
+            immediateTile.click();
+            waitForPlacementConfirm(immediateTile, slot.playerName, () => {
+              onSuccess?.();
+              syncActiveRow();
+            });
+          } else {
+            statusEl.textContent = `Highlighted ${slot.playerName}.`;
+          }
+          return;
+        }
+      }
+
+      stepBusy = true;
+      fillNextBtn.textContent = "Loading cards...";
+      syncActiveRow();
+
       if (searchInput) {
         setReactInputValue(searchInput, slot.playerName);
         statusEl.textContent = `Searching "${slot.playerName}"...`;
-        window.setTimeout(() => {
+      } else {
+        statusEl.textContent = `Waiting for ${slot.playerName} card list...`;
+      }
+
+      let attempts = 0;
+      const maxAttempts = 16; // ~3.2s total (16 * 200ms)
+      let typedInSearch = Boolean(searchInput);
+
+      const retryFind = () => {
+        attempts += 1;
+        if (!typedInSearch) {
+          const lateInput = findDrawerSearchInput();
+          if (lateInput) {
+            setReactInputValue(lateInput, slot.playerName);
+            typedInSearch = true;
+            statusEl.textContent = `Searching "${slot.playerName}"...`;
+          }
+        }
+        if (!isDrawerLoadingCards() || attempts >= 3) {
           const delayedTile = findCardTile(slot);
           if (delayedTile) {
             highlightTile(delayedTile);
             if (andClick) {
+              fillNextBtn.textContent = "Placing...";
               delayedTile.click();
-              onSuccess?.();
-              statusEl.textContent = `Selected ${slot.playerName} - open next slot drawer.`;
+              waitForPlacementConfirm(delayedTile, slot.playerName, () => {
+                onSuccess?.();
+                syncActiveRow();
+              });
             } else {
+              stepBusy = false;
+              syncActiveRow();
               statusEl.textContent = `Highlighted ${slot.playerName}.`;
             }
-          } else {
-            statusEl.textContent = `Open slot drawer for ${slot.playerName} first.`;
+            return;
           }
-        }, 350);
-      } else {
-        statusEl.textContent = `Open a Sorare slot drawer to find ${slot.playerName}.`;
-      }
+        }
+        if (attempts < maxAttempts) {
+          const tId = window.setTimeout(retryFind, 200);
+          activeTimers.push(tId);
+        } else {
+          stepBusy = false;
+          syncActiveRow();
+          statusEl.textContent = typedInSearch
+            ? `Card "${slot.playerName}" not found in this drawer.`
+            : `Open a Sorare slot drawer for ${slot.playerName} first.`;
+        }
+      };
+
+      const initId = window.setTimeout(retryFind, 200);
+      activeTimers.push(initId);
     }
 
     resolvedSlots.forEach((slot) => {
@@ -1534,22 +2377,60 @@ import {
         syncActiveRow();
       });
 
+      const thumb = document.createElement("span");
+      thumb.className = "thumb";
+      if (slot.pictureUrl && /^https:\/\/assets\.sorare\.com\//i.test(slot.pictureUrl)) {
+        const img = document.createElement("img");
+        img.src = slot.pictureUrl;
+        img.alt = slot.playerName;
+        thumb.appendChild(img);
+      } else {
+        const initials = slot.playerName
+          .split(/\s+/)
+          .map((w) => w[0] ?? "")
+          .join("")
+          .slice(0, 2)
+          .toUpperCase();
+        thumb.textContent = initials || "•";
+      }
+
       const slotTag = document.createElement("span");
       slotTag.className = "slot-tag";
       slotTag.textContent = slot.slotLabel;
 
+      const nameWrap = document.createElement("span");
+      nameWrap.className = "name-wrap";
+
       const nameSpan = document.createElement("span");
       nameSpan.className = "name";
       nameSpan.textContent = slot.playerName;
+      nameWrap.appendChild(nameSpan);
 
-      label.append(cb, slotTag);
+      const metaParts: string[] = [];
+      if (typeof slot.starCost === "number" && slot.starCost > 0) {
+        metaParts.push(`${slot.starCost}★`);
+      }
+      if (typeof slot.projectedPts === "number" && slot.projectedPts > 0) {
+        metaParts.push(`${slot.projectedPts.toFixed(1)} pts`);
+      }
+      if (slot.seasonYear > 0) {
+        metaParts.push(String(slot.seasonYear));
+      }
+      if (metaParts.length > 0) {
+        const subMeta = document.createElement("span");
+        subMeta.className = "sub-meta";
+        subMeta.textContent = metaParts.join(" • ");
+        nameWrap.appendChild(subMeta);
+      }
+
+      label.append(cb, thumb, slotTag);
       if (slot.isCaptain) {
         const cap = document.createElement("span");
         cap.className = "cap-tag";
         cap.textContent = "MVP";
         label.append(cap);
       }
-      label.append(nameSpan);
+      label.append(nameWrap);
 
       const findBtn = document.createElement("button");
       findBtn.type = "button";
@@ -1563,6 +2444,7 @@ import {
       list.append(row);
       checkboxes.push(cb);
       rows.push(row);
+      findButtons.push(findBtn);
     });
 
     fillNextBtn.addEventListener("click", () => {

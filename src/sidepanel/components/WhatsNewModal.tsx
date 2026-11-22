@@ -20,6 +20,16 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.5-exp16",
+    title: "v2.7.5-exp16: On-Page Dailies Checklist, Smart Lineup Stepper Wait & Audit Polish",
+    items: [
+      "Added a zero-API-call 'Dailies • N left' pill to the bottom-right Sorare NBA dock that auto-syncs on Set Shop and Missions pages, opens a unified checklist (with All | Set | Pro tabs, Packs/Picks Side Panel deep-links, and Go buttons), and auto-hides once all dailies are completed.",
+      "Lineup Helper 'Fill Next' now isolates searches to the open Sorare drawer, resets stale search filters, waits for placement confirmation and next-slot card loading (up to ~3.2s), and renders player portraits, star cost, and projected points.",
+      "Modernized on-card overlay pills on sorare.com with frosted glass and compact scaling on small card tiles.",
+      "Broadened Set shop pack discovery to any '<set>-nba-' prefix, wired page_lineups_v1 and teamSlugs into pre-lock 0G alerts, and updated README & Store docs for v2.7.5.",
+    ],
+  },
+  {
     version: "2.7.5-exp15",
     title: "v2.7.5-exp15: Cleaner Top Bar (Username-First Header)",
     items: [

@@ -197,6 +197,10 @@ export function applyLineupHighlight(
     rarity: import("../shared/types").CardRarity;
     seasonYear: number;
     isCaptain: boolean;
+    pictureUrl?: string | null;
+    starCost?: number | null;
+    projectedPts?: number | null;
+    teamSlug?: string | null;
   }>,
   options?: { targetUrl?: string; autoHighlightFirst?: boolean },
 ): Promise<boolean> {
@@ -257,6 +261,8 @@ export function connectProgressPort(
   onPartialResult?: (result: ScanResult) => void,
   onSwitchTab?: (
     tab: "collections" | "craft" | "lineups" | "bargains" | "gallery",
+    mode?: "pro" | "set",
+    subTab?: "daily" | "packs" | "overview",
   ) => void,
   onEssenceUpdated?: (balances: EssenceBalances, commonEssence?: number) => void,
   onWalletUpdated?: (wallet: WalletBalanceInfo) => void,
@@ -273,6 +279,8 @@ export function connectProgressPort(
     progress?: ScanProgress;
     result?: ScanResult;
     tab?: "collections" | "craft" | "lineups" | "bargains" | "gallery";
+    mode?: "pro" | "set";
+    subTab?: "daily" | "packs" | "overview";
     essenceByRarity?: EssenceBalances;
     commonEssence?: number;
     walletBalance?: WalletBalanceInfo;
@@ -289,7 +297,7 @@ export function connectProgressPort(
     ) {
       onPartialResult(msg.result);
     } else if (msg.type === "SWITCH_TAB" && msg.tab && onSwitchTab) {
-      onSwitchTab(msg.tab);
+      onSwitchTab(msg.tab, msg.mode, msg.subTab);
     } else if (
       msg.type === "ESSENCE_UPDATED" &&
       msg.essenceByRarity &&

@@ -106,7 +106,7 @@ interface LineupsTabProps {
   /** Global Set | Pro switch (top bar). When set, the tab's own switch is hidden. */
   mode?: "pro" | "set_common";
   onModeChange?: (mode: "pro" | "set_common") => void;
-  requestedSetSubTab?: { tab: "daily" | "solo_squad" | "packs"; seq: number } | null;
+  requestedSetSubTab?: { tab: "daily" | "solo_squad" | "packs" | "overview"; seq: number } | null;
   onConsumeRequestedSetSubTab?: () => void;
   commonEssence?: number;
   initialFormat?: LineupFormat;
@@ -335,7 +335,11 @@ export function LineupsTab({
   };
   useEffect(() => {
     if (requestedSetSubTab) {
-      selectSetSubTab(requestedSetSubTab.tab);
+      if (requestedSetSubTab.tab === "overview") {
+        selectProSubTab("overview");
+      } else {
+        selectSetSubTab(requestedSetSubTab.tab);
+      }
       onConsumeRequestedSetSubTab?.();
     }
   }, [requestedSetSubTab, onConsumeRequestedSetSubTab]);
@@ -1570,6 +1574,10 @@ export function LineupsTab({
                                   rarity: sl.evaluated.card.rarity,
                                   seasonYear: sl.evaluated.card.seasonYear,
                                   isCaptain: sl.isCaptainOrMvp,
+                                  pictureUrl: sl.evaluated.card.pictureUrl,
+                                  starCost: sl.evaluated.card.starCost,
+                                  projectedPts: sl.slotScore,
+                                  teamSlug: sl.evaluated.card.teamSlug,
                                 })),
                               )
                             }
@@ -1667,6 +1675,10 @@ export function LineupsTab({
                                 rarity: s.evaluated.card.rarity,
                                 seasonYear: s.evaluated.card.seasonYear,
                                 isCaptain: s.isCaptainOrMvp,
+                                pictureUrl: s.evaluated.card.pictureUrl,
+                                starCost: s.evaluated.card.starCost,
+                                projectedPts: s.slotScore,
+                                teamSlug: s.evaluated.card.teamSlug,
                               })),
                             )
                           }
@@ -2216,6 +2228,10 @@ export function LineupsTab({
                           rarity: s.evaluated.card.rarity,
                           seasonYear: s.evaluated.card.seasonYear,
                           isCaptain: s.isCaptainOrMvp,
+                          pictureUrl: s.evaluated.card.pictureUrl,
+                          starCost: s.evaluated.card.starCost,
+                          projectedPts: s.slotScore,
+                          teamSlug: s.evaluated.card.teamSlug,
                         })),
                       )
                     }
@@ -2868,6 +2884,10 @@ export function LineupsTab({
                               rarity: s.evaluated.card.rarity,
                               seasonYear: s.evaluated.card.seasonYear,
                               isCaptain: s.isCaptainOrMvp,
+                              pictureUrl: s.evaluated.card.pictureUrl,
+                              starCost: s.evaluated.card.starCost,
+                              projectedPts: s.slotScore,
+                              teamSlug: s.evaluated.card.teamSlug,
                             })),
                           )
                         }

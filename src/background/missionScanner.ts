@@ -80,6 +80,12 @@ export async function scanPickerMissionsFromOpenTabs(): Promise<PickerMissionsBy
   return getSavedPickerMissions();
 }
 
+/** Silently reads picker tasks from a Sorare tab (used on page load and after in-page submissions). */
+export async function syncMissionTab(tabId: number): Promise<PickerMissionsSnapshot | null> {
+  if (!chrome.scripting?.executeScript) return null;
+  return readTab(tabId).catch(() => null);
+}
+
 /** Auto-sync: when a Sorare missions page finishes loading, read its pickers (retries while it loads). */
 export function watchMissionPages(): void {
   if (!chrome.tabs?.onUpdated || !chrome.scripting) return;
@@ -95,5 +101,6 @@ export function watchMissionPages(): void {
         .catch(() => {});
     };
     setTimeout(attempt, 2000);
+    setTimeout(() => void readTab(tabId).catch(() => null), 6500);
   });
 }
