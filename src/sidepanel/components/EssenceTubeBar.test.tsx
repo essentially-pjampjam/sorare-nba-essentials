@@ -39,6 +39,21 @@ describe("EssenceTubeBar", () => {
     expect(html).toContain("jam-essence-meniscus");
     expect(html).toContain("jam-essence-glass");
     expect(html).toContain("jam-tube-glint");
+    expect(html).not.toContain('data-milestones="true"');
+  });
+
+  it("renders optional milestone lines only when showMilestones is enabled", () => {
+    const html = renderToStaticMarkup(
+      <EssenceTubeBar
+        rarity="limited"
+        pct={50}
+        amount={500}
+        ready={false}
+        showMilestones
+        ariaLabel="Limited Essence progress toward Craft"
+      />,
+    );
+    expect(html).toContain('data-milestones="true"');
   });
 
   it("marks ready state and omits mid-tube meniscus at 100%", () => {

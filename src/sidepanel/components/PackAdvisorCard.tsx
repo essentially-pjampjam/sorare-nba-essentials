@@ -71,7 +71,7 @@ export function PackAdvisorCard({ commonEssence: commonEssenceProp }: { commonEs
             type="button"
             disabled={busy}
             onClick={scanShop}
-            title="Reads your Daily Pack and Bronze+ progress from your open Sorare Set Shop tab"
+            title="Reads your Daily Pack (from Daily Solo) and Bronze+ progress (from Set Shop) from your open Sorare Set tab"
             className="jam-btn-secondary inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[10px] font-semibold disabled:opacity-50"
           >
             <RefreshCw className={`h-3 w-3 ${busy ? "animate-spin" : ""}`} />
@@ -92,7 +92,7 @@ export function PackAdvisorCard({ commonEssence: commonEssenceProp }: { commonEs
       )}
       {!data?.shopStatus && (
         <div className="mb-1.5 text-[10px] text-slate-400">
-          Open the Set Shop on Sorare (Go) and press Scan shop to add your Daily Pack and Bronze+ progress.
+          Open Set Daily Solo or Set Shop on Sorare and press Scan shop to sync your Daily Pack and Bronze+ progress.
         </div>
       )}
 

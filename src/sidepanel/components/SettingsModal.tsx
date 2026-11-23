@@ -139,6 +139,8 @@ export function SettingsModal({
       autoOpenOnCraft: settings.autoOpenOnCraft,
       autoOpenOnSorare: settings.autoOpenOnSorare,
       autoShowInPageWizards: settings.autoShowInPageWizards ?? true,
+      showEssenceMilestones: settings.showEssenceMilestones ?? false,
+      trackDailyTasks: settings.trackDailyTasks ?? true,
       autoPriceTopN: settings.autoPriceTopN,
       projectionSource: settings.projectionSource,
       customProjectionsRaw: settings.customProjectionsRaw,
@@ -203,6 +205,12 @@ export function SettingsModal({
       }
       if (typeof parsed.autoShowInPageWizards === "boolean") {
         patch.autoShowInPageWizards = parsed.autoShowInPageWizards;
+      }
+      if (typeof parsed.showEssenceMilestones === "boolean") {
+        patch.showEssenceMilestones = parsed.showEssenceMilestones;
+      }
+      if (typeof parsed.trackDailyTasks === "boolean") {
+        patch.trackDailyTasks = parsed.trackDailyTasks;
       }
       if (typeof parsed.autoPriceTopN === "number" && Number.isFinite(parsed.autoPriceTopN)) {
         patch.autoPriceTopN = parsed.autoPriceTopN;
@@ -464,6 +472,47 @@ export function SettingsModal({
             checked={settings.autoShowInPageWizards ?? true}
             onChange={(e) =>
               onUpdateSettings({ autoShowInPageWizards: e.target.checked })
+            }
+            className="h-4 w-4 accent-amber-400"
+          />
+        </label>
+
+        <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-white/8 bg-[#0b101b] px-3 py-2.5">
+          <div>
+            <div className="font-medium text-slate-100">
+              Track Daily Tasks (On-Page Dailies Bar)
+            </div>
+            <div className="text-[11px] text-slate-400">
+              Tracks Free Daily Pack, Daily Solo, Daily Pickers &amp; Daily
+              Missions in the bottom-right Sorare bar. Turn off to hide the
+              Dailies bar and pause daily sync.
+            </div>
+          </div>
+          <input
+            type="checkbox"
+            checked={settings.trackDailyTasks ?? true}
+            onChange={(e) =>
+              onUpdateSettings({ trackDailyTasks: e.target.checked })
+            }
+            className="h-4 w-4 accent-amber-400"
+          />
+        </label>
+
+        <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-white/8 bg-[#0b101b] px-3 py-2.5">
+          <div>
+            <div className="font-medium text-slate-100">
+              Essence Bar Milestone Lines
+            </div>
+            <div className="text-[11px] text-slate-400">
+              Show subtle 25% / 50% / 75% etched tick lines on the liquid
+              Essence progress tube.
+            </div>
+          </div>
+          <input
+            type="checkbox"
+            checked={settings.showEssenceMilestones ?? false}
+            onChange={(e) =>
+              onUpdateSettings({ showEssenceMilestones: e.target.checked })
             }
             className="h-4 w-4 accent-amber-400"
           />

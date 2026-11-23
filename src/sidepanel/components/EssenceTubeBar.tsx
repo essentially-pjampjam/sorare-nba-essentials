@@ -7,6 +7,8 @@ export interface EssenceTubeBarProps {
   amount: number;
   ready: boolean;
   ariaLabel: string;
+  /** Optional 25% / 50% / 75% etched milestone lines (hidden by default). */
+  showMilestones?: boolean;
 }
 
 export interface EssenceParticleSpec {
@@ -105,6 +107,7 @@ export function EssenceTubeBar({
   amount,
   ready,
   ariaLabel,
+  showMilestones = false,
 }: EssenceTubeBarProps) {
   const clampedPct = Math.max(0, Math.min(100, Math.round(pct)));
   const fillPct = amount > 0 ? Math.max(3, clampedPct) : 0;
@@ -133,6 +136,7 @@ export function EssenceTubeBar({
         className="jam-essence-track"
         data-rarity={rarity}
         data-ready={ready ? "true" : undefined}
+        data-milestones={showMilestones ? "true" : undefined}
         role="progressbar"
         aria-label={ariaLabel}
         aria-valuenow={clampedPct}

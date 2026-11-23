@@ -419,6 +419,8 @@ export const DEFAULT_SETTINGS: UserSettings = {
     updatedAt: null,
   },
   autoShowInPageWizards: true,
+  showEssenceMilestones: false,
+  trackDailyTasks: true,
   watchlist: [],
   watchlistAlerts: [],
   currency: "USD",

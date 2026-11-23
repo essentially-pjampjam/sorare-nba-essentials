@@ -84,20 +84,36 @@ export async function syncShopStatusFromTab(tabId: number): Promise<SetShopStatu
   return data;
 }
 
+/** Silently reads Daily Pack claim status & Bronze+ progress from all open Set tabs. */
+export async function syncShopStatusFromOpenTabs(): Promise<void> {
+  if (!chrome.scripting || !chrome.tabs?.query) return;
+  const tabs = await chrome.tabs
+    .query({ url: ["https://sorare.com/nba/series/*", "https://sorare.com/*/nba/series/*"] })
+    .catch(() => []);
+  await Promise.all(tabs.map((t) => (t.id ? syncShopStatusFromTab(t.id).catch(() => null) : null)));
+}
+
 /** Notices new special packs and Daily Pack claim status whenever a Sorare Set page loads. */
 export function watchShopPages(): void {
   if (!chrome.tabs?.onUpdated || !chrome.scripting) return;
   chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
     if (!tab.url || !SET_SERIES_PAGE_RE.test(tab.url)) return;
     if (info.status !== "complete" && !info.url) return;
-    setTimeout(() => {
+    const checkAndSync = () => {
       void readPacksTab(tabId).catch(() => undefined);
-      void syncShopStatusFromTab(tabId).catch(() => undefined);
-    }, 2200);
-    setTimeout(() => {
-      void readPacksTab(tabId).catch(() => undefined);
-      void syncShopStatusFromTab(tabId).catch(() => undefined);
-    }, 4500);
+      void chrome.storage.local
+        .get("jamassist_content_flags_v1")
+        .then((raw) => {
+          const flags = raw?.jamassist_content_flags_v1 as { trackDailyTasks?: boolean } | undefined;
+          if (flags?.trackDailyTasks === false) return;
+          void syncShopStatusFromTab(tabId).catch(() => undefined);
+        })
+        .catch(() => {
+          void syncShopStatusFromTab(tabId).catch(() => undefined);
+        });
+    };
+    setTimeout(checkAndSync, 2200);
+    setTimeout(checkAndSync, 4500);
   });
 }
 
@@ -121,9 +137,17 @@ function readShopStatusFromPage(): SetShopStatus | { error: string } {
   let bronzePlusProgress: number | null = null;
   let bronzePlusTarget: number | null = null;
   for (const [key, entity] of Object.entries(ex)) {
-    if (key.startsWith("MarketRoot")) {
+    if (key.startsWith("MarketRoot") || key === "ROOT_QUERY") {
       const daily = deref(entity['myCommonDailyClaimTask({"sport":"NBA"})']);
       if (daily) dailyPackClaimed = String(daily.aasmState ?? "") === "CLAIMED";
+    }
+    if (
+      dailyPackClaimed === null &&
+      (key.startsWith("CommonDailyClaimTask:") || entity.__typename === "CommonDailyClaimTask") &&
+      entity.expired !== true
+    ) {
+      const state = String(entity.aasmState ?? "").toUpperCase();
+      if (state) dailyPackClaimed = state === "CLAIMED" || state === "COMPLETED";
     }
     if (key.startsWith("CardPackGroup")) {
       const task = deref(entity.boughtPacksCountTask);
@@ -134,7 +158,7 @@ function readShopStatusFromPage(): SetShopStatus | { error: string } {
     }
   }
   if (dailyPackClaimed === null && bronzePlusProgress === null) {
-    return { error: "Open the Set Shop (sorare.com/nba/series/market) in a tab, then scan again." };
+    return { error: "Open Set Daily Solo (sorare.com/nba/series/play) or Set Shop in a tab, then scan again." };
   }
   return { dailyPackClaimed, bronzePlusProgress, bronzePlusTarget, scannedAt: Date.now() };
 }
@@ -152,9 +176,15 @@ export async function getSavedShopStatus(): Promise<SetShopStatus | null> {
 
 export async function scanShopStatusFromOpenTab(): Promise<SetShopStatus> {
   if (!chrome.scripting) throw new Error("Reload the extension to grant the page-reading permission.");
-  const tabs = await chrome.tabs.query({ url: ["https://sorare.com/nba/series/market*"] });
-  const tab = tabs.find((t) => t.active) ?? tabs[0];
-  if (!tab?.id) throw new Error("Open the Set Shop (sorare.com/nba/series/market) in a tab, then scan again.");
+  const tabs = await chrome.tabs.query({
+    url: ["https://sorare.com/nba/series/*", "https://sorare.com/*/nba/series/*"],
+  });
+  const tab =
+    tabs.find((t) => t.active && t.url && /\/series\/(play|market)/i.test(t.url)) ??
+    tabs.find((t) => t.url && /\/series\/play/i.test(t.url)) ??
+    tabs.find((t) => t.url && /\/series\/market/i.test(t.url)) ??
+    tabs[0];
+  if (!tab?.id) throw new Error("Open Set Daily Solo (sorare.com/nba/series/play) or Set Shop in a tab, then scan again.");
   const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: "MAIN", func: readShopStatusFromPage });
   const data = result?.result as SetShopStatus | { error: string } | undefined;
   if (!data) throw new Error("Could not read the Shop page.");

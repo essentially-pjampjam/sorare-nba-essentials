@@ -387,8 +387,8 @@ dialog::backdrop {
     0 0 12px -2px rgba(52, 211, 153, 0.45);
 }
 
-/* Faint etched measurement ticks along the glass vial */
-.jam-essence-track::before {
+/* Faint etched measurement ticks along the glass vial (opt-in via Settings) */
+.jam-essence-track[data-milestones="true"]::before {
   content: "";
   position: absolute;
   inset: 0;

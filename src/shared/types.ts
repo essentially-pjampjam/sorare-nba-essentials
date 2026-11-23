@@ -540,11 +540,30 @@ export interface RawPickerTaskSnapshot {
   slug: string;
   picks: number;
   state: string;
+  /** Number of picks/appearances already submitted for this task (when present in Apollo cache). */
+  pickedCount?: number;
+  /** True when Apollo cache shows the task has submitted picks/lineup or a completed/claimed state. */
+  submitted?: boolean;
+}
+
+/** A live non-picker daily mission read from Sorare's missions or Set play page. */
+export interface RawDailyMissionSnapshot {
+  title: string;
+  description: string;
+  slug: string;
+  state: string;
+  progress: number | null;
+  target: number | null;
+  completed: boolean;
 }
 
 export interface PickerMissionsSnapshot {
   mode: "pro" | "set";
   tasks: RawPickerTaskSnapshot[];
+  /** Non-picker daily missions discovered on the same Sorare page (e.g. Set/Pro daily quests). */
+  dailyMissions?: RawDailyMissionSnapshot[];
+  /** True when an active Set Daily Solo lineup is detected in Apollo cache on Set Play pages. */
+  setSoloSubmitted?: boolean | null;
   scannedAt: number;
 }
 
@@ -779,6 +798,10 @@ export interface UserSettings {
   cloudSyncUsername?: string;
   /** Latest GitHub release version dismissed by the user. */
   dismissedUpdateVersion?: string;
+  /** Show subtle 25% / 50% / 75% etched milestone lines on the Essence progress tube (default false). */
+  showEssenceMilestones?: boolean;
+  /** Track daily tasks (Free Daily Pack, Daily Pickers, Set Solo & Daily Missions) in the on-page Dailies bar (default true). */
+  trackDailyTasks?: boolean;
 }
 
 export type BackgroundRequest =
@@ -863,7 +886,7 @@ export type BackgroundRequest =
       type: "OPEN_SIDE_PANEL";
       targetTab?: "collections" | "craft" | "lineups" | "bargains" | "gallery";
       targetMode?: "pro" | "set";
-      targetSubTab?: "daily" | "packs" | "overview";
+      targetSubTab?: "daily" | "solo_squad" | "packs" | "overview";
     }
   | {
       type: "OPEN_DASHBOARD_TAB";
@@ -879,6 +902,7 @@ export type BackgroundRequest =
       type: "DETECTED_WALLET_FROM_CONTENT";
       wallet: Partial<WalletBalanceInfo>;
     }
+  | { type: "SYNC_DAILIES_FROM_OPEN_TABS" }
   | {
       type: "SORARE_PAGE_CONTEXT";
       url: string;

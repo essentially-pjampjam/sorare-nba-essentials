@@ -68,8 +68,8 @@ import { SorareClient } from "./sorareClient";
 import { getSavedSquadSnapshot, scanSquadFromOpenTab } from "./squadScanner";
 import { decryptSecret, isEncryptedSecret, MASK_PREFIX, maskSecret, sealForStorage } from "./secretStore";
 import { openPageLineupsAsEntries, syncLineupsFromOpenTabs, watchLineupPages } from "./lineupScanner";
-import { getDiscoveredPacks, getSavedShopStatus, scanShopStatusFromOpenTab, syncPacksFromOpenTabs, syncShopStatusFromTab, watchShopPages } from "./shopScanner";
-import { getSavedPickerMissions, scanPickerMissionsFromOpenTabs, syncMissionTab, watchMissionPages } from "./missionScanner";
+import { getDiscoveredPacks, getSavedShopStatus, scanShopStatusFromOpenTab, syncPacksFromOpenTabs, syncShopStatusFromOpenTabs, syncShopStatusFromTab, watchShopPages } from "./shopScanner";
+import { getSavedPickerMissions, scanPickerMissionsFromOpenTabs, syncAllMissionTabs, syncMissionTab, watchMissionPages } from "./missionScanner";
 import { applySealedOverrides, syncSealedStatesFromOpenTabs, watchSealedStates } from "./cardStateScanner";
 import {
   checkForExtensionUpdate,
@@ -113,6 +113,7 @@ const CONTENT_ALLOWED_TYPES = new Set<string>([
   "OPEN_DASHBOARD_TAB",
   "DETECTED_USERNAME_FROM_CONTENT",
   "SORARE_PAGE_CONTEXT",
+  "SYNC_DAILIES_FROM_OPEN_TABS",
   "DETECTED_ESSENCE_FROM_CONTENT",
   "DETECTED_WALLET_FROM_CONTENT",
   "DETECTED_LINEUPS_FROM_CONTENT",
@@ -432,6 +433,14 @@ async function loadSettings(): Promise<UserSettings> {
           typeof stored.autoShowInPageWizards === "boolean"
             ? stored.autoShowInPageWizards
             : true,
+        showEssenceMilestones:
+          typeof stored.showEssenceMilestones === "boolean"
+            ? stored.showEssenceMilestones
+            : false,
+        trackDailyTasks:
+          typeof stored.trackDailyTasks === "boolean"
+            ? stored.trackDailyTasks
+            : true,
         density: stored.density === "compact" ? "compact" : "cozy",
         watchlist: Array.isArray(stored.watchlist) ? stored.watchlist : [],
         watchlistAlerts: Array.isArray(stored.watchlistAlerts)
@@ -513,6 +522,14 @@ async function saveSettings(
       typeof patch.autoShowInPageWizards === "boolean"
         ? patch.autoShowInPageWizards
         : current.autoShowInPageWizards ?? true,
+    showEssenceMilestones:
+      typeof patch.showEssenceMilestones === "boolean"
+        ? patch.showEssenceMilestones
+        : current.showEssenceMilestones ?? false,
+    trackDailyTasks:
+      typeof patch.trackDailyTasks === "boolean"
+        ? patch.trackDailyTasks
+        : current.trackDailyTasks ?? true,
     density: patch.density ?? current.density ?? "cozy",
     watchlist: Array.isArray(patch.watchlist)
       ? patch.watchlist
@@ -581,6 +598,7 @@ async function saveSettings(
       autoOpenOnCraft: next.autoOpenOnCraft,
       autoOpenOnSorare: next.autoOpenOnSorare,
       autoShowInPageWizards: next.autoShowInPageWizards ?? true,
+      trackDailyTasks: next.trackDailyTasks ?? true,
     },
   });
   applyNetworkMode(next);
@@ -1522,13 +1540,27 @@ async function handleMessage(
         const tabId = sender?.tab?.id;
         const pageUrl = msg.url || sender?.tab?.url || "";
         if (typeof tabId === "number" && /^https:\/\/sorare\.com\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?nba\//i.test(pageUrl)) {
-          if (/\/nba\/(play(\/missions)?|series\/play)/i.test(pageUrl)) {
-            void syncMissionTab(tabId);
-          }
-          if (/\/nba\/series(\/|$)/i.test(pageUrl)) {
-            void syncShopStatusFromTab(tabId);
+          const settings = await loadSettings();
+          if (settings.trackDailyTasks !== false) {
+            if (/\/nba\/(play|series)(\/|$|\?)/i.test(pageUrl)) {
+              void syncMissionTab(tabId);
+            }
+            if (/\/nba\/series(\/|$|\?)/i.test(pageUrl)) {
+              void syncShopStatusFromTab(tabId);
+            }
           }
         }
+        return { ok: true, data: true };
+      }
+      case "SYNC_DAILIES_FROM_OPEN_TABS": {
+        const settings = await loadSettings();
+        if (settings.trackDailyTasks === false) {
+          return { ok: true, data: false };
+        }
+        await Promise.all([
+          syncAllMissionTabs().catch(() => undefined),
+          syncShopStatusFromOpenTabs().catch(() => undefined),
+        ]);
         return { ok: true, data: true };
       }
       case "DETECTED_WALLET_FROM_CONTENT": {

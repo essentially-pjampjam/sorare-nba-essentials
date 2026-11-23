@@ -1405,6 +1405,7 @@ export function App() {
                 pct={barPct}
                 amount={barAmount}
                 ready={barReady}
+                showMilestones={settings.showEssenceMilestones ?? false}
                 ariaLabel={
                   isSetBar
                     ? `Set Essence progress toward ${setPackTarget.label}`

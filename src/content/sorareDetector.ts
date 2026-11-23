@@ -15,6 +15,13 @@ import {
   parseWalletButtonText,
   type DomDetectedLineup,
 } from "./sorareDomParser";
+import {
+  buildDailyChecklistItems,
+  DAILY_MANUAL_STORAGE_KEY,
+  toggleManualCompletion,
+  type DailyManualCompletionState,
+} from "../calculators/dailyChecklistMath";
+import type { PickerMissionsByMode, SetShopStatus } from "../shared/types";
 
 (() => {
   const RESERVED_SEGMENTS = new Set([
@@ -431,10 +438,12 @@ import {
     autoOpenOnCraft: boolean;
     autoOpenOnSorare: boolean;
     autoShowInPageWizards: boolean;
+    trackDailyTasks: boolean;
   } = {
     autoOpenOnCraft: true,
     autoOpenOnSorare: false,
     autoShowInPageWizards: true,
+    trackDailyTasks: true,
   };
 
   interface OverlayLookup {
@@ -449,175 +458,13 @@ import {
     hotMap: {},
   };
 
-  interface StoredPickerTask {
-    title: string;
-    description: string;
-    mode: string;
-    slug: string;
-    picks: number;
-    state: string;
-  }
-
-  interface StoredPickerSnapshot {
-    mode: "pro" | "set";
-    tasks: StoredPickerTask[];
-    scannedAt: number;
-  }
-
-  type StoredPickerMissionsByMode = Partial<Record<"pro" | "set", StoredPickerSnapshot>>;
-
-  interface StoredShopStatus {
-    dailyPackClaimed: boolean | null;
-    bronzePlusProgress: number | null;
-    bronzePlusTarget: number | null;
-    scannedAt: number;
-  }
-
-  let storedPickerMissions: StoredPickerMissionsByMode = {};
-  let storedShopStatus: StoredShopStatus | null = null;
+  let storedPickerMissions: PickerMissionsByMode = {};
+  let storedShopStatus: SetShopStatus | null = null;
+  let storedManualDailyState: DailyManualCompletionState | null = null;
   let dailyPanelFilter: "all" | "set" | "pro" = "all";
   let dailyPanelOpen = false;
   let dailyPillBtnEl: HTMLButtonElement | null = null;
   let dailyPopoverEl: HTMLDivElement | null = null;
-
-  function lastDailyResetMs(nowMs = Date.now()): number {
-    const d = new Date(nowMs);
-    d.setUTCHours(7, 0, 0, 0);
-    if (d.getTime() > nowMs) {
-      d.setUTCDate(d.getUTCDate() - 1);
-    }
-    return d.getTime();
-  }
-
-  interface DailyChecklistItem {
-    id: string;
-    mode: "set" | "pro";
-    modeBadge: string;
-    title: string;
-    sub: string;
-    done: boolean;
-    known: boolean;
-    url: string;
-    tab: "lineups";
-    subTab: "daily" | "packs" | "overview";
-    panelBtnLabel: string;
-    panelBtnTitle: string;
-  }
-
-  function isTaskCompletedState(rawState: string): boolean {
-    const s = rawState.trim().toUpperCase();
-    return (
-      s === "COMPLETED" ||
-      s === "CLAIMED" ||
-      s === "FULFILLED" ||
-      s === "DONE" ||
-      s === "SUBMITTED" ||
-      s === "LOCKED" ||
-      s === "PLAYED"
-    );
-  }
-
-  function buildDailyChecklistItems(): DailyChecklistItem[] {
-    const resetMs = lastDailyResetMs();
-    const items: DailyChecklistItem[] = [];
-
-    // 1. Set Free Daily Pack
-    const shopFresh = Boolean(storedShopStatus && storedShopStatus.scannedAt >= resetMs);
-    const packClaimed = shopFresh && storedShopStatus?.dailyPackClaimed === true;
-    const packKnown = shopFresh && storedShopStatus?.dailyPackClaimed !== null;
-    items.push({
-      id: "set_daily_pack",
-      mode: "set",
-      modeBadge: "SET",
-      title: "Free Daily Pack",
-      sub: packClaimed ? "Claimed today" : packKnown ? "Ready to claim in Shop" : "Open Set Shop to check",
-      done: packClaimed,
-      known: packKnown,
-      url: "https://sorare.com/nba/series/market",
-      tab: "lineups",
-      subTab: "packs",
-      panelBtnLabel: "Packs",
-      panelBtnTitle: "Open Set Pack Advisor in the Side Panel",
-    });
-
-    // 2. Set Daily Picker
-    const setSnap = storedPickerMissions.set;
-    const setFresh = Boolean(setSnap && setSnap.scannedAt >= resetMs && Array.isArray(setSnap.tasks) && setSnap.tasks.length > 0);
-    if (setFresh && setSnap) {
-      for (const t of setSnap.tasks) {
-        const done = isTaskCompletedState(t.state);
-        items.push({
-          id: `set_task_${t.slug || t.title}`,
-          mode: "set",
-          modeBadge: "SET",
-          title: t.title || "Set Daily Picker",
-          sub: done ? "Picked today" : `${t.picks || 1} pick • Beat L10 + 7 & 20+ pts`,
-          done,
-          known: Boolean(t.state),
-          url: "https://sorare.com/nba/series/play?missions=play",
-          tab: "lineups",
-          subTab: "daily",
-          panelBtnLabel: "Picks",
-          panelBtnTitle: "Open Set Daily Play suggestions in the Side Panel",
-        });
-      }
-    } else {
-      items.push({
-        id: "set_daily_picker_default",
-        mode: "set",
-        modeBadge: "SET",
-        title: "Set Daily Picker",
-        sub: "1 Common pick • Beat L10 + 7 & 20+ pts",
-        done: false,
-        known: false,
-        url: "https://sorare.com/nba/series/play?missions=play",
-        tab: "lineups",
-        subTab: "daily",
-        panelBtnLabel: "Picks",
-        panelBtnTitle: "Open Set Daily Play suggestions in the Side Panel",
-      });
-    }
-
-    // 3. Pro Daily Pickers (Limited+)
-    const proSnap = storedPickerMissions.pro;
-    const proFresh = Boolean(proSnap && proSnap.scannedAt >= resetMs && Array.isArray(proSnap.tasks) && proSnap.tasks.length > 0);
-    if (proFresh && proSnap) {
-      for (const t of proSnap.tasks) {
-        const done = isTaskCompletedState(t.state);
-        items.push({
-          id: `pro_task_${t.slug || t.title}`,
-          mode: "pro",
-          modeBadge: "PRO",
-          title: t.title || "Pro Daily Picker",
-          sub: done ? "Picked today" : `${t.picks || 3} picks • Limited`,
-          done,
-          known: Boolean(t.state),
-          url: "https://sorare.com/nba/play/missions/play/limited",
-          tab: "lineups",
-          subTab: "overview",
-          panelBtnLabel: "Picks",
-          panelBtnTitle: "Open Pro Daily Play suggestions in the Side Panel",
-        });
-      }
-    } else {
-      items.push({
-        id: "pro_daily_picker_default",
-        mode: "pro",
-        modeBadge: "PRO",
-        title: "Pro Daily Pickers",
-        sub: "Daily Picker & stat missions • 3 picks",
-        done: false,
-        known: false,
-        url: "https://sorare.com/nba/play/missions/play/limited",
-        tab: "lineups",
-        subTab: "overview",
-        panelBtnLabel: "Picks",
-        panelBtnTitle: "Open Pro Daily Play suggestions in the Side Panel",
-      });
-    }
-
-    return items;
-  }
 
   const DRAFT_26_SLUGS = new Set<string>([
     "ebuka-okorie-20070410",
@@ -687,6 +534,7 @@ import {
         "jamassist_overlay_lookup_v1",
         "picker_missions_v1",
         "set_shop_status_v1",
+        DAILY_MANUAL_STORAGE_KEY,
       ],
       (raw) => {
         const f = raw?.jamassist_content_flags_v1 as
@@ -694,6 +542,7 @@ import {
               autoOpenOnCraft?: boolean;
               autoOpenOnSorare?: boolean;
               autoShowInPageWizards?: boolean;
+              trackDailyTasks?: boolean;
             }
           | undefined;
         if (f) {
@@ -701,14 +550,18 @@ import {
             autoOpenOnCraft: f.autoOpenOnCraft ?? true,
             autoOpenOnSorare: f.autoOpenOnSorare ?? false,
             autoShowInPageWizards: f.autoShowInPageWizards ?? true,
+            trackDailyTasks: f.trackDailyTasks ?? true,
           };
         }
         applyRawOverlayLookup(raw?.jamassist_overlay_lookup_v1);
         if (raw?.picker_missions_v1 && typeof raw.picker_missions_v1 === "object") {
-          storedPickerMissions = raw.picker_missions_v1 as StoredPickerMissionsByMode;
+          storedPickerMissions = raw.picker_missions_v1 as PickerMissionsByMode;
         }
         if (raw?.set_shop_status_v1 && typeof raw.set_shop_status_v1 === "object") {
-          storedShopStatus = raw.set_shop_status_v1 as StoredShopStatus;
+          storedShopStatus = raw.set_shop_status_v1 as SetShopStatus;
+        }
+        if (raw?.[DAILY_MANUAL_STORAGE_KEY] && typeof raw[DAILY_MANUAL_STORAGE_KEY] === "object") {
+          storedManualDailyState = raw[DAILY_MANUAL_STORAGE_KEY] as DailyManualCompletionState;
         }
         renderDailyChecklistOverlay();
         window.setTimeout(() => {
@@ -726,20 +579,26 @@ import {
           autoOpenOnCraft?: boolean;
           autoOpenOnSorare?: boolean;
           autoShowInPageWizards?: boolean;
+          trackDailyTasks?: boolean;
         };
         autoOpenFlags = {
           autoOpenOnCraft: f.autoOpenOnCraft ?? true,
           autoOpenOnSorare: f.autoOpenOnSorare ?? false,
           autoShowInPageWizards: f.autoShowInPageWizards ?? true,
+          trackDailyTasks: f.trackDailyTasks ?? true,
         };
         renderDailyChecklistOverlay();
       }
       if (changes.picker_missions_v1?.newValue) {
-        storedPickerMissions = changes.picker_missions_v1.newValue as StoredPickerMissionsByMode;
+        storedPickerMissions = changes.picker_missions_v1.newValue as PickerMissionsByMode;
         renderDailyChecklistOverlay();
       }
       if (changes.set_shop_status_v1?.newValue) {
-        storedShopStatus = changes.set_shop_status_v1.newValue as StoredShopStatus;
+        storedShopStatus = changes.set_shop_status_v1.newValue as SetShopStatus;
+        renderDailyChecklistOverlay();
+      }
+      if (changes[DAILY_MANUAL_STORAGE_KEY]?.newValue) {
+        storedManualDailyState = changes[DAILY_MANUAL_STORAGE_KEY].newValue as DailyManualCompletionState;
         renderDailyChecklistOverlay();
       }
       if (changes.jamassist_overlay_lookup_v1?.newValue) {
@@ -798,13 +657,22 @@ import {
 
   function renderDailyChecklistOverlay(): void {
     if (!dailyPillBtnEl || !dailyPopoverEl) return;
-    if (!autoOpenFlags.autoShowInPageWizards || !isNbaSorareUrl(window.location.href)) {
+    if (
+      !autoOpenFlags.trackDailyTasks ||
+      !autoOpenFlags.autoShowInPageWizards ||
+      !isNbaSorareUrl(window.location.href)
+    ) {
       dailyPillBtnEl.classList.add("hidden");
       dailyPopoverEl.classList.add("hidden");
+      dailyPanelOpen = false;
       return;
     }
 
-    const allItems = buildDailyChecklistItems();
+    const allItems = buildDailyChecklistItems({
+      shopStatus: storedShopStatus,
+      pickerMissions: storedPickerMissions,
+      manualState: storedManualDailyState,
+    });
     const pendingItems = allItems.filter((it) => !it.done);
 
     // Auto-disappear once all daily tasks are completed today (zero screen clutter).
@@ -817,7 +685,7 @@ import {
 
     dailyPillBtnEl.classList.remove("hidden");
     dailyPillBtnEl.textContent = `Dailies • ${pendingItems.length} left`;
-    dailyPillBtnEl.title = `${pendingItems.length} Sorare NBA daily mission${pendingItems.length === 1 ? "" : "s"} left before 07:00 UTC reset`;
+    dailyPillBtnEl.title = `${pendingItems.length} Sorare NBA daily task${pendingItems.length === 1 ? "" : "s"} left before 07:00 UTC reset`;
     dailyPillBtnEl.classList.toggle("active", dailyPanelOpen);
 
     if (!dailyPanelOpen) {
@@ -856,6 +724,21 @@ import {
       filterRow.appendChild(fBtn);
     }
 
+    const syncBtn = document.createElement("button");
+    syncBtn.type = "button";
+    syncBtn.className = "daily-sync-btn";
+    syncBtn.textContent = "↻";
+    syncBtn.title = "Re-sync daily status from open Sorare NBA tabs";
+    syncBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      try {
+        chrome.runtime.sendMessage({ type: "SYNC_DAILIES_FROM_OPEN_TABS" });
+      } catch {
+        // Ignore
+      }
+      schedulePageDailiesSync();
+    });
+
     const closeBtn = document.createElement("button");
     closeBtn.type = "button";
     closeBtn.className = "daily-close";
@@ -869,7 +752,7 @@ import {
 
     const hdrRight = document.createElement("div");
     hdrRight.className = "daily-hdr-right";
-    hdrRight.append(filterRow, closeBtn);
+    hdrRight.append(filterRow, syncBtn, closeBtn);
     hdr.append(hdrTitle, hdrRight);
     dailyPopoverEl.appendChild(hdr);
 
@@ -886,6 +769,31 @@ import {
       const left = document.createElement("div");
       left.className = "daily-row-left";
 
+      const checkBtn = document.createElement("button");
+      checkBtn.type = "button";
+      checkBtn.className = `daily-check-btn${item.done ? " checked" : ""}${item.autoDone ? " auto" : ""}`;
+      checkBtn.textContent = item.done ? "✓" : "";
+      checkBtn.title = item.autoDone
+        ? "Confirmed automatically from Sorare"
+        : item.manualDone
+          ? "Marked done manually (click to undo)"
+          : "Mark as done (e.g. completed on mobile)";
+      checkBtn.setAttribute("aria-label", `${item.done ? "Completed" : "Mark done"}: ${item.title}`);
+      checkBtn.disabled = item.autoDone;
+      if (!item.autoDone) {
+        checkBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const next = toggleManualCompletion(storedManualDailyState, item.id, !item.manualDone);
+          storedManualDailyState = next;
+          try {
+            void chrome.storage.local.set({ [DAILY_MANUAL_STORAGE_KEY]: next });
+          } catch {
+            // Ignore
+          }
+          renderDailyChecklistOverlay();
+        });
+      }
+
       const badge = document.createElement("span");
       badge.className = `daily-mode-badge ${item.mode}`;
       badge.textContent = item.modeBadge;
@@ -900,7 +808,7 @@ import {
       s.textContent = item.sub;
       textCol.append(t, s);
 
-      left.append(badge, textCol);
+      left.append(checkBtn, badge, textCol);
 
       const actions = document.createElement("div");
       actions.className = "daily-row-actions";
@@ -908,7 +816,7 @@ import {
       if (item.done) {
         const donePill = document.createElement("span");
         donePill.className = "daily-done-pill";
-        donePill.textContent = "✓ Done";
+        donePill.textContent = item.autoDone ? "✓ Done" : "✓ Manual";
         actions.appendChild(donePill);
       } else {
         const picksBtn = document.createElement("button");
@@ -949,7 +857,7 @@ import {
 
     const note = document.createElement("div");
     note.className = "daily-note";
-    note.textContent = "0 extra API calls • Syncs automatically when you open Sorare missions or Shop.";
+    note.textContent = "0 extra API calls • Auto-syncs on Play/Missions, or check off if done on mobile.";
     dailyPopoverEl.append(list, note);
   }
 
@@ -1219,6 +1127,20 @@ import {
         background: rgba(56, 189, 248, 0.20);
         color: #e0f2fe;
       }
+      .daily-sync-btn {
+        background: transparent;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 6px;
+        color: #94a3b8;
+        font-size: 11px;
+        line-height: 1;
+        padding: 3px 5px;
+        cursor: pointer;
+      }
+      .daily-sync-btn:hover {
+        color: #e0f2fe;
+        border-color: rgba(56, 189, 248, 0.45);
+      }
       .daily-close {
         background: transparent;
         border: none;
@@ -1230,6 +1152,33 @@ import {
       }
       .daily-close:hover {
         color: #ffffff;
+      }
+      .daily-check-btn {
+        width: 16px;
+        height: 16px;
+        border-radius: 5px;
+        border: 1px solid rgba(148, 163, 184, 0.45);
+        background: rgba(15, 23, 42, 0.7);
+        color: #34d399;
+        font-size: 10px;
+        font-weight: 800;
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        flex-shrink: 0;
+        cursor: pointer;
+      }
+      .daily-check-btn:hover:not(:disabled) {
+        border-color: rgba(52, 211, 153, 0.75);
+      }
+      .daily-check-btn.checked {
+        background: rgba(52, 211, 153, 0.22);
+        border-color: rgba(52, 211, 153, 0.65);
+      }
+      .daily-check-btn.auto {
+        cursor: default;
       }
       .daily-list {
         display: flex;
@@ -1531,7 +1480,14 @@ import {
           : /\/nba\/(play|lineups|pro)/i.test(window.location.pathname)
             ? "pro"
             : "all";
-        schedulePageDailiesSync();
+        if (autoOpenFlags.trackDailyTasks) {
+          try {
+            chrome.runtime.sendMessage({ type: "SYNC_DAILIES_FROM_OPEN_TABS" });
+          } catch {
+            // Ignore
+          }
+          schedulePageDailiesSync();
+        }
       }
       dailyPanelOpen = !dailyPanelOpen;
       renderDailyChecklistOverlay();
@@ -1595,11 +1551,13 @@ import {
 
   let dailiesSyncTimerA: number | null = null;
   let dailiesSyncTimerB: number | null = null;
+  let dailiesSyncTimerC: number | null = null;
   function schedulePageDailiesSync(): void {
+    if (!autoOpenFlags.trackDailyTasks) return;
     const href = window.location.href;
-    if (!/\/nba\/(play(\/missions)?|series(\/|$))/i.test(href)) return;
+    if (!/\/nba\/(play|series)(\/|$|\?)/i.test(href)) return;
     const sendSync = () => {
-      if (!isContextValid()) return;
+      if (!isContextValid() || !autoOpenFlags.trackDailyTasks) return;
       try {
         chrome.runtime.sendMessage({
           type: "SORARE_PAGE_CONTEXT",
@@ -1614,9 +1572,12 @@ import {
     };
     if (dailiesSyncTimerA !== null) window.clearTimeout(dailiesSyncTimerA);
     if (dailiesSyncTimerB !== null) window.clearTimeout(dailiesSyncTimerB);
-    dailiesSyncTimerA = window.setTimeout(sendSync, 1200);
-    dailiesSyncTimerB = window.setTimeout(sendSync, 3000);
+    if (dailiesSyncTimerC !== null) window.clearTimeout(dailiesSyncTimerC);
+    dailiesSyncTimerA = window.setTimeout(sendSync, 900);
+    dailiesSyncTimerB = window.setTimeout(sendSync, 2500);
+    dailiesSyncTimerC = window.setTimeout(sendSync, 5000);
   }
+  schedulePageDailiesSync();
 
   // Trigger optional auto-open on user click when on craft / configured pages, light-dismiss popover, and re-sync dailies after in-page claims/submissions
   document.addEventListener(
@@ -1829,6 +1790,7 @@ import {
     }
     syncBottomLauncherVisibility(true);
     reportContext();
+    schedulePageDailiesSync();
     renderDailyChecklistOverlay();
     if (isNbaSorareUrl(window.location.href)) {
       void decorateSorareCardTiles();
