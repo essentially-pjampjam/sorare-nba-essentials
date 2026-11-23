@@ -109,7 +109,7 @@ export async function verifyCloudBioAuth(
   if (!res.ok || !payload.token) {
     throw new Error(
       payload.error ||
-        `Bio verification failed (${res.status}). Make sure the code is saved in your Sorare bio.`,
+        `Profile verification failed (${res.status}). Make sure the code is saved in your Sorare profile status, club name, or nickname.`,
     );
   }
 
@@ -130,7 +130,7 @@ export async function pushCloudCardTags(
   }
   const token = await loadCloudJwt();
   if (!token) {
-    throw new Error("Not authenticated. Complete the 1-time Sorare Bio verification first.");
+    throw new Error("Not authenticated. Complete the 1-time Sorare Profile verification first.");
   }
   const sanitized = sanitizeCardTagsMap(tags);
 

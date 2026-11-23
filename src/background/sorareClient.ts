@@ -2707,8 +2707,6 @@ export class SorareClient {
           tokenPrices(
             playerSlug: $playerSlug
             rarity: $rarity
-            collection: NBA
-            last: 30
           ) {
             date
             amounts {
@@ -2749,7 +2747,7 @@ export class SorareClient {
           source: node.deal?.__typename ?? undefined,
         });
       }
-      return out.sort((a, b) => a.timestampMs - b.timestampMs);
+      return out.sort((a, b) => a.timestampMs - b.timestampMs).slice(-60);
     } catch (err) {
       if (err instanceof RateLimitedError || err instanceof ScanCancelledError) throw err;
       return [];

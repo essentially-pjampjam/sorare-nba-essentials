@@ -4,10 +4,10 @@ Optional, zero-password backend for sharing public `Keep / Sell / Core / Trade` 
 
 ## Architecture & Guardrails
 
-1. **1-Time Sorare Bio Verification Challenge (No Passwords):**
+1. **1-Time Sorare Profile Verification Challenge (No Passwords):**
    - `POST /api/auth/challenge` generates a short code (`SORARE-ESSENTIALS-XXXXXX`, 15 min TTL).
-   - The manager pastes the code into their Sorare profile bio temporarily and calls `POST /api/auth/verify`.
-   - The Worker checks Sorare's public GraphQL `user(slug)` bio, deletes the challenge, and returns a signed HS256 JWT (30-day TTL).
+   - The manager pastes the code into their Sorare profile status, club name, or nickname temporarily and calls `POST /api/auth/verify`.
+   - The Worker checks Sorare's public GraphQL `user(slug) { slug nickname profile { status clubName } }`, deletes the challenge, and returns a signed HS256 JWT (30-day TTL).
 2. **Strict Anti-Bloat Guardrails:**
    - Only strict enum tags are accepted (`keep`, `sell`, `core`, `trade`).
    - Max 500 tags per manager (`MAX_TAGS_PER_USER`).

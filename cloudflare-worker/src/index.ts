@@ -2,7 +2,7 @@
  * Cloudflare Workers + D1 backend for pjampjam's Sorare NBA Essentials.
  *
  * Features:
- * - Passwordless 1-time Sorare Bio Verification Challenge -> HMAC-SHA256 signed JWT
+ * - Passwordless 1-time Sorare Profile Verification Challenge -> HMAC-SHA256 signed JWT
  * - Strict anti-bloat guardrails: enum tags only (keep | sell | core | trade),
  *   max 500 tags/user, slug validation, and per-IP/user rate limits in D1
  * - Public read endpoint GET /api/tags/:username for gallery overlays
@@ -150,14 +150,15 @@ function generateChallengeCode(): string {
   return `SORARE-ESSENTIALS-${suffix}`;
 }
 
-async function fetchSorarePublicBio(username: string): Promise<string | null> {
+async function fetchSorarePublicProfileText(username: string): Promise<string | null> {
   const query = `
-    query VerifyManagerBio($slug: String!) {
+    query VerifyManagerProfile($slug: String!) {
       user(slug: $slug) {
         slug
         nickname
         profile {
-          bio
+          status
+          clubName
         }
       }
     }
@@ -174,14 +175,19 @@ async function fetchSorarePublicBio(username: string): Promise<string | null> {
   const payload = (await res.json()) as {
     data?: {
       user?: {
+        slug?: string | null;
         nickname?: string | null;
-        profile?: { bio?: string | null } | null;
+        profile?: {
+          status?: string | null;
+          clubName?: string | null;
+        } | null;
       } | null;
     };
   };
-  const bio = payload.data?.user?.profile?.bio ?? "";
+  const status = payload.data?.user?.profile?.status ?? "";
+  const clubName = payload.data?.user?.profile?.clubName ?? "";
   const nick = payload.data?.user?.nickname ?? "";
-  return `${bio}\n${nick}`;
+  return `${status}\n${clubName}\n${nick}`;
 }
 
 export default {
@@ -198,7 +204,7 @@ export default {
       return json({ ok: true, service: "sorare-nba-essentials-tags" });
     }
 
-    // 1. Start 1-time Sorare Bio Verification Challenge
+    // 1. Start 1-time Sorare Profile Verification Challenge
     if (request.method === "POST" && path === "/api/auth/challenge") {
       const allowed = await checkRateLimit(env.DB, `challenge:${ip}`, 10, 10 * 60_000);
       if (!allowed) return json({ error: "Too many challenge requests. Try again later." }, 429);
@@ -228,7 +234,7 @@ export default {
       });
     }
 
-    // 2. Verify Sorare Bio and issue signed JWT
+    // 2. Verify Sorare Profile (status / clubName / nickname) and issue signed JWT
     if (request.method === "POST" && path === "/api/auth/verify") {
       if (!env.JWT_SECRET) {
         return json({ error: "Worker JWT_SECRET is not configured." }, 500);
@@ -256,10 +262,13 @@ export default {
         return json({ error: "Challenge code expired or not found. Generate a new code." }, 400);
       }
 
-      const bioText = await fetchSorarePublicBio(username);
-      if (!bioText || !bioText.includes(challengeCode)) {
+      const profileText = await fetchSorarePublicProfileText(username);
+      if (!profileText || !profileText.includes(challengeCode)) {
         return json(
-          { error: "Challenge code not found in your public Sorare bio yet. Save bio and retry." },
+          {
+            error:
+              "Challenge code not found in your public Sorare profile (status, club name, or nickname) yet. Save and retry.",
+          },
           403,
         );
       }
@@ -286,7 +295,7 @@ export default {
       const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
       const claims = token ? await verifyJwt(token, env.JWT_SECRET) : null;
       if (!claims) {
-        return json({ error: "Unauthorized. Complete Sorare bio verification first." }, 401);
+        return json({ error: "Unauthorized. Complete Sorare profile verification first." }, 401);
       }
 
       const allowed = await checkRateLimit(env.DB, `put:${claims.sub}`, 20, 10 * 60_000);

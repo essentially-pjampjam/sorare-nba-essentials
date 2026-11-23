@@ -550,7 +550,7 @@ export function SettingsModal({
         )}
       </div>
 
-      {/* Optional Cloud Sync & Public Card Tags (Cloudflare Worker + Bio Auth) */}
+      {/* Optional Cloud Sync & Public Card Tags (Cloudflare Worker + Profile Auth) */}
       <div className="mt-3 rounded-xl border border-white/8 bg-[#0b101b] p-3 text-xs">
         <div className="mb-1 flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 font-semibold text-slate-200">
@@ -565,7 +565,8 @@ export function SettingsModal({
         </div>
         <p className="mb-2 text-[10.5px] text-slate-400">
           Card tags (Keep / Sell / Core / Trade) always work 100% locally. Add your Cloudflare
-          Worker URL to verify via Sorare bio and share public gallery tags.
+          Worker URL to verify via your Sorare profile (status, club name, or nickname) and share
+          public gallery tags.
         </p>
 
         <div className="flex gap-1.5">
@@ -613,7 +614,9 @@ export function SettingsModal({
                   try {
                     const ch = await startCloudAuth(settings.username, workerUrlDraft);
                     setCloudChallenge(ch);
-                    setCloudMsg("Paste this code into your Sorare bio, then click Verify Bio.");
+                    setCloudMsg(
+                      "Paste this code into your Sorare profile status, club name, or nickname, then click Verify Profile.",
+                    );
                   } catch (err) {
                     setCloudMsg(err instanceof Error ? err.message : "Challenge failed.");
                   } finally {
@@ -622,7 +625,7 @@ export function SettingsModal({
                 }}
                 className="rounded-lg border border-sky-400/40 bg-sky-500/15 px-2.5 py-1 text-[10.5px] font-semibold text-sky-200 hover:bg-sky-500/25 disabled:opacity-40"
               >
-                1. Generate Bio Code
+                1. Generate Verify Code
               </button>
               {cloudChallenge && (
                 <button
@@ -642,7 +645,9 @@ export function SettingsModal({
                         cloudSyncUsername: res.username,
                       });
                       setCloudChallenge(null);
-                      setCloudMsg(`Verified @${res.username}! You can now remove the code from your bio.`);
+                      setCloudMsg(
+                        `Verified @${res.username}! You can now remove the code from your Sorare profile.`,
+                      );
                     } catch (err) {
                       setCloudMsg(err instanceof Error ? err.message : "Verification failed.");
                     } finally {
@@ -651,7 +656,7 @@ export function SettingsModal({
                   }}
                   className="rounded-lg border border-emerald-400/45 bg-emerald-500/20 px-2.5 py-1 text-[10.5px] font-semibold text-emerald-200 hover:bg-emerald-500/30 disabled:opacity-40"
                 >
-                  2. Verify Bio
+                  2. Verify Profile
                 </button>
               )}
             </div>
