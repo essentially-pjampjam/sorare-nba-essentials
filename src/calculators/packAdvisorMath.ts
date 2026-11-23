@@ -88,7 +88,7 @@ export function buildPackAdvice(
 ): PackAdvice[] {
   const out: PackAdvice[] = [];
   if (status?.dailyPackClaimed === false) {
-    out.push({ kind: "daily", priority: 1, text: "Open your free Daily Pack (Daily Boost step 1)." });
+    out.push({ kind: "daily", priority: 1, text: "Open your free Daily Pack in Daily Solo (Daily Boost step 1)." });
   } else if (status?.dailyPackClaimed === true) {
     out.push({ kind: "daily", priority: 9, text: "Daily Pack already opened today." });
   }

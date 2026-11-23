@@ -118,12 +118,16 @@ export function toggleManualCompletion(
   itemId: string,
   done: boolean,
   nowMs = Date.now(),
+  fallbackPlaceholderId?: string,
 ): DailyManualCompletionState {
   const resetMs = lastDailyResetMs(nowMs);
   const existing = resolveManualCompletions(current, resetMs);
   const nextIds: Record<string, boolean> = { ...existing };
   if (done) {
     nextIds[itemId] = true;
+  } else if (fallbackPlaceholderId && existing[fallbackPlaceholderId] === true) {
+    // Explicitly override an inherited placeholder check-off for this specific real task.
+    nextIds[itemId] = false;
   } else {
     delete nextIds[itemId];
   }
@@ -168,8 +172,13 @@ function formatMissionSubtitle(m: RawDailyMissionSnapshot, done: boolean): strin
 function applyManualOverride(
   item: Omit<DailyChecklistItem, "done" | "manualDone">,
   manualMap: Record<string, boolean>,
+  fallbackPlaceholderId?: string,
 ): DailyChecklistItem {
-  const manualDone = manualMap[item.id] === true;
+  const direct = manualMap[item.id];
+  const manualDone =
+    direct === false
+      ? false
+      : direct === true || Boolean(fallbackPlaceholderId && manualMap[fallbackPlaceholderId] === true);
   const done = item.autoDone || manualDone;
   const sub = !item.autoDone && manualDone ? "Marked done (manual)" : item.sub;
   return {
@@ -291,6 +300,7 @@ export function buildDailyChecklistItems(args: {
             panelBtnTitle: "Open Set Daily Play suggestions in the Side Panel",
           },
           manualMap,
+          "set_daily_picker_default",
         ),
       );
     }
@@ -365,6 +375,7 @@ export function buildDailyChecklistItems(args: {
             panelBtnTitle: "Open Pro Daily Play suggestions in the Side Panel",
           },
           manualMap,
+          "pro_daily_picker_default",
         ),
       );
     }

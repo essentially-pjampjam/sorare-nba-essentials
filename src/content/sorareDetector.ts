@@ -463,6 +463,7 @@ import type { PickerMissionsByMode, SetShopStatus } from "../shared/types";
   let storedManualDailyState: DailyManualCompletionState | null = null;
   let dailyPanelFilter: "all" | "set" | "pro" = "all";
   let dailyPanelOpen = false;
+  let launcherMinimized = false;
   let dailyPillBtnEl: HTMLButtonElement | null = null;
   let dailyPopoverEl: HTMLDivElement | null = null;
 
@@ -641,6 +642,7 @@ import type { PickerMissionsByMode, SetShopStatus } from "../shared/types";
     dailyPillBtnEl = null;
     dailyPopoverEl = null;
     dailyPanelOpen = false;
+    launcherMinimized = false;
     const hud = document.getElementById("jamassist-lineup-hud");
     if (hud) {
       clearActiveTileHighlight();
@@ -659,7 +661,7 @@ import type { PickerMissionsByMode, SetShopStatus } from "../shared/types";
     if (!dailyPillBtnEl || !dailyPopoverEl) return;
     if (
       !autoOpenFlags.trackDailyTasks ||
-      !autoOpenFlags.autoShowInPageWizards ||
+      launcherMinimized ||
       !isNbaSorareUrl(window.location.href)
     ) {
       dailyPillBtnEl.classList.add("hidden");
@@ -783,7 +785,18 @@ import type { PickerMissionsByMode, SetShopStatus } from "../shared/types";
       if (!item.autoDone) {
         checkBtn.addEventListener("click", (e) => {
           e.stopPropagation();
-          const next = toggleManualCompletion(storedManualDailyState, item.id, !item.manualDone);
+          const fallbackId = item.id.startsWith("set_task_")
+            ? "set_daily_picker_default"
+            : item.id.startsWith("pro_task_")
+              ? "pro_daily_picker_default"
+              : undefined;
+          const next = toggleManualCompletion(
+            storedManualDailyState,
+            item.id,
+            !item.manualDone,
+            Date.now(),
+            fallbackId,
+          );
           storedManualDailyState = next;
           try {
             void chrome.storage.local.set({ [DAILY_MANUAL_STORAGE_KEY]: next });
@@ -1390,15 +1403,13 @@ import type { PickerMissionsByMode, SetShopStatus } from "../shared/types";
     minBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       minimized = !minimized;
+      launcherMinimized = minimized;
       text.classList.toggle("hidden", minimized);
       pill.classList.toggle("minimized", minimized);
       if (minimized) {
         dailyPanelOpen = false;
       }
       renderDailyChecklistOverlay();
-      if (minimized && dailyPillBtnEl) {
-        dailyPillBtnEl.classList.add("hidden");
-      }
       minBtn.textContent = minimized ? "+" : "−";
     });
 

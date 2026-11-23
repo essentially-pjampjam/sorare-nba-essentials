@@ -74,23 +74,63 @@ export async function syncPacksFromOpenTabs(): Promise<void> {
 
 const SET_SERIES_PAGE_RE = /^https:\/\/sorare\.com\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?nba\/series(\/|$)/i;
 
+function lastShopDailyResetMs(nowMs = Date.now()): number {
+  const d = new Date(nowMs);
+  d.setUTCHours(7, 0, 0, 0);
+  if (d.getTime() > nowMs) d.setUTCDate(d.getUTCDate() - 1);
+  return d.getTime();
+}
+
+/**
+ * Merges a new SetShopStatus scan with an existing cached status so Daily Solo
+ * (`dailyPackClaimed`) and Set Shop (`bronzePlusProgress`) never overwrite each other's fields.
+ */
+export function mergeShopStatus(
+  prev: SetShopStatus | null,
+  incoming: SetShopStatus,
+  nowMs = Date.now(),
+): SetShopStatus {
+  if (!prev) return incoming;
+  const resetMs = lastShopDailyResetMs(nowMs);
+  const prevSameDay = prev.scannedAt >= resetMs;
+  const prevDaily = prevSameDay ? prev.dailyPackClaimed : null;
+  const dailyPackClaimed =
+    incoming.dailyPackClaimed === true || prevDaily === true
+      ? true
+      : (incoming.dailyPackClaimed ?? prevDaily);
+  const bronzePlusProgress = incoming.bronzePlusProgress ?? prev.bronzePlusProgress;
+  const bronzePlusTarget = incoming.bronzePlusTarget ?? prev.bronzePlusTarget;
+  return {
+    dailyPackClaimed,
+    bronzePlusProgress,
+    bronzePlusTarget,
+    scannedAt: incoming.scannedAt,
+  };
+}
+
 /** Silently reads Daily Pack claim status & Bronze+ progress from a Set tab when available. */
 export async function syncShopStatusFromTab(tabId: number): Promise<SetShopStatus | null> {
   if (!chrome.scripting?.executeScript) return null;
   const [result] = await chrome.scripting.executeScript({ target: { tabId }, world: "MAIN", func: readShopStatusFromPage });
   const data = result?.result as SetShopStatus | { error: string } | undefined;
   if (!data || "error" in data) return null;
-  await chrome.storage.local.set({ [SHOP_STATUS_KEY]: data });
-  return data;
+  const existing = await getSavedShopStatus().catch(() => null);
+  const merged = mergeShopStatus(existing, data, data.scannedAt);
+  await chrome.storage.local.set({ [SHOP_STATUS_KEY]: merged });
+  return merged;
 }
 
-/** Silently reads Daily Pack claim status & Bronze+ progress from all open Set tabs. */
+/** Silently reads Daily Pack claim status & Bronze+ progress sequentially from all open Set tabs. */
 export async function syncShopStatusFromOpenTabs(): Promise<void> {
   if (!chrome.scripting || !chrome.tabs?.query) return;
   const tabs = await chrome.tabs
     .query({ url: ["https://sorare.com/nba/series/*", "https://sorare.com/*/nba/series/*"] })
     .catch(() => []);
-  await Promise.all(tabs.map((t) => (t.id ? syncShopStatusFromTab(t.id).catch(() => null) : null)));
+  for (const t of tabs) {
+    if (t.id) {
+      await syncShopStatusFromTab(t.id).catch(() => null);
+    }
+  }
 }
 
 /** Notices new special packs and Daily Pack claim status whenever a Sorare Set page loads. */
@@ -120,10 +160,10 @@ export function watchShopPages(): void {
 const SHOP_STATUS_KEY = "set_shop_status_v1";
 
 /**
- * Runs in the sorare.com Set Shop page (MAIN world): reads the Daily Pack claim task and the
- * Bronze+ progress task from Sorare's Apollo cache (private, logged-in data). Self-contained.
+ * Runs in the sorare.com Set Daily Solo / Shop page (MAIN world): reads the Daily Pack claim task
+ * and the Bronze+ progress task from Sorare's Apollo cache (private, logged-in data). Self-contained.
  */
-function readShopStatusFromPage(): SetShopStatus | { error: string } {
+export function readShopStatusFromPage(): SetShopStatus | { error: string } {
   type Entity = Record<string, unknown>;
   const client = (window as unknown as { __APOLLO_CLIENT__?: { cache: { extract: () => Record<string, Entity> } } })
     .__APOLLO_CLIENT__;
@@ -133,21 +173,30 @@ function readShopStatusFromPage(): SetShopStatus | { error: string } {
     const ref = (r as { __ref?: string } | null)?.__ref;
     return ref ? (ex[ref] ?? null) : null;
   };
+  const isClaimedEntity = (entity: Entity): boolean | null => {
+    if (entity.claimed === true || entity.completed === true || Boolean(entity.claimedAt)) return true;
+    const state = String(entity.aasmState ?? "").trim().toUpperCase();
+    if (!state) return null;
+    return state === "CLAIMED" || state === "COMPLETED" || state === "DONE" || state === "FULFILLED";
+  };
   let dailyPackClaimed: boolean | null = null;
   let bronzePlusProgress: number | null = null;
   let bronzePlusTarget: number | null = null;
   for (const [key, entity] of Object.entries(ex)) {
     if (key.startsWith("MarketRoot") || key === "ROOT_QUERY") {
       const daily = deref(entity['myCommonDailyClaimTask({"sport":"NBA"})']);
-      if (daily) dailyPackClaimed = String(daily.aasmState ?? "") === "CLAIMED";
+      if (daily) {
+        const claimed = isClaimedEntity(daily);
+        if (claimed !== null) dailyPackClaimed = claimed;
+      }
     }
     if (
       dailyPackClaimed === null &&
       (key.startsWith("CommonDailyClaimTask:") || entity.__typename === "CommonDailyClaimTask") &&
       entity.expired !== true
     ) {
-      const state = String(entity.aasmState ?? "").toUpperCase();
-      if (state) dailyPackClaimed = state === "CLAIMED" || state === "COMPLETED";
+      const claimed = isClaimedEntity(entity);
+      if (claimed !== null) dailyPackClaimed = claimed;
     }
     if (key.startsWith("CardPackGroup")) {
       const task = deref(entity.boughtPacksCountTask);
@@ -168,10 +217,8 @@ export async function getSavedShopStatus(): Promise<SetShopStatus | null> {
   const status = (stored[SHOP_STATUS_KEY] as SetShopStatus | undefined) ?? null;
   if (!status) return null;
   // Daily Pack status resets at 07:00 UTC: drop it once a reset passed since the scan.
-  const lastReset = new Date();
-  lastReset.setUTCHours(7, 0, 0, 0);
-  if (lastReset.getTime() > Date.now()) lastReset.setUTCDate(lastReset.getUTCDate() - 1);
-  return status.scannedAt < lastReset.getTime() ? { ...status, dailyPackClaimed: null } : status;
+  const lastReset = lastShopDailyResetMs(Date.now());
+  return status.scannedAt < lastReset ? { ...status, dailyPackClaimed: null } : status;
 }
 
 export async function scanShopStatusFromOpenTab(): Promise<SetShopStatus> {
@@ -189,7 +236,9 @@ export async function scanShopStatusFromOpenTab(): Promise<SetShopStatus> {
   const data = result?.result as SetShopStatus | { error: string } | undefined;
   if (!data) throw new Error("Could not read the Shop page.");
   if ("error" in data) throw new Error(data.error);
-  await chrome.storage.local.set({ [SHOP_STATUS_KEY]: data });
+  const existing = await getSavedShopStatus().catch(() => null);
+  const merged = mergeShopStatus(existing, data, data.scannedAt);
+  await chrome.storage.local.set({ [SHOP_STATUS_KEY]: merged });
   await readPacksTab(tab.id).catch(() => undefined);
-  return data;
+  return merged;
 }

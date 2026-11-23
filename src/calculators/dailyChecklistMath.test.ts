@@ -244,4 +244,52 @@ describe("dailyChecklistMath", () => {
     });
     expect(tomorrowItems.find((i) => i.id === "set_daily_pack")?.done).toBe(false);
   });
+
+  it("preserves placeholder manual check-off when real picker tasks arrive and allows unchecking an individual task", () => {
+    let manual = toggleManualCompletion(null, "pro_daily_picker_default", true, NOW);
+    const pickerMissions = {
+      pro: {
+        mode: "pro" as const,
+        scannedAt: NOW,
+        tasks: [
+          {
+            title: "Daily Picker",
+            description: "Limited: 3 picks",
+            mode: "limited",
+            slug: "pro-picker-a",
+            picks: 3,
+            state: "OPEN",
+          },
+          {
+            title: "Playmaker Picker",
+            description: "Limited: 3 picks",
+            mode: "limited",
+            slug: "pro-picker-b",
+            picks: 3,
+            state: "OPEN",
+          },
+        ],
+      },
+    };
+
+    const inherited = buildDailyChecklistItems({
+      shopStatus: null,
+      pickerMissions,
+      manualState: manual,
+      nowMs: NOW,
+    });
+    expect(inherited.find((i) => i.id === "pro_task_pro-picker-a")?.done).toBe(true);
+    expect(inherited.find((i) => i.id === "pro_task_pro-picker-b")?.done).toBe(true);
+
+    // Unchecking one specific real task keeps the other inherited task checked
+    manual = toggleManualCompletion(manual, "pro_task_pro-picker-a", false, NOW, "pro_daily_picker_default");
+    const afterUncheck = buildDailyChecklistItems({
+      shopStatus: null,
+      pickerMissions,
+      manualState: manual,
+      nowMs: NOW,
+    });
+    expect(afterUncheck.find((i) => i.id === "pro_task_pro-picker-a")?.done).toBe(false);
+    expect(afterUncheck.find((i) => i.id === "pro_task_pro-picker-b")?.done).toBe(true);
+  });
 });

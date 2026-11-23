@@ -81,27 +81,33 @@ export function readPickerTasksFromPage(): PageMissionsReadResult | { error: str
   };
 
   const PICKED_ARRAY_KEY_RE =
-    /^(?:so5|task|picker|selected|my|submitted|user)?(?:appearances|picks|cards|selections|entries|players)(?:\(|$)/i;
+    /^(?:so5|task|picker|selected|picked|chosen|my|submitted|user|currentuser|lineup)?(?:appearances|picks|cards|anycards|selections|entries|players|answers|predictions|submissions|participations)(?:\(|$)/i;
+  const SINGLE_PICK_KEY_RE =
+    /^(?:selected|picked|chosen|my|user|submitted)(?:player|card|anycard|appearance|pick|choice|answer|prediction|entry|submission)(?:\(|$)/i;
   const EXCLUDED_ARRAY_KEY_RE =
     /^(?:pickable|available|eligible|recommended|reward|possible|candidate|all|other)/i;
 
-  const inspectLineupPicks = (lineup: Entity | null): { count: number; submitted: boolean } => {
-    if (!lineup) return { count: 0, submitted: false };
+  const inspectLineupPicks = (
+    lineup: Entity | null,
+  ): { count: number; submitted: boolean; explicitlySubmitted: boolean } => {
+    if (!lineup) return { count: 0, submitted: false, explicitlySubmitted: false };
     if (lineup.cancelledAt || lineup.draft === true || lineup.deleted === true) {
-      return { count: 0, submitted: false };
+      return { count: 0, submitted: false, explicitlySubmitted: false };
     }
     let count = 0;
     for (const [k, v] of Object.entries(lineup)) {
       if (EXCLUDED_ARRAY_KEY_RE.test(k)) continue;
       if (PICKED_ARRAY_KEY_RE.test(k)) {
         count = Math.max(count, countCollection(v));
+      } else if (SINGLE_PICK_KEY_RE.test(k) && v && typeof v === "object") {
+        count = Math.max(count, 1);
       }
     }
-    const submitted =
-      Boolean(lineup.submittedAt || lineup.confirmedAt || lineup.locked === true) ||
-      isCompletedState(lineup.aasmState) ||
-      count > 0;
-    return { count, submitted };
+    const explicitlySubmitted =
+      Boolean(lineup.submittedAt || lineup.confirmedAt || lineup.completedAt || lineup.locked === true) ||
+      isCompletedState(lineup.aasmState);
+    const submitted = explicitlySubmitted || count > 0;
+    return { count, submitted, explicitlySubmitted };
   };
 
   // Pre-index reverse-linked task lineups in Apollo cache
@@ -127,7 +133,10 @@ export function readPickerTasksFromPage(): PageMissionsReadResult | { error: str
     }
   }
 
-  const isProTask = (t: { title: string; description: string; slug: string; picks: number }): boolean => {
+  const isProTask = (t: { title: string; description: string; slug: string; mode: string; picks: number }): boolean => {
+    const mode = t.mode.trim().toLowerCase();
+    if (/^(common|set|arcade|series)$/.test(mode)) return false;
+    if (/^(limited|rare|super_rare|unique|pro|classic|in_season)$/.test(mode)) return true;
     const desc = t.description.trim();
     const slug = t.slug.toLowerCase();
     const title = t.title.toLowerCase();
@@ -154,7 +163,7 @@ export function readPickerTasksFromPage(): PageMissionsReadResult | { error: str
     const picks = Number(t.maxAppearancesCount ?? t.target ?? 1) || 1;
     const state = String(t.aasmState ?? "");
 
-    const proTask = isProTask({ title, description, slug, picks });
+    const proTask = isProTask({ title, description, slug, mode, picks });
     if (pageMode === "pro" ? !proTask : proTask) continue;
 
     const dedupeKey = (slug || `${title}::${description}`).toLowerCase();
@@ -170,21 +179,26 @@ export function readPickerTasksFromPage(): PageMissionsReadResult | { error: str
     }
 
     let lineupSubmitted = false;
+    let lineupExplicitlySubmitted = false;
     for (const [k, v] of Object.entries(t)) {
       if (EXCLUDED_ARRAY_KEY_RE.test(k)) continue;
       if (PICKED_ARRAY_KEY_RE.test(k)) {
         pickedCount = Math.max(pickedCount, countCollection(v));
+      } else if (SINGLE_PICK_KEY_RE.test(k) && v && typeof v === "object") {
+        pickedCount = Math.max(pickedCount, 1);
       } else if (/lineup/i.test(k) && v && typeof v === "object") {
         if (Array.isArray(v)) {
           for (const item of v) {
             const res = inspectLineupPicks(deref(item));
             pickedCount = Math.max(pickedCount, res.count);
             if (res.submitted) lineupSubmitted = true;
+            if (res.explicitlySubmitted) lineupExplicitlySubmitted = true;
           }
         } else {
           const res = inspectLineupPicks(deref(v));
           pickedCount = Math.max(pickedCount, res.count);
           if (res.submitted) lineupSubmitted = true;
+          if (res.explicitlySubmitted) lineupExplicitlySubmitted = true;
         }
       }
     }
@@ -197,6 +211,7 @@ export function readPickerTasksFromPage(): PageMissionsReadResult | { error: str
       const res = inspectLineupPicks(rl);
       pickedCount = Math.max(pickedCount, res.count);
       if (res.submitted) lineupSubmitted = true;
+      if (res.explicitlySubmitted) lineupExplicitlySubmitted = true;
     }
 
     const boolDone =
@@ -207,7 +222,16 @@ export function readPickerTasksFromPage(): PageMissionsReadResult | { error: str
       t.claimed === true ||
       t.isClaimed === true ||
       t.done === true ||
-      t.locked === true;
+      t.locked === true ||
+      Boolean(
+        t.submittedAt ||
+          t.completedAt ||
+          t.claimedAt ||
+          t.fulfilledAt ||
+          t.answeredAt ||
+          t.pickedAt ||
+          t.selectedAt,
+      );
 
     const target = typeof t.target === "number" && Number.isFinite(t.target) ? t.target : null;
     const progress = typeof t.progress === "number" && Number.isFinite(t.progress) ? t.progress : null;
@@ -216,6 +240,7 @@ export function readPickerTasksFromPage(): PageMissionsReadResult | { error: str
       boolDone ||
       isCompletedState(state) ||
       pickedCount >= picks ||
+      lineupExplicitlySubmitted ||
       (lineupSubmitted && picks <= 1) ||
       (target !== null && target > 0 && progress !== null && progress >= target);
 
@@ -239,7 +264,7 @@ export function readPickerTasksFromPage(): PageMissionsReadResult | { error: str
   for (const [, t] of Object.entries(ex)) {
     if (!t || typeof t !== "object") continue;
     const tn = String(t.__typename ?? "");
-    if (!tn.endsWith("Task") || tn === "DecisivePlayerPickerTask" || tn === "CommonDailyClaimTask") continue;
+    if (!/(?:Task|Mission|Quest|Objective)$/.test(tn) || tn === "DecisivePlayerPickerTask" || tn === "CommonDailyClaimTask") continue;
     if (t.expired === true) continue;
     const title = String(t.title ?? "").trim();
     if (!title) continue;
@@ -279,6 +304,7 @@ export function readPickerTasksFromPage(): PageMissionsReadResult | { error: str
       t.completed === true ||
       t.claimed === true ||
       t.done === true ||
+      Boolean(t.completedAt || t.claimedAt || t.fulfilledAt) ||
       isCompletedState(state) ||
       (progress !== null && target !== null && target > 0 && progress >= target);
 
@@ -338,39 +364,92 @@ async function isDailyTrackingEnabled(): Promise<boolean> {
   }
 }
 
+export function mergeMissionSnapshots(
+  prev: PickerMissionsSnapshot | undefined,
+  data: PageMissionsReadResult,
+  nowMs = Date.now(),
+): PickerMissionsSnapshot {
+  const resetMs = lastDailyResetMs(nowMs);
+  const prevFresh = Boolean(prev && prev.scannedAt >= resetMs);
+
+  const taskByKey = new Map<string, RawPickerTaskSnapshot>();
+  if (prevFresh && prev) {
+    for (const t of prev.tasks) {
+      const k = (t.slug || `${t.title}::${t.description}`).toLowerCase();
+      taskByKey.set(k, t);
+    }
+  }
+  for (const t of data.tasks) {
+    const k = (t.slug || `${t.title}::${t.description}`).toLowerCase();
+    const existing = taskByKey.get(k);
+    if (!existing) {
+      taskByKey.set(k, t);
+    } else {
+      const pickedCount = Math.max(existing.pickedCount ?? 0, t.pickedCount ?? 0);
+      const submitted = Boolean(existing.submitted || t.submitted);
+      taskByKey.set(k, {
+        ...existing,
+        ...t,
+        ...(pickedCount > 0 ? { pickedCount } : {}),
+        ...(submitted ? { submitted: true } : {}),
+      });
+    }
+  }
+  const mergedTasks = Array.from(taskByKey.values());
+
+  const missionByKey = new Map<string, RawDailyMissionSnapshot>();
+  if (prevFresh && prev?.dailyMissions) {
+    for (const m of prev.dailyMissions) {
+      const k = (m.slug || m.title).toLowerCase();
+      missionByKey.set(k, m);
+    }
+  }
+  for (const m of data.dailyMissions) {
+    const k = (m.slug || m.title).toLowerCase();
+    const existing = missionByKey.get(k);
+    if (!existing) {
+      missionByKey.set(k, m);
+    } else {
+      const progress =
+        typeof existing.progress === "number" && typeof m.progress === "number"
+          ? Math.max(existing.progress, m.progress)
+          : (m.progress ?? existing.progress);
+      const target = m.target ?? existing.target;
+      const completed = Boolean(existing.completed || m.completed);
+      missionByKey.set(k, {
+        ...existing,
+        ...m,
+        progress,
+        target,
+        completed,
+      });
+    }
+  }
+  const mergedMissions = Array.from(missionByKey.values());
+
+  const prevSolo = prevFresh && typeof prev?.setSoloSubmitted === "boolean" ? prev.setSoloSubmitted : null;
+  const mergedSolo =
+    data.setSoloSubmitted === true || prevSolo === true
+      ? true
+      : (data.setSoloSubmitted ?? prevSolo);
+
+  return {
+    mode: data.mode,
+    tasks: mergedTasks,
+    ...(mergedMissions.length > 0 ? { dailyMissions: mergedMissions } : {}),
+    ...(mergedSolo !== null ? { setSoloSubmitted: mergedSolo } : {}),
+    scannedAt: nowMs,
+  };
+}
+
 async function readTab(tabId: number): Promise<PickerMissionsSnapshot | null> {
   const [result] = await chrome.scripting.executeScript({ target: { tabId }, world: "MAIN", func: readPickerTasksFromPage });
   const data = result?.result as PageMissionsReadResult | { error: string } | undefined;
   if (!data || "error" in data) return null;
 
   const now = Date.now();
-  const resetMs = lastDailyResetMs(now);
   const all = await getSavedPickerMissions();
-  const prev = all[data.mode];
-  const prevFresh = Boolean(prev && prev.scannedAt >= resetMs);
-
-  const mergedTasks =
-    data.tasks.length > 0 ? data.tasks : prevFresh && prev ? prev.tasks : [];
-  const mergedMissions =
-    data.dailyMissions.length > 0
-      ? data.dailyMissions
-      : prevFresh && prev?.dailyMissions
-        ? prev.dailyMissions
-        : [];
-  const mergedSolo =
-    data.setSoloSubmitted !== null
-      ? data.setSoloSubmitted
-      : prevFresh && typeof prev?.setSoloSubmitted === "boolean"
-        ? prev.setSoloSubmitted
-        : null;
-
-  const snapshot: PickerMissionsSnapshot = {
-    mode: data.mode,
-    tasks: mergedTasks,
-    ...(mergedMissions.length > 0 ? { dailyMissions: mergedMissions } : {}),
-    ...(mergedSolo !== null ? { setSoloSubmitted: mergedSolo } : {}),
-    scannedAt: now,
-  };
+  const snapshot = mergeMissionSnapshots(all[data.mode], data, now);
   await chrome.storage.local.set({ [PICKER_MISSIONS_KEY]: { ...all, [data.mode]: snapshot } });
   return snapshot;
 }
@@ -392,13 +471,17 @@ export async function scanPickerMissionsFromOpenTabs(): Promise<PickerMissionsBy
   return getSavedPickerMissions();
 }
 
-/** Silently reads picker tasks & daily missions from all open Sorare NBA Play/Series tabs. */
+/** Silently reads picker tasks & daily missions from all open Sorare NBA Play/Series tabs sequentially (no storage race). */
 export async function syncAllMissionTabs(): Promise<void> {
   if (!chrome.scripting || !chrome.tabs?.query) return;
   const tabs = (
     await chrome.tabs.query({ url: ["https://sorare.com/nba/*", "https://sorare.com/*/nba/*"] }).catch(() => [])
   ).filter((t) => t.url && MISSION_PAGE.test(t.url));
-  await Promise.all(tabs.map((t) => (t.id ? readTab(t.id).catch(() => null) : null)));
+  for (const t of tabs) {
+    if (t.id) {
+      await readTab(t.id).catch(() => null);
+    }
+  }
 }
 
 /** Silently reads picker tasks from a Sorare tab (used on page load and after in-page submissions). */

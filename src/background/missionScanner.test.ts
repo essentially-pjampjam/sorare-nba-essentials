@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { readPickerTasksFromPage } from "./missionScanner";
+import { mergeMissionSnapshots, readPickerTasksFromPage } from "./missionScanner";
 
 type ApolloCache = Record<string, Record<string, unknown>>;
 
@@ -146,5 +146,130 @@ describe("missionScanner readPickerTasksFromPage", () => {
     expect(res.dailyMissions[0]?.progress).toBe(1);
     expect(res.dailyMissions[0]?.target).toBe(2);
     expect(res.dailyMissions[0]?.completed).toBe(false);
+  });
+
+  it("confirms 1-pick Set Daily Picker via single-object selectedPlayer ref and 3-pick Pro Picker via TaskLineup submittedAt", () => {
+    mockSorarePage("/nba/series/play", {
+      "DecisivePlayerPickerTask:set-single": {
+        __typename: "DecisivePlayerPickerTask",
+        title: "Daily Picker",
+        description: "Pick 1 Common player",
+        mode: "common",
+        taskConfigSlug: "set-daily-picker",
+        maxAppearancesCount: 1,
+        aasmState: "OPEN",
+        expired: false,
+        selectedPlayer: { __ref: "Player:nikola-jokic" },
+      },
+    });
+    const setRes = readPickerTasksFromPage();
+    expect("error" in setRes).toBe(false);
+    if (!("error" in setRes)) {
+      expect(setRes.tasks[0]?.pickedCount).toBe(1);
+      expect(setRes.tasks[0]?.submitted).toBe(true);
+    }
+
+    mockSorarePage("/nba/play/missions/play/limited", {
+      "TaskLineup:pro-submitted": {
+        __typename: "TaskLineup",
+        submittedAt: "2026-11-23T18:00:00Z",
+      },
+      "DecisivePlayerPickerTask:pro-3": {
+        __typename: "DecisivePlayerPickerTask",
+        title: "Daily Picker",
+        description: "Limited: Pick 3 players",
+        mode: "limited",
+        taskConfigSlug: "pro-daily-picker",
+        maxAppearancesCount: 3,
+        aasmState: "OPEN",
+        expired: false,
+        myLineup: { __ref: "TaskLineup:pro-submitted" },
+      },
+    });
+    const proRes = readPickerTasksFromPage();
+    expect("error" in proRes).toBe(false);
+    if (!("error" in proRes)) {
+      expect(proRes.tasks[0]?.submitted).toBe(true);
+    }
+  });
+
+  it("mergeMissionSnapshots merges same-day tasks across sub-pages without clobbering submitted flags and resets after 07:00 UTC", () => {
+    const todayNoon = Date.UTC(2026, 10, 23, 12, 0, 0);
+    const prev = {
+      mode: "pro" as const,
+      tasks: [
+        {
+          title: "Limited Daily Picker",
+          description: "Limited: 3 picks",
+          mode: "limited",
+          slug: "limited-picker",
+          picks: 3,
+          state: "OPEN",
+          pickedCount: 3,
+          submitted: true,
+        },
+      ],
+      dailyMissions: [
+        {
+          title: "Daily Pro Mission",
+          description: "Win 1 matchup",
+          slug: "daily-pro-1",
+          state: "COMPLETED",
+          progress: 1,
+          target: 1,
+          completed: true,
+        },
+      ],
+      scannedAt: todayNoon - 30 * 60_000,
+    };
+
+    const merged = mergeMissionSnapshots(
+      prev,
+      {
+        mode: "pro",
+        tasks: [
+          {
+            title: "Rare Daily Picker",
+            description: "Rare: 3 picks",
+            mode: "rare",
+            slug: "rare-picker",
+            picks: 3,
+            state: "OPEN",
+          },
+        ],
+        dailyMissions: [],
+        setSoloSubmitted: null,
+      },
+      todayNoon,
+    );
+
+    expect(merged.tasks).toHaveLength(2);
+    expect(merged.tasks.find((t) => t.slug === "limited-picker")?.submitted).toBe(true);
+    expect(merged.tasks.find((t) => t.slug === "rare-picker")).toBeDefined();
+    expect(merged.dailyMissions).toHaveLength(1);
+
+    // After next day's 07:00 UTC reset, yesterday's tasks should be dropped.
+    const nextDayNoon = Date.UTC(2026, 10, 24, 12, 0, 0);
+    const resetMerged = mergeMissionSnapshots(
+      merged,
+      {
+        mode: "pro",
+        tasks: [
+          {
+            title: "Fresh Picker",
+            description: "Limited: 3 picks",
+            mode: "limited",
+            slug: "fresh-picker",
+            picks: 3,
+            state: "OPEN",
+          },
+        ],
+        dailyMissions: [],
+        setSoloSubmitted: null,
+      },
+      nextDayNoon,
+    );
+    expect(resetMerged.tasks.map((t) => t.slug)).toEqual(["fresh-picker"]);
+    expect(resetMerged.dailyMissions).toBeUndefined();
   });
 });
