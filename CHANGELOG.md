@@ -2,156 +2,27 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
-## 2.7.5-exp17 (2026-11-23)
+## 3.0.0 (2026-11-23)
+
+Major public release consolidating the entire v3 redesign, portfolio & wrapped suite, on-page Dailies & Lineup Helper overhaul, and optional cloud card tagging.
 
 Added:
-- 1-Click Shareable Lineup Card PNG Exporter (`lineupShareMath.ts`, `lineupShareCard.ts`, `LineupsTab.tsx`): adds a `Card` button next to `Copy` on Pro Optimal Lineups and Set Solo Teams that renders a `1200x675` (16:9 X/Twitter & Discord ready) dark obsidian graphic with rarity accents, 5 player cards, projected total, `p10-p90` range, reward/cash/podium or step odds, and a subtle tool watermark, copying the PNG directly to the clipboard with automatic download fallback.
-- Pro Season Pulse & Reward Streak Strip (`proProgressMath.ts`, `ProProgressCard.tsx`): summarizes local Game Week history into a 4-stat bar (Tracked GWs, Reward Hit Rate %, Cash Hit Rate %, Best Top %) plus an active consecutive Rewarded GW streak badge.
-- Zero-Friction Demo Onboarding (`CollectionsTab.tsx`, `LineupsTab.tsx`, `App.tsx`): adds a 1-click `Try Demo (@pjampjam)` button on empty-username states so new installs can test every tab immediately.
-- Global Keyboard Shortcut (`public/manifest.json`): adds `Alt+Shift+S` (`_execute_action`) to toggle the Side Panel from anywhere without extra permissions.
+- Portfolio Value Tracker, P&L & Price History Charts (`PortfolioTrackerSection.tsx`, `portfolioMath.ts`, `sorareClient.ts`): Skinledger-style daily local floor snapshots with Day / Week / Month charts, Sorare GraphQL ownership/purchase history P&L (Biggest Spend, Best Auction Won, Best Trade, and Exclude current-season mints toggle), plus per-player recent market sale charts.
+- End-of-Season / Playoffs / Year-End Wrapped (`WrappedModal.tsx`, `wrappedMath.ts`, `wrappedShareCard.ts`): multi-slide Sorare NBA Wrapped modal with currency-aware stats and 1-click 16:9 PNG summary export.
+- 1-Click Shareable Lineup & GW Recap PNG Cards (`lineupShareCard.ts`, `recapShareCard.ts`, `ProProgressCard.tsx`): export 16:9 PNG graphics for Pro Optimal Lineups, Set Solo/Squad teams, and Game Week recaps directly to clipboard or file, plus a Pro Season Pulse & Reward Streak strip.
+- Card Tags (`Keep / Sell / Core / Trade`), Saved Rosters & Optional Cloudflare Workers/D1 Cloud Sync (`cardTagsMath.ts`, `cloudSyncClient.ts`, `cloudflare-worker/`): local card tags in Gallery, saved lineup presets in Lineups, 1-time Sorare profile verification auth (`profile.status` / `clubName` / `nickname`), and public gallery tag overlays when visiting other managers on sorare.com.
+- On-Page Dailies & Daily Missions Overlay (`sorareDetector.ts`, `dailyChecklistMath.ts`, `missionScanner.ts`, `shopScanner.ts`): zero-API-call bottom-right `Dailies • N left` pill tracking Set Free Daily Pack (in Play -> Daily Solo), Set Daily Solo, Set/Pro Daily Pickers, and Daily Missions, with default-ON `trackDailyTasks` toggle, 1-click Sync, and manual mobile check-offs that auto-reset at 07:00 UTC.
+- In-Panel GitHub Releases Update Checker (`updateChecker.ts`, `App.tsx`): daily check against GitHub Releases with a subtle dismissible update banner for sideloaded Chrome / Edge / Brave / Opera installs.
+- Visual & Strategy Tools: Liquid Essence Glass Tube with randomized rising bubbles & star-shine glints (optional milestone ticks via `showEssenceMilestones`), username-first decluttered header, Hoops Hairline logo across all surfaces, 5-card artwork preview strips with tooltips and p10-mean-p90 range bars, Playmaker Picker & named Sorare tier caps, Lock (Must-Start) & minutes chips, Position-Aware Injury Impact panel, Craft Clue EVOI advisor, Vault Unseal & Reseal profit detector, Unified Guides & Strategy Hub (`GuidesModal.tsx`), `Try Demo (@pjampjam)` onboarding, and global `Alt+Shift+S` shortcut.
 
-Improved / Fixed:
-- MV3 `chrome.storage.local` Quota-Safe Cache Eviction (`cache.ts`, `cache.test.ts`): `setCached` now automatically recovers from `QUOTA_BYTES` exhaustion by pruning expired entries first, then evicting the oldest 50% of `jamassist_cache:*` keys without ever touching settings, API keys, or progress history, and gracefully skips caching if storage remains full rather than crashing a scan.
-- Refreshed 3D Edge-Blurred Promo Screenshots (`scripts/generate-promos.mjs`, `docs/promo/`): regenerated the `1280x800` pitch-black tilted promo set against the latest `v2.7.5` UI.
+Changed & Fixed:
+- Smart Lineup Helper HUD (`sorareDetector.ts`): isolates searches to the open Sorare drawer, resets stale filters, waits for placement confirmation and next-slot card loading, and displays player portraits, star cost, and projected points.
+- Optimizer & Math Hardening: enforced Sorare NBA's max 4 players/team rule, direct p10/p90 DFS optimization, exact 0/1 Knapsack DP in Sealing Deal Finder, per-game Vegas/B2B peak order statistics, Negative Binomial CDF for count-stat Daily Pickers, Set Holo (+20%) / Shiny (+10%) edition bonus fallbacks, `< 24h` Quest auction window, and MV3 `chrome.storage.local` quota-safe cache eviction.
+- Performance & Hygiene: Fast-Mode concurrency-2 pipelining under rate limits, parallel ESPN/local-tab sync, React.lazy code splitting, and 446 automated checks (invariants, unit tests, and E2E tests).
 
-## 2.7.5-exp16 (2026-11-22)
+---
 
-Added:
-- On-Page Daily Checklist Overlay (`sorareDetector.ts`, `shopScanner.ts`, `missionScanner.ts`, `index.ts`, `App.tsx`, `LineupsTab.tsx`): added a zero-API-call `Dailies • N left` pill in the bottom-right Sorare NBA dock that reads cached Set Shop (`set_shop_status_v1`) and Daily Picker (`picker_missions_v1`) states after the 07:00 UTC reset, auto-syncs `set_shop_status_v1` and `picker_missions_v1` when visiting or interacting with Sorare Set Shop / Missions pages, opens a unified glass checklist with `All | Set | Pro` filter tabs (auto-selecting `Set` on `/nba/series/*` and `Pro` on `/nba/play/*`), routes `Packs` / `Picks` directly to the matching Side Panel mode (`Set -> Packs`, `Set -> Daily Play`, `Pro -> Overview & Live`) and `Go ↗` to Sorare, supports Escape / outside-click light-dismiss, and automatically disappears once all dailies are done.
-- Smart Placement & Next-Slot Drawer-Load Wait in Lineup Helper HUD (`sorareDetector.ts`, `LineupsTab.tsx`, `DailyPlayHub.tsx`, `api.ts`, `types.ts`): `Fill Next` and `Find` now isolate searches to the open Sorare drawer (preventing background-page false clicks), reset stale drawer search text from previous slots, wait for Sorare's drawer to place the card (`Placing...`) and load the next slot's card list (`Loading slot...` / `Loading cards...` up to ~3.2s), and display player portraits (`pictureUrl`), star cost (`★`), projected points, and season year inside the `.glass-chrome` HUD.
-
-Improved / Fixed:
-- Responsive Glass Card Overlay Badges & Shadow DOM Typography (`sorareDetector.ts`): upgraded `.jamassist-card-overlay-pill` on `sorare.com` card tiles with frosted dark glass (`backdrop-filter: blur(8px)`), semantic border accents (gold for `Draft 26'`, emerald for `1ST`, sky for `🔥` hot form), container-width responsive scaling (`< 115px` tiles show a single compact tag with `max-width` ellipsis truncation), and `font-family: inherit` on Shadow DOM form controls.
-- Future Set Pack Prefix Longevity (`shopScanner.ts`, `lineupScanner.test.ts`): broadened Set pack discovery from hardcoded `divination-` to any `<set>-nba-` series prefix (`/^[a-z0-9]+-nba-/`).
-- Pre-Lock `0G` Alert Without Prior Gallery Load (`lineupScanner.ts`, `alertTracker.ts`, `alertTrackerMath.ts`, `types.ts`, `lineupScanner.test.ts`): extracts index-aligned per-starter `teamSlugs` from Sorare's Apollo page cache and merges `page_lineups_v1` (plus synthesized open GW fixtures) inside `runAlertTracker` so `findPreLockLineupRisks` flags `0G` and `OUT` starters even before a gallery load.
-- `v2.7.5` Docs Sync (`README.md`, `CHROMEWEBSTORE.md`): updated `README.md` and `CHROMEWEBSTORE.md` for `v2.7.5` (dedicated Fast Mode lightning bolt button, `< 24h` Quest auction window, and new `v2.7.5` tools).
-
-## 2.7.5-exp15 (2026-11-22)
-
-Changed:
-- Decluttered Side Panel Top Bar (`App.tsx`, `SettingsModal.tsx`): removed the redundant in-panel top-left logo, `"Sorare NBA"` title, and version badge in Side Panel mode (since Chrome's side panel chrome already shows the icon and extension name), giving `@username` / the username input full breathing room on the left alongside a compact Fast Mode `Zap` status button. Moved the color-coded version pill and What's New trigger cleanly into Settings, the `...` menu, and the subtle page footer (popped-out Dashboard tab keeps the logo).
-
-## 2.7.5-exp14 (2026-11-22)
-
-Changed:
-- Logo C (`Hoops Hairline`) Applied Everywhere (`public/logo.png`, `public/icons/icon{16,32,48,128}.png`, `App.tsx`, `LoadingStage.tsx`, `sorareDetector.ts`): baked the royal-blue & crimson hairline-rimmed `logo3.png` squircle (with crisp 16px optical rim tuning) and removed redundant white box-in-box wrappers in the header, loading stage, and Sorare launcher.
-- Header & Liquid Tube Polish (`index.css`, `App.tsx`, `EssenceTubeBar.tsx`): active rarity pills now echo the Liquid Essence Tube color with a subtle bottom specular glow, etched 25%/50%/75% vial ticks are crisper in the dark unfilled chamber, the liquid meniscus pulses softly when Essence updates, and the sticky header is ~8px more compact.
-- Richer 5-Card Lineup Preview Tooltips (`LineupCardStrip.tsx`, `LineupsTab.tsx`): hovering any card in the 5-card artwork strip now shows `pts`, `L10`, `L5`, `GW games`, and `boost %`.
-- Removed Clutter (`App.tsx`, `CommandPaletteModal.tsx`): removed the confusing Cozy/Compact density toggle from the header `...` menu.
-
-## 2.7.5-exp13 (2026-11-22)
-
-Changed:
-- Liquid Essence Glass Tube & Randomized Particle Shine (`EssenceTubeBar.tsx`, `App.tsx`, `index.css`): replaced the flat 8px bar and 6 evenly spaced dots with a cylindrical glass vial featuring a dark smoky unfilled liquid chamber, etched measurement ticks, top glass specular reflection, glowing curved liquid meniscus, flowing caustic wave, glowing `Craft ready` / `Pack ready` pills, and up to 18 procedurally randomized rising micro-bubbles + 4-point star-shine glints (compositor-only, `prefers-reduced-motion` safe).
-- Minimalistic `logo3.png` Facelift (`public/logo.png`, `public/icons/icon{16,32,48,128}.png`, `logo-concepts/`): optically centered pjampjam's crimson `PPs` + royal-blue script `essentials` artwork inside a crisp Ivory Squircle with subtle specular rim for high contrast on both dark and light Chrome UI (plus Obsidian Glass and Hoops Hairline alternates saved in `logo-concepts/`).
-
-## 2.7.5-exp12 (2026-11-22)
-
-Fixed:
-- Not-owned Daily Picker roster scan (`sorareClient.ts`): removed invalid `... on NBAPlayer { gameplayTier }` fragment inside `team.activePlayers.nodes` (`Player` type) that caused `Fragment on NBAPlayer can't be spread inside Player`.
-- Set vs. Pro Daily Picker isolation (`missionScanner.ts`, `dailyPicksMath.ts`, `DailyPlayHub.tsx`): filtered and deduplicated cached Apollo `DecisivePlayerPickerTask` items by mode (`classifyPickerTaskMode` / `filterPickerTasksForMode`) so Pro pickers (`Classic: Daily Picker`, `Playmaker Picker`) never leak into Set / Common Daily Play.
-- Collection Quest `Load 1ST Instant & Auctions` / `Refresh Prices` (`questOptimizerMath.ts`, `App.tsx`, `CollectionsTab.tsx`): expanded live auction window from `<1h` to `<24h`, included `instant_value` secondary instant buys for Full Collection quests, and allowed Refresh Prices to re-price the closest in-season team collection.
-- Set Holo (+20%) / Shiny (+10%) card bonus fallback (`sorareClient.ts`): when Sorare returns `power = 1` on Common / Set cards, infers `1.20` for Holo and `1.10` for Shiny from `cardEditionName` so Set Solo/Squad lineups credit `+20%` and `+10%` bonuses.
-
-## 2.7.5-exp11 (2026-11-22)
-
-Changed:
-- Scaled down the Essence bar particles (`1.5px` to `3px` micro-motes with tight `2px-3px` glow, lower `0.58-0.75` peak opacity, slower `2.6s-4.0s` drift, staggered negative start delays, and softer `0.42` sheen) so the effect reads as subtle, minimal shimmer across all rarities and Set mode.
-
-## 2.7.5-exp10 (2026-11-22)
-
-Changed:
-- Added a white beveled-edge rounded background behind the logo on the Sorare NBA bottom-right launcher (`sorareDetector.ts`) and in the side panel header and loading stage (`App.tsx`, `LoadingStage.tsx`, `index.css`), leaving the browser toolbar / plugin icons untouched.
-
-## 2.7.5-exp9 (2026-11-22)
-
-Changed:
-- Applied `logo3.png` across `public/logo.png` (`256x256`) and all extension icon sizes (`16`, `32`, `48`, `128`), updating the Chrome toolbar, `chrome://extensions`, side panel header, loading stage, dashboard favicon, desktop notifications, and Sorare NBA bottom-right launcher.
-
-## 2.7.5-exp8 (2026-11-22)
-
-Changed:
-- Applied the updated `logo2.png` (`PPs essentials`) artwork across `public/logo.png` (`256x256`) and all extension icon sizes (`16`, `32`, `48`, `128`), covering the Chrome toolbar, `chrome://extensions`, side panel header, loading stage, dashboard favicon, desktop notifications, and Sorare NBA bottom-right launcher.
-
-## 2.7.5-exp7 (2026-11-22)
-
-Added:
-- Playmaker Picker & Live Tier Parsing (`dailyPicksMath.ts`, `DailyPlayHub.tsx`, `sorareClient.ts`, `missionScanner.ts`): added a `Playmaker Picker` preset (`<= 1.5★`, `4+ assists`), mapped named Sorare gameplay tiers (`DNP`, `DNP Plus`, `Reserve`, `Reserve+`, `Roster`, `Roster Plus`, `Impact`, `Impact Plus`, `Star`, `Star Plus`, `GOAT`, `Icon`) to `maxStars` in `parsePickerMission`, displayed the resolved star cap (`<= 1.5★`) beside the rule text in `DailyPlayHub`, requested `gameplayTier` on `activePlayers.nodes` in `DailyPickerRosters` for live star caps on not-owned players, and supported localized `/<lang>/nba/...` Sorare URLs in `missionScanner.ts`.
-- Set / Common Essence Bar & Rarity-Differentiated Essence Meter (`index.css`, `App.tsx`): added a matching Set / Common Essence progress bar in Set mode (brushed silver/platinum gradient + silver dust motes targeting the cheapest `COMMON_ESSENCE` pack / default `1,000` Bronze Pack, with clickable `Pack ready` / `2x Packs ready` jumping to Set Packs and Pro cash balance hidden), eliminating sticky header height jumps between Set and Pro.
-- Manual Lock (Must-Start) & Projected Minutes Chips (`lineupOptimizerMath.ts`, `LineupsTab.tsx`, `LineupCardStrip.tsx`): added a `Lock (Must-Start)` toggle alongside `Skip Card` (wired through `generateTopLineups` with cap/disjoint/120+MVP support) and `32m` / `Bench (<20m)` season-average minutes chips on Pro and Set lineup slots.
-
-Improved / Fixed:
-- Count-Stat Odds & `points.` Regex (`dailyPicksMath.ts`): replaced the Normal approximation in `probabilityStatAtLeast` with an overdispersed Poisson (Negative Binomial) CDF for accurate low-mean assist/rebound/steal/block probabilities, and fixed `STAT_WORDS` `points` matching (`/\bpoints?\b(?!\s+per)/`) when descriptions end with a period.
-- Essence Bar Polish (`index.css`, `App.tsx`): upgraded track height to `8px` with `25%/50%/75%` hairline ticks, `520ms` ease-out width transitions, `2%` minimum visible fill, luminous leading-edge cap, non-clipping sibling particle overlay with fill-scaled mote counts (gold embers for Limited, plasma streaks for Rare, diamond shards for Super Rare, prismatic sheen + violet/gold star motes + luminous border for Unique, silver dust for Set, respecting `prefers-reduced-motion`), and clickable `Craft ready` / `2x Craft ready` jumping to the Craft tab.
-- Code Splitting & Repo Hygiene (`App.tsx`, `.gitignore`): lazy-loaded heavy modals (`GuidesModal`, `SettingsModal`, `CommandPaletteModal`, `WhatsNewModal`) and secondary tabs with `React.lazy` + `Suspense` (bringing main `sidepanel.js` from 557 kB down to 332 kB, well under Vite's 500 kB limit), deleted untracked `logo.af~lock~`, and added `*.af~lock~` to `.gitignore`.
-
-## 2.7.5-exp6 (2026-11-22)
-
-Changed:
-- Unified PPs Essentials Brand Logo (`public/logo.png`, `public/icons/icon{16,32,48,128}.png`, `sidepanel.html`): rendered concept `05-pps-bold-icon-first` crisply across Chrome toolbar, `chrome://extensions`, notifications, side panel header, popped-out dashboard favicon, and the Sorare NBA bottom-right launcher.
-- Consistent Pro Header Essence & Wallet Bar + Rarity Colors (`App.tsx`, `index.css`): the Pro Essence progress bar and synced wallet cash balance now stay visible across all Pro tabs (including Lineups and Gallery) instead of hiding on tab switch, remain hidden in Set/Common mode, and color-code both the Essence icon and progress fill to match the selected rarity (`Limited` amber, `Rare` red/rose, `Super Rare` sky blue, `Unique` violet).
-- Full-Stage Loading & Native Progress Bar (`LoadingStage.tsx`, `App.tsx`, `index.css`): startup cache hydration and initial tab scans now render a dedicated loading progress stage with a native `<progress>` bar (smooth indeterminate-to-determinate transitions and reduced-motion support) before revealing the full tab UI, eliminating empty-state flicker and stale progress text.
-
-## 2.7.5-exp5 (2026-11-22)
-
-Added:
-- NBA-Exclusive Floating Launcher (`sorareDomParser.ts`, `sorareDetector.ts`): bottom-right Sorare NBA Essentials dock now mounts exclusively on Sorare NBA pages (`/nba`, `/nba/...`, and localized `/<lang>/nba/...`) and automatically unmounts on SPA navigation to Football, MLB, or non-NBA pages; restyled to match the `.glass-chrome` dark obsidian frosted-glass design with spring hover/press micro-animations.
-- Category Selection, Animations & Essence Micro-Particles (`index.css`, `App.tsx`): upgraded primary workspace tabs (`Collections`, `Craft`, `Lineups`, `Deals`, `Gallery`) and sub-tabs with frosted hover pills, luminous active borders, glowing animated bottom indicators, icon micro-scale, spring `linear()` tactile press curves, tab-panel entry transitions, collapsible `<details>` hover sheen, and subtle GPU-composited shimmer + floating motes on the Essence & live scan progress bars (fully `prefers-reduced-motion` safe).
-
-Improved (Performance / Scan Speed):
-- Rate-Limit-Safe Fast-Mode Pipelining (`rateLimitQueue.ts`, `index.ts`): enables concurrency-2 pipelining when a Sorare API key is active (still strictly enforcing `45/min` sliding window and `220ms` spacing; Safe Mode remains concurrency-1).
-- Parallel Gallery & Lineups Loading + Coalescing (`index.ts`, `App.tsx`): runs ESPN season stats and local tab readers in parallel with Sorare GraphQL (and parallelizes cache-hit tab sync), coalesces duplicate in-flight gallery loads, and hydrates cached Deals instantaneously on startup with zero extra API calls.
-
-## 2.7.5-exp4 (2026-11-22)
-
-Added:
-- Visual & UX Redesign: barely-see-through frosted glass top frame bar (`backdrop-filter: blur(14px)` with `prefers-reduced-transparency` fallback), tactile button hover/press micro-animations (`scale: 0.97`, compositor-only transitions, `:focus-visible` rings, `prefers-reduced-motion` safe), and compact `LineupsTab` sub-tab split (`Overview & Live | Builder | Upgrades & Schedule` for Pro; `Daily Play | Solo & Squad | Packs` for Set).
-- Visual 5-Card Lineup Previews & Range Bars (`LineupCardStrip.tsx`, `LineupRangeBar.tsx`): renders live Sorare card artwork (`pictureUrl`) with rarity frame glow and zero-CLS `aspect-[5/7]` across Open Lineups, Generated Pro Lineups, and Set Squads, paired with micro-SVG `p10-mean-p90` vs. cut-line range bars.
-- Live `rewardTiers`-driven Dollar/Essence EV & Reward Previews (`entryEvMath.ts`, `RewardPreviewStrip.tsx`): computes estimated Dollar ($) and Essence EV directly from live Sorare `rewardTiers` and closed-GW cutoffs, rendered as visual Cash/Essence tier chips inside Recommended Entry.
-- Per-Game Vegas & B2B Peak Order Statistics (`vegasMath.ts`, `externalDataClient.ts`, `lineupOptimizerMath.ts`): tracks per-game `impliedTeamTotal`, `spread`, `blowoutRisk`, and second-night `isBackToBack` inside `TeamSlateSchedule.gameContexts` and computes exact recursive Clark `E[max(X_1..X_k)]` peak multipliers.
-- Position-Aware "Who Steps Up" Injury Impact Panel (`injuryImpactMath.ts`, `InjuryImpactPanel.tsx`): ranks healthy teammates of `OUT`/`DOUBTFUL` starters weighted by exact/adjacent position match (`G`/`F`/`C`) in Pro `Upgrades & Schedule`.
-- Craft Clue EVOI Advisor (`craftAdvisorMath.ts`, `CraftTab.tsx`): recommends the "Best Clue to Use" based on Expected Value of Information (EVOI), entropy reduction, and average pool elimination %.
-- Vault "Unseal & Reseal" Profit Detector (`vaultSealingMath.ts`, `GalleryTab.tsx`): persists local baseline SP snapshots for sealed cards in `chrome.storage.local` and surfaces net SP gains against live `sealableFor` while respecting Sorare's 14-day unseal cooldown (`unsealableAt`).
-- Longevity Auto-Sync (`App.tsx`): automatically refreshes stale live gallery/schedule/injury context (>15m old) when returning to the side panel.
-
-## 2.7.5-exp3 (2026-11-22)
-
-Added:
-- Unified Guides & Strategy Hub (`GuidesModal.tsx`, header book button + Command Palette): interactive Sorare NBA Scoring Matrix & Box-Score Calculator (`nbaScoringMath.ts`), 2026-27 competitions & multi-game peak strategy, Star brackets & bonus stacking, Vault & Sealing playbook, Set F2P-to-Pro roadmap, persistent Pre-Lock GW Checklist, and Math & Privacy FAQ.
-- Alert & Price Tracker upgrades: `Open/Submitted Lineups Only` injury toggle (`injuryLineupsOnly`) and a Pre-Lock Lineup Health Check inside the `gw_cutoff` window flagging already-OUT, Doubtful, or 0G rostered starters before lock.
-
-Improved / Fixed:
-- Enforced Sorare NBA's `max 4 players per NBA team` rule across `generateTopLineups`, `buildBudgetLineups`, `recommendLineupMarketBuys`, and `recommendTwoCardComboSwaps`.
-- Fixed `Safe floor (p10)` and `High ceiling (p90)` strategies to optimize lineup floor/ceiling directly inside DFS instead of only re-sorting disjoint mean-optimal passes.
-- Replaced greedy budget packing in `planSealBudget` with an exact 0/1 Knapsack DP maximizing total Sealing Points (breaking ties by lowest cost); scaled `evaluateVaultVsSellRoi` sell floor thresholds by rarity (`Limited 2.50`, `Rare 15.00`, `Super Rare 60.00`, `Unique 250.00`).
-- Recalibrated NBA teammate correlation from `+0.15` to `-0.05` (with `SAME_GAME_RHO = +0.06`), unified variance across `buildBudgetLineups` and `entryEvMath`, and calibrated `rankDailyPickerCandidates` single-game CV to `0.35`.
-- Passed `scheduleByTeam` into `buildBudgetLineups`, `recommendLineupMarketBuys`, and `recommendTwoCardComboSwaps`; fixed `buildEditFocusPoints` to remove the nonexistent NBA position filter, evaluate candidates through `evaluateCardForLineup` (respecting 0G, injury, In-Season, max 4/team, star cap), and format currency dynamically.
-- Removed retired `"Cap 120 + MVP"` / `"Daily Pickup"` copy from `ESSENCE_EARNING_SOURCES`.
-
-## 2.7.5-exp2 (2026-11-21)
-
-Fixed:
-- Wallet balance sync on sorare.com now parses thousands separators and locale formats (`€1,234.56`, `$1,200`, `1.234,56`, `12,50 €`, `1,250.5 ETH`) instead of failing or misreading `$1,200` as `1.2`.
-- Pro Essence `0` balances (e.g. right after crafting) now sync cleanly from sorare.com; manual Pro Essence typing no longer uses a stale closure over other rarities.
-- Cached gallery loads now filter out stale DOM lineups from closed Game Weeks just like fresh loads.
-- Sealing Deal Finder discards stale in-flight responses if you switch rarity or currency mid-scan, and respects active Sorare 429 cooldowns.
-- Pack & Mission Advisor no longer shows `0%` on Live Today advice when odds are unavailable, still shows Set Essence affordability tips without an API key, and refreshes special packs immediately when pressing Scan shop.
-- Daily Play missions update immediately on SPA auto-sync via `chrome.storage.onChanged` (instead of waiting up to 30 seconds).
-- Command Palette now shows card rarity (`Set`, `Limited`, `Rare`, `S. Rare`, `Unique`), uses dynamic season labels instead of hardcoded `26-27`, and deduplicates deal keys.
-- Settings JSON backup/restore now preserves and validates all exported preferences including rarity, projection source, auto-open toggles, and alert settings.
-- Header Refresh button disables properly on Gallery when no username is set, and all tab clicks route through `navigateTab()`.
-
-## 2.7.5-exp1 (2026-11-21)
-
-Fixed:
-- Set (Common) Essence now persists in storage, broadcasts live to the top-right Essence pill and Pack & Mission Advisor, handles space/NBSP thousands separators on sorare.com, and is editable by hand just like Pro Essence.
-- Set mode vs. Pro-only tab state: opening the panel in Set mode starts on Lineups instead of Collections; keyboard tab arrows, Command Palette, and external tab switches automatically switch to Pro when navigating to Collections, Craft, or Deals.
-- Command Palette now includes Set (Common) cards in search results.
-- Reading a partial Sorare board/lineup page now upserts by lineup ID instead of wiping sibling lineups in the same Game Week (full /nba/lineups overview pages still replace the week).
-- Sealing Deal Finder clears stale listings when switching rarity or currency.
-- Pack & Mission Advisor checks odds per pack row so a single pack without odds shows "--" instead of "0%".
-- Daily mission auto-sync now triggers on Sorare SPA route changes, not only full page reloads.
-- Settings API key input no longer traps pastes behind the masked placeholder; AES-GCM key creation deduplicates concurrent first-run calls; Set shop packs fall back cleanly on NBA off-days.
+## Legacy (v2.x)
 
 ## 2.7.4 (2026-11-21)
 
