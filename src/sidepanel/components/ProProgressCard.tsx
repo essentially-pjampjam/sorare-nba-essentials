@@ -5,6 +5,7 @@ import {
   summarizePageLineups,
   summarizeProHistory,
   summarizeProProgress,
+  summarizeProSeasonPulse,
   type PageGameWeekGroup,
   type ProLineupStatus,
 } from "../../calculators/proProgressMath";
@@ -53,6 +54,7 @@ export function ProProgressCard({ gallery }: { gallery: GalleryResult | null }) 
     [gallery, groups.length, benchmarks],
   );
   const weeks = useMemo(() => summarizeProHistory(history).slice(0, 6), [history]);
+  const pulse = useMemo(() => summarizeProSeasonPulse(history), [history]);
   const openGw = gallery ? selectOpenGameWeek(gallery.fixtures, Date.now()) : null;
 
   const sync = async () => {
@@ -167,7 +169,36 @@ export function ProProgressCard({ gallery }: { gallery: GalleryResult | null }) 
 
       {weeks.length > 0 && (
         <div className="mt-2">
-          <div className="mb-0.5 text-[10px] font-semibold text-slate-300">Game Week history (saved on this device)</div>
+          <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
+            <span className="font-semibold text-slate-300">Game Week history (saved on this device)</span>
+            {pulse && pulse.currentRewardStreak >= 2 && (
+              <span className="rounded-full border border-emerald-400/35 bg-emerald-500/15 px-1.5 py-px text-[9.5px] font-semibold text-emerald-300">
+                {pulse.currentRewardStreak} GW streak
+              </span>
+            )}
+          </div>
+          {pulse && (
+            <div className="mb-1.5 grid grid-cols-4 gap-1 text-center">
+              <div className="rounded-lg border border-white/6 bg-[#0b101b] px-1 py-1">
+                <div className="text-[8.5px] uppercase tracking-wide text-slate-500">Tracked</div>
+                <div className="text-[11px] font-bold tabular-nums text-slate-100">{pulse.gameWeeks} GW</div>
+              </div>
+              <div className="rounded-lg border border-white/6 bg-[#0b101b] px-1 py-1">
+                <div className="text-[8.5px] uppercase tracking-wide text-slate-500">Reward %</div>
+                <div className="text-[11px] font-bold tabular-nums text-emerald-300">{pulse.rewardHitRatePct}%</div>
+              </div>
+              <div className="rounded-lg border border-white/6 bg-[#0b101b] px-1 py-1">
+                <div className="text-[8.5px] uppercase tracking-wide text-slate-500">Cash %</div>
+                <div className="text-[11px] font-bold tabular-nums text-emerald-200">{pulse.cashHitRatePct}%</div>
+              </div>
+              <div className="rounded-lg border border-white/6 bg-[#0b101b] px-1 py-1">
+                <div className="text-[8.5px] uppercase tracking-wide text-slate-500">Best</div>
+                <div className="text-[11px] font-bold tabular-nums text-sky-300">
+                  {pulse.bestTopPct !== null ? `Top ${pulse.bestTopPct}%` : "--"}
+                </div>
+              </div>
+            </div>
+          )}
           <table className="w-full text-[10px]">
             <thead>
               <tr className="text-left text-slate-500">

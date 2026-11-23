@@ -1741,6 +1741,11 @@ export function App() {
               hasScanned={hasCollectionsData}
               hasUsername={Boolean((settings.username || usernameDraft).trim())}
               isLoading={isLoading}
+              onTryDemo={() => {
+                setUsernameDraft("pjampjam");
+                void updateSettings({ username: "pjampjam", usernameLockedByUser: false });
+                void runScan("pjampjam", activeRarity, settings.currency, settings.inSeasonOnly, false, false);
+              }}
             />
           </div>
         )}
@@ -1839,6 +1844,11 @@ export function App() {
                   false,
                 )
               }
+              onTryDemo={() => {
+                setUsernameDraft("pjampjam");
+                void updateSettings({ username: "pjampjam", usernameLockedByUser: false });
+                void loadGallery("pjampjam", false, false);
+              }}
             />
           </div>
         )}

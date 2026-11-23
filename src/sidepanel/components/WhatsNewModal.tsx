@@ -20,6 +20,16 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.5-exp17",
+    title: "v2.7.5-exp17: Shareable Lineup Cards (PNG), Season Pulse, Demo Mode & Quota-Safe Cache",
+    items: [
+      "Added a 1-click 'Card' PNG exporter on Pro Optimal Lineups and Set Solo Teams: renders a 16:9 dark obsidian graphic with your 5 players, projected score, floor/ceiling range, and odds, copying directly to your clipboard (or downloading as PNG).",
+      "Added a Season Pulse strip to Current Pro Progress showing tracked Game Weeks, Reward %, Cash %, Best Finish, and consecutive Rewarded GW streak.",
+      "Added a 1-click 'Try Demo (@pjampjam)' button on empty-username states and a global Alt+Shift+S shortcut to open the Side Panel.",
+      "Hardened local cache writes with automatic expired and oldest-first eviction so Chrome's 10 MB storage limit never interrupts a scan.",
+    ],
+  },
+  {
     version: "2.7.5-exp16",
     title: "v2.7.5-exp16: On-Page Dailies Checklist, Smart Lineup Stepper Wait & Audit Polish",
     items: [

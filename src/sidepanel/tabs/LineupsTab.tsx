@@ -10,6 +10,7 @@ import {
   ExternalLink,
   FileSpreadsheet,
   Flame,
+  ImageDown,
   Info,
   Layers,
   Lock,
@@ -33,6 +34,7 @@ import { LineupCardStrip } from "../components/LineupCardStrip";
 import { LineupRangeBar } from "../components/LineupRangeBar";
 import { RewardPreviewStrip } from "../components/RewardPreviewStrip";
 import { InjuryImpactPanel } from "../components/InjuryImpactPanel";
+import { exportLineupSharePng } from "../utils/lineupShareCard";
 import { evaluateInjuryBeneficiaries } from "../../calculators/injuryImpactMath";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -111,6 +113,7 @@ interface LineupsTabProps {
   commonEssence?: number;
   initialFormat?: LineupFormat;
   onToggleCutoffReminder?: (enabled: boolean) => void;
+  onTryDemo?: () => void;
 }
 
 const FORMAT_OPTIONS: Array<{ id: LineupFormat; label: string; sub: string }> = [
@@ -214,6 +217,7 @@ export function LineupsTab({
   commonEssence,
   initialFormat = "contender_11",
   onToggleCutoffReminder,
+  onTryDemo,
 }: LineupsTabProps) {
   const [localArenaMode, setLocalArenaMode] = useState<"pro" | "set_common">(initialArenaMode);
   const arenaMode = mode ?? localArenaMode;
@@ -259,6 +263,25 @@ export function LineupsTab({
   const [showCustomEditor, setShowCustomEditor] = useState(false);
   const [customDraft, setCustomDraft] = useState(customProjectionsRaw);
   const [copiedRank, setCopiedRank] = useState<number | null>(null);
+  const [sharedCardState, setSharedCardState] = useState<{ key: string; label: string } | null>(null);
+  const handleShareLineupCard = useCallback(
+    async (key: string, payload: Parameters<typeof exportLineupSharePng>[0]) => {
+      setSharedCardState({ key, label: "..." });
+      try {
+        const result = await exportLineupSharePng(payload);
+        setSharedCardState({
+          key,
+          label: result === "copied" ? "Copied PNG" : "Saved PNG",
+        });
+      } catch {
+        setSharedCardState({ key, label: "Failed" });
+      }
+      window.setTimeout(() => {
+        setSharedCardState((prev) => (prev?.key === key ? null : prev));
+      }, 2200);
+    },
+    [],
+  );
   const [buildSeed, setBuildSeed] = useState(0);
   const [rebuildNotice, setRebuildNotice] = useState<string | null>(null);
   const lineupsResultRef = useRef<HTMLDivElement>(null);
@@ -811,14 +834,25 @@ export function LineupsTab({
           Loads your Sorare NBA gallery, upcoming Game Week schedule, and live
           ESPN injury reports to auto-build top lineups and estimate win odds.
         </p>
-        <button
-          type="button"
-          disabled={!hasUsername}
-          onClick={() => onLoadGallery(false)}
-          className="mt-3.5 rounded-xl jam-btn-primary px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-sm disabled:opacity-50"
-        >
-          {hasUsername ? "Load Gallery & Injuries" : "Enter Username First"}
-        </button>
+        <div className="mt-3.5 flex flex-wrap items-center justify-center gap-2">
+          <button
+            type="button"
+            disabled={!hasUsername}
+            onClick={() => onLoadGallery(false)}
+            className="rounded-xl jam-btn-primary px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-sm disabled:opacity-50"
+          >
+            {hasUsername ? "Load Gallery & Injuries" : "Enter Username First"}
+          </button>
+          {!hasUsername && onTryDemo && (
+            <button
+              type="button"
+              onClick={onTryDemo}
+              className="rounded-xl border border-sky-400/40 bg-sky-500/15 px-3.5 py-1.5 text-xs font-semibold text-sky-200 hover:border-sky-300 hover:bg-sky-500/25"
+            >
+              Try Demo (@pjampjam)
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -1562,6 +1596,52 @@ export function LineupsTab({
                         <span className="flex items-center gap-1">
                           <button
                             type="button"
+                            onClick={() => {
+                              const shareKey = `solo-${idx}`;
+                              void handleShareLineupCard(shareKey, {
+                                title: label,
+                                subtitle: team.avgBoostPct > 0 ? `+${team.avgBoostPct}% avg boost` : "Set Arcade",
+                                username: gallery?.username ?? null,
+                                rarity: "common",
+                                projectedTotal: team.projectedTotal,
+                                capLabel: lu.capLimit ? `${lu.capUsed}/${lu.capLimit}★` : `${lu.totalStars}★`,
+                                slots: lu.slots.map((sl) => ({
+                                  playerName: sl.evaluated.card.playerName,
+                                  teamSlug: sl.evaluated.card.teamSlug,
+                                  rarity: sl.evaluated.card.rarity,
+                                  pictureUrl: sl.evaluated.card.pictureUrl,
+                                  starCost: sl.evaluated.card.starCost,
+                                  projectedPts: sl.slotScore,
+                                  boostPct:
+                                    sl.evaluated.card.powerMultiplier > 1.005
+                                      ? Math.round((sl.evaluated.card.powerMultiplier - 1) * 100)
+                                      : null,
+                                })),
+                                stats: team.stepOdds.slice(0, 3).map((o) => ({
+                                  label: `${o.target} pts`,
+                                  value: `${o.hitPct}%`,
+                                  tone: o.hitPct >= 60 ? "emerald" : o.hitPct >= 30 ? "amber" : "neutral",
+                                })),
+                              });
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] font-semibold text-slate-200 hover:border-sky-400/45 hover:text-sky-200"
+                            title="Copy or save a shareable 16:9 PNG lineup card"
+                            aria-label="Share Set Solo lineup card PNG"
+                          >
+                            {sharedCardState?.key === `solo-${idx}` ? (
+                              <>
+                                <Check className="h-2.5 w-2.5 text-emerald-400" />
+                                <span className="text-emerald-300">{sharedCardState.label}</span>
+                              </>
+                            ) : (
+                              <>
+                                <ImageDown className="h-2.5 w-2.5 text-sky-300" />
+                                <span>Card</span>
+                              </>
+                            )}
+                          </button>
+                          <button
+                            type="button"
                             onClick={() =>
                               void applyLineupHighlight(
                                 names,
@@ -2212,6 +2292,85 @@ export function LineupsTab({
                       <Check className="h-3.5 w-3.5 text-emerald-400" />
                     ) : (
                       <Copy className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const shareKey = `pro-${lineup.rank}`;
+                      const p10 =
+                        typeof lineup.stdDev === "number" && lineup.stdDev > 0
+                          ? Math.max(0, lineup.totalScore - 1.2816 * lineup.stdDev)
+                          : null;
+                      const p90 =
+                        typeof lineup.stdDev === "number" && lineup.stdDev > 0
+                          ? lineup.totalScore + 1.2816 * lineup.stdDev
+                          : null;
+                      const capLabel =
+                        lineup.format === "daily_120_mvp"
+                          ? `${lineup.capUsed}/120 + MVP`
+                          : lineup.capLimit
+                            ? `${lineup.capUsed}/${lineup.capLimit}★`
+                            : `${lineup.totalStars}★ total`;
+                      void handleShareLineupCard(shareKey, {
+                        title: fmtLabel,
+                        subtitle: `${lineup.inSeasonCount}/5 In-Season`,
+                        username: gallery?.username ?? null,
+                        rarity: rarityScope === "ALL" ? activeRarity : rarityScope,
+                        projectedTotal: lineup.totalScore,
+                        rangeLabel:
+                          p10 !== null && p90 !== null
+                            ? `Floor ${p10.toFixed(0)} - Ceiling ${p90.toFixed(0)} pts`
+                            : null,
+                        capLabel,
+                        slots: lineup.slots.map((s) => ({
+                          playerName: s.evaluated.card.playerName,
+                          teamSlug: s.evaluated.card.teamSlug,
+                          rarity: s.evaluated.card.rarity,
+                          pictureUrl: s.evaluated.card.pictureUrl,
+                          starCost: s.evaluated.card.starCost,
+                          projectedPts: s.slotScore,
+                          boostPct:
+                            s.evaluated.card.powerMultiplier > 1.005
+                              ? Math.round((s.evaluated.card.powerMultiplier - 1) * 100)
+                              : null,
+                          badge: s.isCaptainOrMvp
+                            ? lineup.format === "daily_120_mvp"
+                              ? "MVP"
+                              : "C"
+                            : null,
+                        })),
+                        stats: [
+                          { label: lineup.odds.paidLabel ?? "Reward", value: `${lineup.odds.essencePct}%`, tone: "emerald" },
+                          { label: lineup.odds.tierLabel ?? "Tier 1", value: `${lineup.odds.tier1Pct}%`, tone: "sky" },
+                          {
+                            label:
+                              lineup.odds.estRank && lineup.odds.totalEntries
+                                ? "Est. Rank"
+                                : "Podium",
+                            value:
+                              lineup.odds.estRank && lineup.odds.totalEntries
+                                ? `#${lineup.odds.estRank.toLocaleString()} (Top ${lineup.odds.topPercentilePct}%)`
+                                : `${lineup.odds.podiumPct}%`,
+                            tone: "amber",
+                          },
+                        ],
+                      });
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-[#0b101b] px-1.5 py-1 text-[10px] font-semibold text-slate-200 hover:border-sky-400/45 hover:text-sky-200"
+                    title="Copy or save a shareable 16:9 PNG lineup card"
+                    aria-label="Share lineup card PNG"
+                  >
+                    {sharedCardState?.key === `pro-${lineup.rank}` ? (
+                      <>
+                        <Check className="h-3 w-3 text-emerald-400" />
+                        <span className="text-emerald-300">{sharedCardState.label}</span>
+                      </>
+                    ) : (
+                      <>
+                        <ImageDown className="h-3 w-3 text-sky-300" />
+                        <span>Card</span>
+                      </>
                     )}
                   </button>
                   <button

@@ -2,6 +2,18 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
+## 2.7.5-exp17 (2026-11-23)
+
+Added:
+- 1-Click Shareable Lineup Card PNG Exporter (`lineupShareMath.ts`, `lineupShareCard.ts`, `LineupsTab.tsx`): adds a `Card` button next to `Copy` on Pro Optimal Lineups and Set Solo Teams that renders a `1200x675` (16:9 X/Twitter & Discord ready) dark obsidian graphic with rarity accents, 5 player cards, projected total, `p10-p90` range, reward/cash/podium or step odds, and a subtle tool watermark, copying the PNG directly to the clipboard with automatic download fallback.
+- Pro Season Pulse & Reward Streak Strip (`proProgressMath.ts`, `ProProgressCard.tsx`): summarizes local Game Week history into a 4-stat bar (Tracked GWs, Reward Hit Rate %, Cash Hit Rate %, Best Top %) plus an active consecutive Rewarded GW streak badge.
+- Zero-Friction Demo Onboarding (`CollectionsTab.tsx`, `LineupsTab.tsx`, `App.tsx`): adds a 1-click `Try Demo (@pjampjam)` button on empty-username states so new installs can test every tab immediately.
+- Global Keyboard Shortcut (`public/manifest.json`): adds `Alt+Shift+S` (`_execute_action`) to toggle the Side Panel from anywhere without extra permissions.
+
+Improved / Fixed:
+- MV3 `chrome.storage.local` Quota-Safe Cache Eviction (`cache.ts`, `cache.test.ts`): `setCached` now automatically recovers from `QUOTA_BYTES` exhaustion by pruning expired entries first, then evicting the oldest 50% of `jamassist_cache:*` keys without ever touching settings, API keys, or progress history, and gracefully skips caching if storage remains full rather than crashing a scan.
+- Refreshed 3D Edge-Blurred Promo Screenshots (`scripts/generate-promos.mjs`, `docs/promo/`): regenerated the `1280x800` pitch-black tilted promo set against the latest `v2.7.5` UI.
+
 ## 2.7.5-exp16 (2026-11-22)
 
 Added:

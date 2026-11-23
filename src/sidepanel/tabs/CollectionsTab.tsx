@@ -159,6 +159,7 @@ interface CollectionsTabProps {
   hasScanned: boolean;
   hasUsername: boolean;
   isLoading: boolean;
+  onTryDemo?: () => void;
 }
 
 function extractCollectionSeasonTag(slug: string): string | null {
@@ -217,6 +218,7 @@ export function CollectionsTab({
   hasScanned,
   hasUsername,
   isLoading,
+  onTryDemo,
 }: CollectionsTabProps) {
   const [sortField, setSortField] = useState<SortField>("minCard");
   const [sortAsc, setSortAsc] = useState<boolean>(true);
@@ -546,7 +548,7 @@ export function CollectionsTab({
           individual collections only when you click them - keeping Sorare fast
           and rate-limit safe.
         </p>
-        {hasUsername && (
+        {hasUsername ? (
           <button
             type="button"
             onClick={onScanNow}
@@ -554,7 +556,15 @@ export function CollectionsTab({
           >
             Scan {rarityMeta.label} Collections
           </button>
-        )}
+        ) : onTryDemo ? (
+          <button
+            type="button"
+            onClick={onTryDemo}
+            className="mt-3.5 rounded-xl border border-sky-400/40 bg-sky-500/15 px-4 py-1.5 text-xs font-semibold text-sky-200 hover:border-sky-300 hover:bg-sky-500/25"
+          >
+            Try Demo (@pjampjam)
+          </button>
+        ) : null}
       </div>
     );
   }
