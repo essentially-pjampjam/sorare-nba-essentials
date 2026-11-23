@@ -20,6 +20,17 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "2.7.5-exp18",
+    title: "v2.7.5-exp18: Update Checker, GW Recap PNG, Portfolio P&L, Wrapped, Card Tags & Cloud Sync",
+    items: [
+      "Added a lightweight daily GitHub Releases update checker with a subtle dismissible 'Update available' banner for sideloaded Chrome/Edge/Brave/Opera installs.",
+      "Added a 1-click 16:9 PNG Game Week Recap card in Current Pro Progress showing total points, best lineup, rewards won, best rank %, and active reward streak.",
+      "Added Skinledger-style Portfolio Value & P&L tracking in Gallery: daily local floor snapshots with Day/Week/Month interactive charts, Sorare acquisition P&L (Biggest Spend, Best Auction Won, Best Trade, Exclude current-season mints toggle), and per-player recent sale price charts.",
+      "Added a multi-slide Sorare NBA Wrapped modal (Regular Season / Playoffs / Year-End) with 1-click 16:9 Wrapped summary PNG export.",
+      "Added local + optional Cloudflare Workers/D1 Card Tags (Keep / Sell / Core / Trade), Saved Roster presets in Lineups, 1-time Sorare Bio Verification auth, and public gallery tag overlays.",
+    ],
+  },
+  {
     version: "2.7.5-exp17",
     title: "v2.7.5-exp17: Shareable Lineup Cards (PNG), Season Pulse, Demo Mode & Quota-Safe Cache",
     items: [

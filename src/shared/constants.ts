@@ -16,6 +16,9 @@ import type {
 } from "./types";
 
 export const SORARE_GRAPHQL_URL = "https://api.sorare.com/graphql";
+export const GITHUB_REPO_SLUG = "essentially-pjampjam/sorare-nba-essentials";
+export const GITHUB_RELEASES_API_URL = `https://api.github.com/repos/${GITHUB_REPO_SLUG}/releases/latest`;
+export const GITHUB_RELEASES_PAGE_URL = `https://github.com/${GITHUB_REPO_SLUG}/releases`;
 export { SORARE_NBA_CARD_URL, SORARE_NBA_MARKET_URL };
 
 /**

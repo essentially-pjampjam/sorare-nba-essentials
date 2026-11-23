@@ -1,0 +1,13 @@
+name = "sorare-nba-essentials-tags"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "sorare-essentials-tags"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+[vars]
+MAX_TAGS_PER_USER = "500"
+CHALLENGE_TTL_MINUTES = "15"
+JWT_TTL_DAYS = "30"

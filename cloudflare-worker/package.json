@@ -1,0 +1,18 @@
+{
+  "name": "sorare-nba-essentials-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate:local": "wrangler d1 execute sorare-essentials-tags --local --file=./schema.sql",
+    "db:migrate:remote": "wrangler d1 execute sorare-essentials-tags --remote --file=./schema.sql",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20261101.0",
+    "typescript": "^5.7.0",
+    "wrangler": "^3.90.0"
+  }
+}

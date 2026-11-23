@@ -15,7 +15,9 @@ import type {
   BargainListing,
   BargainMode,
   CardCounts,
+  CardAcquisitionType,
   CardMarketPrice,
+  CardOwnershipRecord,
   CardQualityTier,
   CardRarity,
   CollectionRaw,
@@ -29,6 +31,7 @@ import type {
   LineupFormat,
   MissingSlot,
   NbaPosition,
+  PlayerPricePoint,
   QuestCardSummary,
   Rarity,
   So5FixtureSummary,
@@ -2557,5 +2560,177 @@ export class SorareClient {
     );
 
     return Array.from(bySlug.values());
+  }
+
+  /**
+   * Fetches ownership / acquisition history for owned cards (strictly batched under
+   * Sorare's 500 complexity / 7 depth caps) to power Skinledger-style Portfolio P&L.
+   */
+  async fetchCardAcquisitionHistory(
+    cards: GalleryCard[],
+    currency: Currency,
+    signal?: AbortSignal,
+  ): Promise<CardOwnershipRecord[]> {
+    const proCards = cards.filter((c) => c.rarity !== "common").slice(0, 30);
+    if (proCards.length === 0) return [];
+
+    const useFast = this.hasApiKey();
+    const chunkSize = useFast ? 10 : 6;
+    const query = `
+      query CardOwnershipPnl($slugs: [String!]!) {
+        anyCards(slugs: $slugs) {
+          slug
+          ownershipHistory {
+            from
+            transferType
+            amounts {
+              eurCents
+              usdCents
+              referenceCurrency
+            }
+          }
+        }
+      }
+    `;
+
+    const mapTransferType = (raw?: string | null): CardAcquisitionType => {
+      const upper = (raw ?? "").toUpperCase();
+      if (upper.includes("AUCTION")) return "auction";
+      if (upper.includes("SINGLE_SALE") || upper.includes("PRIMARY") || upper.includes("INSTANT")) {
+        return "instant_buy";
+      }
+      if (upper.includes("DIRECT") || upper.includes("TRADE") || upper.includes("SWAP")) {
+        return "trade";
+      }
+      if (upper.includes("REWARD")) return "reward";
+      if (upper.includes("CRAFT") || upper.includes("PACK") || upper.includes("MINT")) {
+        return "craft";
+      }
+      return "unknown";
+    };
+
+    const bySlug = new Map<
+      string,
+      {
+        acquiredAtMs: number | null;
+        acquiredPriceCents: number | null;
+        acquisitionType: CardAcquisitionType;
+      }
+    >();
+
+    for (let i = 0; i < proCards.length; i += chunkSize) {
+      const slice = proCards.slice(i, i + chunkSize);
+      const slugs = slice.map((c) => c.slug);
+      try {
+        const data = await this.postGraphQL<{
+          anyCards?: Array<{
+            slug: string;
+            ownershipHistory?: Array<{
+              from?: string | null;
+              transferType?: string | null;
+              amounts?: MonetaryAmountsRaw | null;
+            }> | null;
+          }> | null;
+        }>(query, { slugs }, `pnl_hist_${slugs[0]}_${slugs.length}`, signal);
+
+        for (const node of data.anyCards ?? []) {
+          const hist = node.ownershipHistory ?? [];
+          const latest = hist.length > 0 ? hist[hist.length - 1] : null;
+          if (!latest) continue;
+          const parsedFrom = latest.from ? Date.parse(latest.from) : NaN;
+          const cents = convertAmountsToCurrencyCents(latest.amounts, currency);
+          bySlug.set(node.slug, {
+            acquiredAtMs: Number.isFinite(parsedFrom) ? parsedFrom : null,
+            acquiredPriceCents: cents,
+            acquisitionType: mapTransferType(latest.transferType),
+          });
+        }
+      } catch (err) {
+        if (err instanceof RateLimitedError || err instanceof ScanCancelledError) throw err;
+        // Skip chunk gracefully if Sorare rejects or omits ownershipHistory
+      }
+    }
+
+    return proCards.map((card) => {
+      const found = bySlug.get(card.slug);
+      return {
+        cardSlug: card.slug,
+        playerSlug: card.playerSlug,
+        playerName: card.playerName,
+        teamSlug: card.teamSlug,
+        rarity: card.rarity,
+        seasonYear: card.seasonYear,
+        acquiredAtMs: found?.acquiredAtMs ?? null,
+        acquiredPriceCents: found?.acquiredPriceCents ?? null,
+        acquisitionType: found?.acquisitionType ?? "unknown",
+        currentFloorCents: card.lowestAskCents ?? null,
+        currency,
+      };
+    });
+  }
+
+  /**
+   * Fetches recent Sorare public sale price history (tokens.tokenPrices) for a player + rarity.
+   * Depth 4, complexity ~40, safe for unauthenticated and API-key modes.
+   */
+  async fetchPlayerPriceHistory(
+    playerSlug: string,
+    rarity: Rarity,
+    currency: Currency,
+    signal?: AbortSignal,
+  ): Promise<PlayerPricePoint[]> {
+    const query = `
+      query PlayerTokenPriceHistory($playerSlug: String!, $rarity: Rarity!) {
+        tokens {
+          tokenPrices(
+            playerSlug: $playerSlug
+            rarity: $rarity
+            collection: NBA
+            last: 30
+          ) {
+            date
+            amounts {
+              eurCents
+              usdCents
+              referenceCurrency
+            }
+            deal {
+              __typename
+            }
+          }
+        }
+      }
+    `;
+
+    try {
+      const data = await this.postGraphQL<{
+        tokens?: {
+          tokenPrices?: Array<{
+            date?: string | null;
+            amounts?: MonetaryAmountsRaw | null;
+            deal?: { __typename?: string | null } | null;
+          }> | null;
+        } | null;
+      }>(query, { playerSlug, rarity }, `token_prices_${playerSlug}_${rarity}`, signal);
+
+      const out: PlayerPricePoint[] = [];
+      for (const node of data.tokens?.tokenPrices ?? []) {
+        if (!node.date) continue;
+        const ts = Date.parse(node.date);
+        const cents = convertAmountsToCurrencyCents(node.amounts, currency);
+        if (!Number.isFinite(ts) || cents === null || cents <= 0) continue;
+        out.push({
+          date: node.date,
+          timestampMs: ts,
+          priceCents: cents,
+          currency,
+          source: node.deal?.__typename ?? undefined,
+        });
+      }
+      return out.sort((a, b) => a.timestampMs - b.timestampMs);
+    } catch (err) {
+      if (err instanceof RateLimitedError || err instanceof ScanCancelledError) throw err;
+      return [];
+    }
   }
 }

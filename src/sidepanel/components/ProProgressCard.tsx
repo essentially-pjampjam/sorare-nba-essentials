@@ -1,4 +1,4 @@
-import { RefreshCw, TrendingUp } from "lucide-react";
+import { ImageDown, RefreshCw, Sparkles, TrendingUp } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { selectOpenGameWeek } from "../../calculators/countdownMath";
 import {
@@ -9,10 +9,12 @@ import {
   type PageGameWeekGroup,
   type ProLineupStatus,
 } from "../../calculators/proProgressMath";
+import { buildGameWeekRecapData } from "../../calculators/recapShareMath";
 import { buildArenaLineupsUrl, buildArenaOngoingUrl } from "../../shared/routes";
 import type { GalleryResult, PageLineupSnapshot, ProProgressRecord } from "../../shared/types";
 import { getProProgressHistory, openInActiveTab, syncPageLineups } from "../api";
 import { formatRelativeAge } from "../utils/format";
+import { shareGameWeekRecapCard } from "../utils/recapShareCard";
 
 const STATUS: Record<ProLineupStatus, { label: string; cls: string }> = {
   // Green = rewards; a solid fill marks the cash places so they stand out from Essence / XP rewards.
@@ -30,11 +32,18 @@ const PHASE: Record<PageGameWeekGroup["phase"], { label: string; cls: string }> 
 };
 
 /** Current Pro Progress: the manager's live and upcoming Pro lineups with rank, plus local history. */
-export function ProProgressCard({ gallery }: { gallery: GalleryResult | null }) {
+export function ProProgressCard({
+  gallery,
+  onOpenWrapped,
+}: {
+  gallery: GalleryResult | null;
+  onOpenWrapped?: () => void;
+}) {
   const [history, setHistory] = useState<ProProgressRecord[]>([]);
   const [snap, setSnap] = useState<PageLineupSnapshot | null>(gallery?.pageLineups ?? null);
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState<string | null>(null);
+  const [recapStatus, setRecapStatus] = useState<string | null>(null);
 
   useEffect(() => {
     setSnap(gallery?.pageLineups ?? null);
@@ -76,22 +85,69 @@ export function ProProgressCard({ gallery }: { gallery: GalleryResult | null }) 
     }
   };
 
+  const recapData = useMemo(
+    () =>
+      buildGameWeekRecapData({
+        username: gallery?.username ?? null,
+        group: groups[0] ?? null,
+        weekSummary: weeks[0] ?? null,
+        historyRecords: history,
+        pulse,
+      }),
+    [gallery?.username, groups, weeks, history, pulse],
+  );
+
+  const exportRecap = async () => {
+    if (!recapData) return;
+    try {
+      const outcome = await shareGameWeekRecapCard(recapData);
+      setRecapStatus(outcome === "copied" ? "Recap PNG copied" : "Recap PNG saved");
+      window.setTimeout(() => setRecapStatus(null), 2500);
+    } catch {
+      setRecapStatus("Export failed");
+    }
+  };
+
   return (
     <div className={`rounded-2xl border border-white/8 bg-[#111726] p-3 ${groups.some((g) => g.phase === "live") ? "jam-attn-live" : ""}`}>
       <div className="mb-1.5 flex items-center gap-1.5">
         <TrendingUp className="h-3.5 w-3.5 text-sky-300" />
         <span className="text-xs font-semibold text-slate-100">Current Pro Progress</span>
         {snap && <span className="text-[10px] text-slate-500">synced {formatRelativeAge(snap.scannedAt)}</span>}
-        <button
-          type="button"
-          onClick={() => void sync()}
-          disabled={syncing}
-          title="Re-read your lineups from open sorare.com tabs"
-          className="ml-auto inline-flex items-center gap-1 rounded-lg border border-sky-400/40 px-2 py-0.5 text-[10px] font-semibold text-sky-200 hover:border-sky-300 disabled:opacity-50"
-        >
-          <RefreshCw className={`h-3 w-3 ${syncing ? "animate-spin" : ""}`} />
-          Sync
-        </button>
+        <div className="ml-auto flex items-center gap-1">
+          {recapData && (
+            <button
+              type="button"
+              onClick={() => void exportRecap()}
+              title="Copy or download a 16:9 PNG Game Week Recap card"
+              className="inline-flex items-center gap-1 rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-200 hover:border-emerald-300"
+            >
+              <ImageDown className="h-3 w-3" />
+              {recapStatus ?? "Recap"}
+            </button>
+          )}
+          {onOpenWrapped && (
+            <button
+              type="button"
+              onClick={onOpenWrapped}
+              title="Open Sorare NBA Wrapped (Regular Season / Playoffs / Year-End)"
+              className="inline-flex items-center gap-1 rounded-lg border border-violet-400/40 bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-violet-200 hover:border-violet-300"
+            >
+              <Sparkles className="h-3 w-3" />
+              Wrapped
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => void sync()}
+            disabled={syncing}
+            title="Re-read your lineups from open sorare.com tabs"
+            className="inline-flex items-center gap-1 rounded-lg border border-sky-400/40 px-2 py-0.5 text-[10px] font-semibold text-sky-200 hover:border-sky-300 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3 w-3 ${syncing ? "animate-spin" : ""}`} />
+            Sync
+          </button>
+        </div>
       </div>
 
       {groups.length === 0 && apiRows.length === 0 ? (

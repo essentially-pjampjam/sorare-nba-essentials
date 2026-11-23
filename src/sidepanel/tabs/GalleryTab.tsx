@@ -5,17 +5,25 @@ import {
   ExternalLink,
   Flame,
   Layers,
+  LineChart,
   Loader2,
   Lock,
   RefreshCw,
   ShieldCheck,
   Snowflake,
+  Sparkles,
   Tag,
   Target,
   TrendingUp,
   Wallet,
 } from "lucide-react";
 import { VaultGuide } from "../components/VaultGuide";
+import { PortfolioTrackerSection } from "../components/PortfolioTrackerSection";
+import {
+  CARD_TAG_META,
+  CARD_TAG_VALUES,
+  countCardTags,
+} from "../../calculators/cardTagsMath";
 import { useEffect, useMemo, useState } from "react";
 import {
   evaluateStarTierShift,
@@ -36,9 +44,11 @@ import {
   SORARE_NBA_CARD_URL,
 } from "../../shared/constants";
 import type {
+  CardTag,
   Currency,
   GalleryCard,
   GalleryResult,
+  PortfolioPnlResult,
   Rarity,
   WalletBalanceInfo,
 } from "../../shared/types";
@@ -88,6 +98,10 @@ interface GalleryTabProps {
   isPricingGallery: boolean;
   onRefreshGallery: () => void;
   onPriceGallery: () => void;
+  cardTags?: Record<string, CardTag>;
+  onSetCardTag?: (cardSlug: string, tag: CardTag | null) => void;
+  onPnlLoaded?: (pnl: PortfolioPnlResult) => void;
+  onOpenWrapped?: () => void;
 }
 
 function escapeCsvCell(val: string | number | null | undefined): string {
@@ -119,6 +133,10 @@ export function GalleryTab({
   onRefreshGallery,
   onPriceGallery,
   pool,
+  cardTags = {},
+  onSetCardTag,
+  onPnlLoaded,
+  onOpenWrapped,
 }: GalleryTabProps) {
   const [localPoolMode, setPoolMode] = useState<"pro" | "common">("pro");
   const poolMode = pool ?? localPoolMode;
@@ -126,6 +144,11 @@ export function GalleryTab({
   const [inSeasonOnly, setInSeasonOnly] = useState<boolean>(false);
   const [firstOwnerOnly, setFirstOwnerOnly] = useState<boolean>(false);
   const [unlockedOnly, setUnlockedOnly] = useState<boolean>(false);
+  const [tagFilter, setTagFilter] = useState<CardTag | "all">("all");
+  const [selectedPricePlayer, setSelectedPricePlayer] = useState<{
+    playerSlug: string;
+    playerName: string;
+  } | null>(null);
   // Sealed cards sit in the Vault and cannot play or sell: hidden unless the user unticks it.
   const [hideSealed, setHideSealed] = useState<boolean>(() => {
     try {
@@ -260,6 +283,20 @@ export function GalleryTab({
     return evaluateUnsealResealOpportunities(gallery.cards, sealedBaselines);
   }, [gallery, sealedBaselines]);
 
+  const tagCounts = useMemo(() => countCardTags(cardTags), [cardTags]);
+
+  const cycleCardTag = (cardSlug: string) => {
+    if (!onSetCardTag) return;
+    const current = cardTags[cardSlug] ?? null;
+    if (!current) {
+      onSetCardTag(cardSlug, "keep");
+      return;
+    }
+    const idx = CARD_TAG_VALUES.indexOf(current);
+    const next = idx >= 0 && idx < CARD_TAG_VALUES.length - 1 ? CARD_TAG_VALUES[idx + 1] : null;
+    onSetCardTag(cardSlug, next);
+  };
+
   const filteredAndSorted = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const filtered = sourceCards.filter((c) => {
@@ -267,6 +304,7 @@ export function GalleryTab({
       if (inSeasonOnly && !c.inSeasonEligible) return false;
       if (firstOwnerOnly && !c.isFirstOwner) return false;
       if (unlockedOnly && (c.openedLineupIds?.length ?? 0) > 0) return false;
+      if (tagFilter !== "all" && cardTags[c.slug] !== tagFilter) return false;
       if (formFilter !== "all") {
         const fd = getFormDelta(c);
         const pe = getProjEdge(c);
@@ -312,6 +350,7 @@ export function GalleryTab({
       }
     });
   }, [
+    cardTags,
     firstOwnerOnly,
     formFilter,
     hideSealed,
@@ -319,6 +358,7 @@ export function GalleryTab({
     searchQuery,
     sortBy,
     sourceCards,
+    tagFilter,
     unlockedOnly,
   ]);
 
@@ -556,6 +596,19 @@ export function GalleryTab({
         </div>
       )}
 
+      {poolMode === "pro" && gallery && (
+        <div id="sec-g-portfolio">
+          <PortfolioTrackerSection
+            username={gallery.username}
+            rarity={rarity}
+            currency={currency}
+            cards={gallery.cards}
+            selectedPricePlayer={selectedPricePlayer}
+            onPnlLoaded={onPnlLoaded}
+          />
+        </div>
+      )}
+
       <div id="sec-g-duplicates">
         <DuplicateAdvisorSection gallery={gallery} currency={currency} pool={pool} />
       </div>
@@ -595,6 +648,17 @@ export function GalleryTab({
           )}
 
           <div className="flex items-center gap-1">
+            {onOpenWrapped && (
+              <button
+                type="button"
+                onClick={onOpenWrapped}
+                title="Open Sorare NBA Wrapped"
+                className="inline-flex items-center gap-1 rounded-lg border border-violet-400/35 bg-violet-500/15 px-2 py-1 text-[10.5px] font-semibold text-violet-200 hover:bg-violet-500/25"
+              >
+                <Sparkles className="h-3 w-3" />
+                Wrapped
+              </button>
+            )}
             {poolMode === "pro" && (
               <button
                 type="button"
@@ -745,6 +809,20 @@ export function GalleryTab({
           >
             1ST-Owner Only
           </button>
+          {CARD_TAG_VALUES.map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTagFilter((prev) => (prev === t ? "all" : t))}
+              className={`rounded-lg border px-2 py-0.5 font-medium transition ${
+                tagFilter === t
+                  ? CARD_TAG_META[t].activeClass
+                  : "border-white/8 bg-[#0b101b] text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              {CARD_TAG_META[t].label} ({tagCounts[t]})
+            </button>
+          ))}
           <button
             type="button"
             onClick={() => setUnlockedOnly((v) => !v)}
@@ -991,6 +1069,13 @@ export function GalleryTab({
                       Lineup
                     </span>
                   )}
+                  {cardTags[c.slug] && (
+                    <span
+                      className={`rounded border px-1 text-[9px] font-bold ${CARD_TAG_META[cardTags[c.slug]].badgeClass}`}
+                    >
+                      {CARD_TAG_META[cardTags[c.slug]].shortLabel}
+                    </span>
+                  )}
                 </div>
               }
               subline={
@@ -1036,6 +1121,37 @@ export function GalleryTab({
               }
               actionRight={
                 <div className="flex items-center gap-1">
+                  {onSetCardTag && (
+                    <button
+                      type="button"
+                      onClick={() => cycleCardTag(c.slug)}
+                      className={`rounded-lg border px-1.5 py-1 text-[9.5px] font-bold transition ${
+                        cardTags[c.slug]
+                          ? CARD_TAG_META[cardTags[c.slug]].activeClass
+                          : "border-white/10 bg-[#111726] text-slate-400 hover:text-slate-200"
+                      }`}
+                      title="Cycle card tag: Keep -> Sell -> Core -> Trade -> Clear"
+                      aria-label={`Tag ${c.playerName}`}
+                    >
+                      {cardTags[c.slug] ? CARD_TAG_META[cardTags[c.slug]].shortLabel : "Tag"}
+                    </button>
+                  )}
+                  {poolMode === "pro" && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSelectedPricePlayer({
+                          playerSlug: c.playerSlug,
+                          playerName: c.playerName,
+                        })
+                      }
+                      className="rounded-lg border border-white/10 bg-[#111726] p-1 text-slate-400 hover:border-sky-400/40 hover:text-sky-200"
+                      title="View recent Sorare sale price history chart"
+                      aria-label={`Price history for ${c.playerName}`}
+                    >
+                      <LineChart className="h-3 w-3" />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => toggleCompareCard(c.slug)}

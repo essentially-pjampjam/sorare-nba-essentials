@@ -1,8 +1,12 @@
 import {
+  Check,
+  Cloud,
+  Copy,
   Download,
   Eye,
   EyeOff,
   KeyRound,
+  LogOut,
   Palette,
   RefreshCw,
   ShieldCheck,
@@ -13,7 +17,13 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { APP_THEMES, RARITIES } from "../../shared/constants";
-import type { ProjectionSource, Rarity, UserSettings } from "../../shared/types";
+import type { CloudAuthChallenge, ProjectionSource, Rarity, UserSettings } from "../../shared/types";
+import {
+  cloudLogout,
+  pushCloudTags,
+  startCloudAuth,
+  verifyCloudAuth,
+} from "../api";
 import { AlertSettingsSection } from "./AlertSettingsSection";
 
 interface SettingsModalProps {
@@ -42,6 +52,13 @@ export function SettingsModal({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const apiKeyInputRef = useRef<HTMLInputElement>(null);
   const backupInputRef = useRef<HTMLInputElement>(null);
+  const [workerUrlDraft, setWorkerUrlDraft] = useState(
+    () => settings.cloudSyncWorkerUrl ?? "",
+  );
+  const [cloudChallenge, setCloudChallenge] = useState<CloudAuthChallenge | null>(null);
+  const [cloudBusy, setCloudBusy] = useState(false);
+  const [cloudMsg, setCloudMsg] = useState<string | null>(null);
+  const [copiedCode, setCopiedCode] = useState(false);
   const [apiKeyDraft, setApiKeyDraft] = useState(() =>
     settings.sorareApiKey?.startsWith("••••") ? "" : (settings.sorareApiKey ?? ""),
   );
@@ -529,6 +546,161 @@ export function SettingsModal({
         </div>
         {backupStatus && (
           <div className="mt-1 text-[10px] text-emerald-300">{backupStatus}</div>
+        )}
+      </div>
+
+      {/* Optional Cloud Sync & Public Card Tags (Cloudflare Worker + Bio Auth) */}
+      <div className="mt-3 rounded-xl border border-white/8 bg-[#0b101b] p-3 text-xs">
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 font-semibold text-slate-200">
+            <Cloud className="h-3.5 w-3.5 text-sky-300" />
+            Cloud Card Tags Sync (Optional)
+          </div>
+          {settings.cloudSyncUsername && (
+            <span className="rounded-full border border-emerald-400/35 bg-emerald-500/15 px-2 py-px text-[10px] font-semibold text-emerald-200">
+              @{settings.cloudSyncUsername}
+            </span>
+          )}
+        </div>
+        <p className="mb-2 text-[10.5px] text-slate-400">
+          Card tags (Keep / Sell / Core / Trade) always work 100% locally. Add your Cloudflare
+          Worker URL to verify via Sorare bio and share public gallery tags.
+        </p>
+
+        <div className="flex gap-1.5">
+          <input
+            type="url"
+            value={workerUrlDraft}
+            onChange={(e) => setWorkerUrlDraft(e.target.value)}
+            placeholder="https://sorare-tags.your-subdomain.workers.dev"
+            aria-label="Cloudflare Worker URL"
+            className="min-w-0 flex-1 rounded-lg border border-white/10 bg-[#141c2f] px-2.5 py-1.5 text-[11px] text-slate-100 placeholder:text-slate-500 focus:border-sky-400 focus:outline-none"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              onUpdateSettings({ cloudSyncWorkerUrl: workerUrlDraft.trim() });
+              setCloudMsg("Saved Worker URL.");
+            }}
+            className="rounded-lg border border-white/10 bg-[#141c2f] px-2.5 py-1 text-[10.5px] font-semibold text-slate-200 hover:border-sky-400/40"
+          >
+            Save
+          </button>
+        </div>
+
+        {!settings.cloudSyncUsername ? (
+          <div className="mt-2 space-y-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                disabled={cloudBusy || !workerUrlDraft.trim() || !settings.username.trim()}
+                onClick={async () => {
+                  setCloudBusy(true);
+                  setCloudMsg(null);
+                  try {
+                    const ch = await startCloudAuth(settings.username, workerUrlDraft);
+                    setCloudChallenge(ch);
+                    setCloudMsg("Paste this code into your Sorare bio, then click Verify Bio.");
+                  } catch (err) {
+                    setCloudMsg(err instanceof Error ? err.message : "Challenge failed.");
+                  } finally {
+                    setCloudBusy(false);
+                  }
+                }}
+                className="rounded-lg border border-sky-400/40 bg-sky-500/15 px-2.5 py-1 text-[10.5px] font-semibold text-sky-200 hover:bg-sky-500/25 disabled:opacity-40"
+              >
+                1. Generate Bio Code
+              </button>
+              {cloudChallenge && (
+                <button
+                  type="button"
+                  disabled={cloudBusy}
+                  onClick={async () => {
+                    setCloudBusy(true);
+                    setCloudMsg(null);
+                    try {
+                      const res = await verifyCloudAuth(
+                        cloudChallenge.username,
+                        cloudChallenge.challengeCode,
+                        workerUrlDraft,
+                      );
+                      onUpdateSettings({
+                        cloudSyncWorkerUrl: workerUrlDraft.trim(),
+                        cloudSyncUsername: res.username,
+                      });
+                      setCloudChallenge(null);
+                      setCloudMsg(`Verified @${res.username}! You can now remove the code from your bio.`);
+                    } catch (err) {
+                      setCloudMsg(err instanceof Error ? err.message : "Verification failed.");
+                    } finally {
+                      setCloudBusy(false);
+                    }
+                  }}
+                  className="rounded-lg border border-emerald-400/45 bg-emerald-500/20 px-2.5 py-1 text-[10.5px] font-semibold text-emerald-200 hover:bg-emerald-500/30 disabled:opacity-40"
+                >
+                  2. Verify Bio
+                </button>
+              )}
+            </div>
+
+            {cloudChallenge && (
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-sky-400/30 bg-[#111726] px-2.5 py-1.5">
+                <code className="text-[11px] font-bold text-sky-200">
+                  {cloudChallenge.challengeCode}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(cloudChallenge.challengeCode);
+                    setCopiedCode(true);
+                    window.setTimeout(() => setCopiedCode(false), 1800);
+                  }}
+                  className="inline-flex items-center gap-1 rounded border border-white/10 px-2 py-0.5 text-[10px] text-slate-200 hover:bg-white/10"
+                >
+                  {copiedCode ? <Check className="h-3 w-3 text-emerald-300" /> : <Copy className="h-3 w-3" />}
+                  {copiedCode ? "Copied" : "Copy"}
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              disabled={cloudBusy || !workerUrlDraft.trim()}
+              onClick={async () => {
+                setCloudBusy(true);
+                setCloudMsg(null);
+                try {
+                  const res = await pushCloudTags(settings.cardTags ?? {}, workerUrlDraft);
+                  setCloudMsg(`Synced ${res.count} public tags to Cloudflare D1.`);
+                } catch (err) {
+                  setCloudMsg(err instanceof Error ? err.message : "Sync failed.");
+                } finally {
+                  setCloudBusy(false);
+                }
+              }}
+              className="rounded-lg border border-emerald-400/40 bg-emerald-500/15 px-2.5 py-1 text-[10.5px] font-semibold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-40"
+            >
+              Push {Object.keys(settings.cardTags ?? {}).length} Tags to Cloud
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                await cloudLogout();
+                onUpdateSettings({ cloudSyncUsername: "" });
+                setCloudMsg("Signed out of Cloud Tag Sync.");
+              }}
+              className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-[#141c2f] px-2 py-1 text-[10.5px] text-slate-300 hover:border-rose-400/40 hover:text-rose-200"
+            >
+              <LogOut className="h-3 w-3" />
+              Sign Out
+            </button>
+          </div>
+        )}
+
+        {cloudMsg && (
+          <div className="mt-1.5 text-[10px] text-sky-300">{cloudMsg}</div>
         )}
       </div>
 

@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { analyzeCollections } from "../calculators/collectionEssenceMath";
+import { normalizeSavedRosters, setCardTagInMap } from "../calculators/cardTagsMath";
 import {
   DEFAULT_SETTINGS,
   RARITIES,
@@ -33,14 +34,20 @@ import type {
   BargainListing,
   BargainMode,
   BargainsResult,
+  CardOwnershipRecord,
+  CardTag,
   CraftPoolResult,
   Currency,
   EssenceMilestoneRule,
   GalleryResult,
+  PortfolioPnlResult,
+  ProProgressRecord,
   ProjectionSource,
   Rarity,
+  SavedRosterPreset,
   ScanProgress,
   ScanResult,
+  UpdateCheckState,
   UserSettings,
 } from "../shared/types";
 import {
@@ -48,13 +55,17 @@ import {
   clearCache,
   clearWatchlistAlerts,
   connectProgressPort,
+  dismissUpdate,
   fetchBargains,
   fetchCraftPool,
   fetchGalleryForLineups,
   getDetectedUsername,
+  getProProgressHistory,
   getSetPackAdvisor,
   getSettings,
+  getUpdateStatus,
   openDashboardTab,
+  openInActiveTab,
   priceCollection,
   priceCraftCandidates,
   priceGalleryCards,
@@ -96,6 +107,9 @@ const SettingsModal = lazy(() =>
 const WhatsNewModal = lazy(() =>
   import("./components/WhatsNewModal").then((m) => ({ default: m.WhatsNewModal })),
 );
+const WrappedModal = lazy(() =>
+  import("./components/WrappedModal").then((m) => ({ default: m.WrappedModal })),
+);
 
 type ActiveTab = "collections" | "craft" | "lineups" | "bargains" | "gallery";
 
@@ -111,6 +125,10 @@ function getExtensionVersion(): string {
 
 export function App() {
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
+  const [updateState, setUpdateState] = useState<UpdateCheckState | null>(null);
+  const [showWrapped, setShowWrapped] = useState(false);
+  const [wrappedHistory, setWrappedHistory] = useState<ProProgressRecord[]>([]);
+  const [pnlRecords, setPnlRecords] = useState<CardOwnershipRecord[]>([]);
   const [usernameDraft, setUsernameDraft] = useState<string>("");
   const [detectedUsername, setDetectedUsername] = useState<string | null>(null);
   // Global Set | Pro mode (mirrors Sorare's own Set / Pro switch). Per-device convenience.
@@ -555,6 +573,10 @@ export function App() {
         );
       },
     );
+
+    void getUpdateStatus()
+      .then(setUpdateState)
+      .catch(() => {});
 
     void (async () => {
       try {
@@ -1554,6 +1576,41 @@ export function App() {
       </div>
 
       <main className="p-3">
+        {updateState?.updateAvailable && updateState.latestVersion && (
+          <div className="mb-2.5 flex items-center justify-between gap-2 rounded-xl border border-emerald-400/35 bg-emerald-500/10 px-3 py-1.5 text-[11px] text-emerald-100">
+            <div className="min-w-0 truncate">
+              <span className="font-semibold text-emerald-300">
+                Update available: v{updateState.latestVersion}
+              </span>{" "}
+              <span className="text-slate-300">(running v{updateState.currentVersion})</span>
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              {updateState.releaseUrl && (
+                <button
+                  type="button"
+                  onClick={() => void openInActiveTab(updateState.releaseUrl!)}
+                  className="rounded-lg border border-emerald-400/50 bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-100 hover:bg-emerald-500/30"
+                >
+                  Download
+                </button>
+              )}
+              <button
+                type="button"
+                aria-label="Dismiss update banner"
+                onClick={() => {
+                  const v = updateState.latestVersion!;
+                  setUpdateState((prev) =>
+                    prev ? { ...prev, updateAvailable: false, dismissedVersion: v } : null,
+                  );
+                  void dismissUpdate(v);
+                }}
+                className="rounded p-0.5 text-slate-400 hover:bg-white/10 hover:text-slate-100"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
         {/* Optional local API key onboarding card */}
         {!isActiveTabInitialLoading &&
           !settings.sorareApiKey &&
@@ -1849,6 +1906,26 @@ export function App() {
                 void updateSettings({ username: "pjampjam", usernameLockedByUser: false });
                 void loadGallery("pjampjam", false, false);
               }}
+              savedRosters={normalizeSavedRosters(settings.savedRosters)}
+              onSaveRoster={(preset: SavedRosterPreset) => {
+                const next = normalizeSavedRosters([
+                  preset,
+                  ...(settings.savedRosters ?? []),
+                ]);
+                void updateSettings({ savedRosters: next });
+              }}
+              onDeleteRoster={(id: string) => {
+                const next = normalizeSavedRosters(
+                  (settings.savedRosters ?? []).filter((r) => r.id !== id),
+                );
+                void updateSettings({ savedRosters: next });
+              }}
+              onOpenWrapped={() => {
+                void getProProgressHistory()
+                  .then(setWrappedHistory)
+                  .catch(() => {});
+                setShowWrapped(true);
+              }}
             />
           </div>
         )}
@@ -1927,6 +2004,20 @@ export function App() {
                 )
               }
               onPriceGallery={() => void handlePriceGallery()}
+              cardTags={settings.cardTags ?? {}}
+              onSetCardTag={(cardSlug: string, tag: CardTag | null) => {
+                const next = setCardTagInMap(settings.cardTags ?? {}, cardSlug, tag);
+                void updateSettings({ cardTags: next });
+              }}
+              onPnlLoaded={(pnl: PortfolioPnlResult) => {
+                setPnlRecords(pnl.records);
+              }}
+              onOpenWrapped={() => {
+                void getProProgressHistory()
+                  .then(setWrappedHistory)
+                  .catch(() => {});
+                setShowWrapped(true);
+              }}
             />
           </div>
         )}
@@ -1940,6 +2031,22 @@ export function App() {
           <WhatsNewModal
             version={version}
             onClose={() => setShowWhatsNew(false)}
+          />
+        )}
+
+        {showWrapped && (
+          <WrappedModal
+            open={showWrapped}
+            onClose={() => setShowWrapped(false)}
+            username={settings.username || galleryResult?.username || null}
+            progressHistory={wrappedHistory}
+            galleryCards={[
+              ...(galleryResult?.cards ?? []),
+              ...(galleryResult?.commonCards ?? []),
+            ]}
+            ownershipRecords={pnlRecords}
+            essenceByRarity={settings.essenceByRarity}
+            commonEssence={settings.commonEssence}
           />
         )}
 

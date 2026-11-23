@@ -769,6 +769,16 @@ export interface UserSettings {
   /** Master switch for the alert & price tracker. */
   alertsEnabled?: boolean;
   alertPreferences?: AlertPreferences;
+  /** Local card tags (Keep / Sell / Core / Trade) keyed by cardSlug. */
+  cardTags?: Record<string, CardTag>;
+  /** Saved 5-card roster presets in Lineups tab. */
+  savedRosters?: SavedRosterPreset[];
+  /** Optional Cloudflare Worker base URL for public card tag sync. */
+  cloudSyncWorkerUrl?: string;
+  /** Verified Sorare username linked to cloud sync JWT. */
+  cloudSyncUsername?: string;
+  /** Latest GitHub release version dismissed by the user. */
+  dismissedUpdateVersion?: string;
 }
 
 export type BackgroundRequest =
@@ -905,7 +915,54 @@ export type BackgroundRequest =
       lineups: CurrentLineupEntry[];
       /** True when the page shows only some lineups (board pages); merge instead of replace. */
       partial?: boolean;
-    };
+    }
+  | { type: "GET_UPDATE_STATUS"; force?: boolean }
+  | { type: "DISMISS_UPDATE"; version: string }
+  | { type: "GET_PORTFOLIO_SNAPSHOTS" }
+  | {
+      type: "RECORD_PORTFOLIO_SNAPSHOT";
+      totalFloorCents: number;
+      cardCount: number;
+      pricedCardCount: number;
+      rarity: Rarity;
+      currency: Currency;
+    }
+  | {
+      type: "FETCH_PORTFOLIO_PNL";
+      username: string;
+      rarity: Rarity;
+      currency: Currency;
+      forceRefresh?: boolean;
+    }
+  | {
+      type: "FETCH_PLAYER_PRICE_HISTORY";
+      playerSlug: string;
+      rarity: Rarity;
+      currency: Currency;
+      forceRefresh?: boolean;
+    }
+  | {
+      type: "CLOUD_START_AUTH";
+      username: string;
+      workerUrl: string;
+    }
+  | {
+      type: "CLOUD_VERIFY_AUTH";
+      username: string;
+      challengeCode: string;
+      workerUrl: string;
+    }
+  | {
+      type: "CLOUD_PUSH_TAGS";
+      tags: Record<string, CardTag>;
+      workerUrl: string;
+    }
+  | {
+      type: "CLOUD_FETCH_PUBLIC_TAGS";
+      username: string;
+      workerUrl?: string;
+    }
+  | { type: "CLOUD_LOGOUT" };
 
 export type BackgroundResponse<T = unknown> =
   | { ok: true; data: T }
@@ -995,4 +1052,102 @@ export interface AlertEvaluationInputs {
   fixtures: So5FixtureSummary[];
   /** dedupeKey -> last emitted time (ms). */
   lastAlertAtByKey: Record<string, number>;
+}
+
+// ---------------------------------------------------------------------------
+// Update checker, Portfolio P&L, Wrapped, Card Tags & Cloud Sync (v2.7.5-exp18)
+// ---------------------------------------------------------------------------
+
+export interface UpdateCheckState {
+  currentVersion: string;
+  latestVersion: string | null;
+  releaseUrl: string | null;
+  releaseName: string | null;
+  publishedAt: string | null;
+  updateAvailable: boolean;
+  dismissedVersion: string | null;
+  checkedAtMs: number | null;
+}
+
+export type PortfolioTimeRange = "day" | "week" | "month";
+
+export interface PortfolioSnapshot {
+  /** YYYY-MM-DD (UTC) */
+  date: string;
+  totalFloorCents: number;
+  cardCount: number;
+  pricedCardCount: number;
+  rarity: Rarity;
+  currency: Currency;
+  capturedAtMs: number;
+}
+
+export type CardAcquisitionType =
+  | "auction"
+  | "instant_buy"
+  | "trade"
+  | "reward"
+  | "craft"
+  | "unknown";
+
+export interface CardOwnershipRecord {
+  cardSlug: string;
+  playerSlug: string;
+  playerName: string;
+  teamSlug: string | null;
+  rarity: CardRarity;
+  seasonYear: number;
+  acquiredAtMs: number | null;
+  acquiredPriceCents: number | null;
+  acquisitionType: CardAcquisitionType;
+  currentFloorCents: number | null;
+  currency: Currency;
+}
+
+export interface PlayerPricePoint {
+  date: string;
+  timestampMs: number;
+  priceCents: number;
+  currency: Currency;
+  source?: string;
+}
+
+export interface PortfolioPnlResult {
+  username: string;
+  rarity: Rarity;
+  currency: Currency;
+  records: CardOwnershipRecord[];
+  scannedCards: number;
+  fetchedAtMs: number;
+}
+
+export type WrappedMode = "regular_season" | "playoffs" | "year_end";
+
+export type CardTag = "keep" | "sell" | "core" | "trade";
+
+export interface SavedRosterPreset {
+  id: string;
+  name: string;
+  formatLabel: string;
+  cardSlugs: string[];
+  playerNames: string[];
+  projectedTotal: number;
+  createdAtMs: number;
+}
+
+export interface CloudAuthChallenge {
+  username: string;
+  challengeCode: string;
+  expiresAtIso: string;
+}
+
+export interface CloudAuthVerifyResult {
+  username: string;
+  verified: boolean;
+}
+
+export interface CloudPublicTagsResult {
+  username: string;
+  tags: Record<string, CardTag>;
+  updatedAtIso: string | null;
 }

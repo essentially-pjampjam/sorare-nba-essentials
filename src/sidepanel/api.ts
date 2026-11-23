@@ -18,8 +18,16 @@ import type {
   GalleryResult,
   Rarity,
   BargainListing,
+  CardTag,
+  CloudAuthChallenge,
+  CloudAuthVerifyResult,
+  CloudPublicTagsResult,
+  PlayerPricePoint,
+  PortfolioPnlResult,
+  PortfolioSnapshot,
   ScanProgress,
   ScanResult,
+  UpdateCheckState,
   UserSettings,
   WalletBalanceInfo,
   WatchlistAlert,
@@ -412,4 +420,109 @@ export function getSquadSnapshot(): Promise<SquadSnapshot | null> {
 
 export function getDailyPickerPool(refresh = false): Promise<DailyPickerPool> {
   return sendBackground<DailyPickerPool>({ type: "GET_DAILY_PICKER_POOL", refresh });
+}
+
+export function getUpdateStatus(force = false): Promise<UpdateCheckState> {
+  return sendBackground<UpdateCheckState>({ type: "GET_UPDATE_STATUS", force });
+}
+
+export function dismissUpdate(version: string): Promise<boolean> {
+  return sendBackground<boolean>({ type: "DISMISS_UPDATE", version });
+}
+
+export function getPortfolioSnapshots(): Promise<PortfolioSnapshot[]> {
+  return sendBackground<PortfolioSnapshot[]>({ type: "GET_PORTFOLIO_SNAPSHOTS" });
+}
+
+export function recordPortfolioSnapshotNow(params: {
+  totalFloorCents: number;
+  cardCount: number;
+  pricedCardCount: number;
+  rarity: Rarity;
+  currency: Currency;
+}): Promise<PortfolioSnapshot[]> {
+  return sendBackground<PortfolioSnapshot[]>({
+    type: "RECORD_PORTFOLIO_SNAPSHOT",
+    ...params,
+  });
+}
+
+export function fetchPortfolioPnl(
+  username: string,
+  rarity: Rarity,
+  currency: Currency,
+  forceRefresh = false,
+): Promise<PortfolioPnlResult> {
+  return sendBackground<PortfolioPnlResult>({
+    type: "FETCH_PORTFOLIO_PNL",
+    username,
+    rarity,
+    currency,
+    forceRefresh,
+  });
+}
+
+export function fetchPlayerPriceHistory(
+  playerSlug: string,
+  rarity: Rarity,
+  currency: Currency,
+  forceRefresh = false,
+): Promise<PlayerPricePoint[]> {
+  return sendBackground<PlayerPricePoint[]>({
+    type: "FETCH_PLAYER_PRICE_HISTORY",
+    playerSlug,
+    rarity,
+    currency,
+    forceRefresh,
+  });
+}
+
+export function startCloudAuth(
+  username: string,
+  workerUrl: string,
+): Promise<CloudAuthChallenge> {
+  return sendBackground<CloudAuthChallenge>({
+    type: "CLOUD_START_AUTH",
+    username,
+    workerUrl,
+  });
+}
+
+export function verifyCloudAuth(
+  username: string,
+  challengeCode: string,
+  workerUrl: string,
+): Promise<CloudAuthVerifyResult> {
+  return sendBackground<CloudAuthVerifyResult>({
+    type: "CLOUD_VERIFY_AUTH",
+    username,
+    challengeCode,
+    workerUrl,
+  });
+}
+
+export function pushCloudTags(
+  tags: Record<string, CardTag>,
+  workerUrl: string,
+): Promise<{ count: number; updatedAtIso: string }> {
+  return sendBackground<{ count: number; updatedAtIso: string }>({
+    type: "CLOUD_PUSH_TAGS",
+    tags,
+    workerUrl,
+  });
+}
+
+export function fetchPublicCloudTags(
+  username: string,
+  workerUrl?: string,
+): Promise<CloudPublicTagsResult> {
+  return sendBackground<CloudPublicTagsResult>({
+    type: "CLOUD_FETCH_PUBLIC_TAGS",
+    username,
+    workerUrl,
+  });
+}
+
+export function cloudLogout(): Promise<boolean> {
+  return sendBackground<boolean>({ type: "CLOUD_LOGOUT" });
 }

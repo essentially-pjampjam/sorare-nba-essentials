@@ -90,6 +90,8 @@ import {
   let pillEl: HTMLButtonElement | null = null;
   let autoOpenedThisRoute = false;
   let decoratingBusy = false;
+  let publicGalleryTagsUser = "";
+  let publicGalleryTagsMap: Record<string, string> = {};
   let lastHref = window.location.href;
   let observerTimer: number | null = null;
   let activeHighlightedTile: HTMLElement | null = null;
@@ -1655,10 +1657,50 @@ import {
     return pathMatch?.[1]?.toLowerCase() ?? null;
   }
 
+  function extractCardSlugFromHref(href: string): string | null {
+    const m = href.match(/\/nba\/cards\/([a-z0-9_-]+)/i);
+    return m?.[1]?.toLowerCase() ?? null;
+  }
+
+  function extractVisitedClubUsername(href: string): string | null {
+    try {
+      const u = new URL(href);
+      const m = u.pathname.match(/^\/(?:nba\/(?:my-club|club)|u)\/([a-z0-9_-]{2,40})(?:\/|$)/i);
+      const slug = m?.[1]?.toLowerCase() ?? null;
+      return slug && isValidUserSlug(slug) ? slug : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function ensurePublicGalleryTagsForRoute(): Promise<void> {
+    const visitedUser = extractVisitedClubUsername(window.location.href);
+    if (!visitedUser) {
+      publicGalleryTagsUser = "";
+      publicGalleryTagsMap = {};
+      return;
+    }
+    if (visitedUser === publicGalleryTagsUser) return;
+    publicGalleryTagsUser = visitedUser;
+    publicGalleryTagsMap = {};
+    try {
+      const resp = (await chrome.runtime.sendMessage({
+        type: "CLOUD_FETCH_PUBLIC_TAGS",
+        username: visitedUser,
+      })) as { ok?: boolean; data?: { tags?: Record<string, string> } } | undefined;
+      if (resp?.ok && resp.data?.tags && publicGalleryTagsUser === visitedUser) {
+        publicGalleryTagsMap = resp.data.tags;
+      }
+    } catch {
+      // Ignore if worker not configured or background unavailable
+    }
+  }
+
   async function decorateSorareCardTiles(): Promise<void> {
     if (decoratingBusy || !autoOpenFlags.autoShowInPageWizards || !isNbaSorareUrl(window.location.href)) return;
     decoratingBusy = true;
     try {
+      await ensurePublicGalleryTagsForRoute();
       const anchors = Array.from(
         document.querySelectorAll<HTMLAnchorElement>(
           'a[href*="/nba/cards/"], a[href*="/nba/players/"], a[href*="card="], a[href*="player="]',
@@ -1686,6 +1728,11 @@ import {
               if (rect.width < 56 || rect.height < 56) continue;
 
               const tags: string[] = [];
+              const cardSlug = extractCardSlugFromHref(link.getAttribute("href") ?? "");
+              const publicTag = cardSlug ? publicGalleryTagsMap[cardSlug] : undefined;
+              if (publicTag) {
+                tags.push(`TAG: ${publicTag.toUpperCase()}`);
+              }
               if (overlayLookup.firstOwnerSet.has(slug)) {
                 tags.push("✅ 1ST");
               } else if (overlayLookup.ownedSet.has(slug)) {

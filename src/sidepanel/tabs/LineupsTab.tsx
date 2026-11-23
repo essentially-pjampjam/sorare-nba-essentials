@@ -2,6 +2,7 @@ import {
   Activity,
   ArrowLeftRight,
   ArrowRight,
+  Bookmark,
   Calendar,
   Check,
   ChevronRight,
@@ -18,6 +19,7 @@ import {
   SlidersHorizontal,
   Snowflake,
   Sparkles,
+  Trash2,
   TrendingUp,
   Trophy,
   Wallet,
@@ -77,6 +79,7 @@ import type {
   LineupFormat,
   ProjectionSource,
   Rarity,
+  SavedRosterPreset,
   WalletBalanceInfo,
   DailyPickerPool,
 } from "../../shared/types";
@@ -114,6 +117,10 @@ interface LineupsTabProps {
   initialFormat?: LineupFormat;
   onToggleCutoffReminder?: (enabled: boolean) => void;
   onTryDemo?: () => void;
+  savedRosters?: SavedRosterPreset[];
+  onSaveRoster?: (preset: SavedRosterPreset) => void;
+  onDeleteRoster?: (id: string) => void;
+  onOpenWrapped?: () => void;
 }
 
 const FORMAT_OPTIONS: Array<{ id: LineupFormat; label: string; sub: string }> = [
@@ -218,6 +225,10 @@ export function LineupsTab({
   initialFormat = "contender_11",
   onToggleCutoffReminder,
   onTryDemo,
+  savedRosters = [],
+  onSaveRoster,
+  onDeleteRoster,
+  onOpenWrapped,
 }: LineupsTabProps) {
   const [localArenaMode, setLocalArenaMode] = useState<"pro" | "set_common">(initialArenaMode);
   const arenaMode = mode ?? localArenaMode;
@@ -967,8 +978,69 @@ export function LineupsTab({
           className={proSubTab === "overview" ? "jam-panel-enter space-y-3" : "hidden"}
         >
           <div id="sec-progress">
-            <ProProgressCard gallery={gallery} />
+            <ProProgressCard gallery={gallery} onOpenWrapped={onOpenWrapped} />
           </div>
+
+          {savedRosters.length > 0 && (
+            <div className="rounded-2xl border border-white/8 bg-[#111726] p-3">
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Bookmark className="h-3.5 w-3.5 text-amber-300" />
+                  <span className="text-xs font-semibold text-slate-100">
+                    Saved Roster Presets ({savedRosters.length})
+                  </span>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                {savedRosters.map((preset) => (
+                  <div
+                    key={preset.id}
+                    className="flex items-center justify-between gap-2 rounded-lg border border-white/6 bg-[#0b101b] px-2.5 py-1.5 text-[10.5px]"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate font-semibold text-slate-100">{preset.name}</span>
+                        <span className="rounded border border-white/10 bg-white/5 px-1 text-[9px] text-slate-400">
+                          {preset.formatLabel}
+                        </span>
+                        <span className="font-semibold text-emerald-300">
+                          {preset.projectedTotal.toFixed(1)} pts
+                        </span>
+                      </div>
+                      <div className="truncate text-[10px] text-slate-400">
+                        {preset.playerNames.join(", ")}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void applyLineupHighlight(
+                            preset.playerNames,
+                            preset.formatLabel,
+                            preset.projectedTotal,
+                          )
+                        }
+                        className="rounded-lg border border-sky-400/35 bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold text-sky-200 hover:bg-sky-500/25"
+                      >
+                        Load
+                      </button>
+                      {onDeleteRoster && (
+                        <button
+                          type="button"
+                          onClick={() => onDeleteRoster(preset.id)}
+                          aria-label={`Delete preset ${preset.name}`}
+                          className="rounded-lg border border-white/10 p-1 text-slate-400 hover:border-rose-400/40 hover:text-rose-300"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
       {/* Current Submitted/Open Lineups & Upgrade Swaps */}
       {gallery && (
@@ -2426,6 +2498,28 @@ export function LineupsTab({
                       </>
                     )}
                   </button>
+                  {onSaveRoster && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSaveRoster({
+                          id: `roster-${Date.now()}-${lineup.rank}`,
+                          name: `${fmtLabel} #${lineup.rank}`,
+                          formatLabel: fmtLabel,
+                          cardSlugs: lineup.slots.map((s) => s.evaluated.card.slug),
+                          playerNames: names,
+                          projectedTotal: Math.round(lineup.totalScore * 10) / 10,
+                          createdAtMs: Date.now(),
+                        });
+                      }}
+                      className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-[#0b101b] px-1.5 py-1 text-[10px] font-semibold text-slate-200 hover:border-amber-400/45 hover:text-amber-200"
+                      title="Save this 5-card lineup as a reusable roster preset"
+                      aria-label={`Save roster preset ${fmtLabel} #${lineup.rank}`}
+                    >
+                      <Bookmark className="h-3 w-3 text-amber-300" />
+                      <span>Save</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() =>

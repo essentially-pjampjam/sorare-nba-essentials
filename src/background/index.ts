@@ -71,6 +71,24 @@ import { openPageLineupsAsEntries, syncLineupsFromOpenTabs, watchLineupPages } f
 import { getDiscoveredPacks, getSavedShopStatus, scanShopStatusFromOpenTab, syncPacksFromOpenTabs, syncShopStatusFromTab, watchShopPages } from "./shopScanner";
 import { getSavedPickerMissions, scanPickerMissionsFromOpenTabs, syncMissionTab, watchMissionPages } from "./missionScanner";
 import { applySealedOverrides, syncSealedStatesFromOpenTabs, watchSealedStates } from "./cardStateScanner";
+import {
+  checkForExtensionUpdate,
+  ensureUpdateCheckAlarm,
+  UPDATE_CHECK_ALARM_NAME,
+} from "./updateChecker";
+import {
+  ensurePortfolioSnapshotAlarm,
+  getPortfolioSnapshots,
+  PORTFOLIO_SNAPSHOT_ALARM_NAME,
+  recordPortfolioSnapshot,
+} from "./portfolioStore";
+import {
+  clearCloudSession,
+  fetchPublicCloudTags,
+  pushCloudCardTags,
+  startCloudBioAuth,
+  verifyCloudBioAuth,
+} from "./cloudSyncClient";
 
 const SETTINGS_KEY = "jamassist_settings_v2";
 const LEGACY_SETTINGS_KEY = "jamassist_settings_v1";
@@ -98,6 +116,7 @@ const CONTENT_ALLOWED_TYPES = new Set<string>([
   "DETECTED_ESSENCE_FROM_CONTENT",
   "DETECTED_WALLET_FROM_CONTENT",
   "DETECTED_LINEUPS_FROM_CONTENT",
+  "CLOUD_FETCH_PUBLIC_TAGS",
 ]);
 
 function isAllowedSorareUrl(rawUrl: string | undefined): boolean {
@@ -221,12 +240,44 @@ function ensureWatchlistAlarm(): void {
 
 chrome.runtime.onInstalled.addListener(() => {
   ensureWatchlistAlarm();
+  ensureUpdateCheckAlarm();
+  ensurePortfolioSnapshotAlarm();
   void chrome.sidePanel
     .setPanelBehavior({ openPanelOnActionClick: true })
     .catch(() => {});
 });
 
 ensureWatchlistAlarm();
+ensureUpdateCheckAlarm();
+ensurePortfolioSnapshotAlarm();
+
+async function recordDailyPortfolioSnapshotFromCache(): Promise<void> {
+  const settings = await loadSettings();
+  const cleanUser = settings.username?.trim().toLowerCase();
+  if (!cleanUser) return;
+  const cached = await getCached<GalleryResult>(`gallery_v7:${cleanUser}`);
+  if (!cached || !cached.value.cards.length) return;
+  const rarity = settings.selectedRarity ?? "limited";
+  const matching = cached.value.cards.filter((c) => c.rarity === rarity);
+  if (matching.length === 0) return;
+  let totalFloorCents = 0;
+  let pricedCardCount = 0;
+  for (const c of matching) {
+    const val = c.lowestAskCents ?? null;
+    if (val !== null && val > 0) {
+      totalFloorCents += val;
+      pricedCardCount += 1;
+    }
+  }
+  if (pricedCardCount === 0) return;
+  await recordPortfolioSnapshot({
+    totalFloorCents,
+    cardCount: matching.length,
+    pricedCardCount,
+    rarity,
+    currency: settings.currency ?? "EUR",
+  });
+}
 
 async function runAlertTrackerFromStorage(): Promise<ReturnType<typeof runAlertTracker>> {
   const settings = await loadSettings();
@@ -249,6 +300,14 @@ if (chrome.alarms?.onAlarm) {
     }
     if (alarm.name === ALERT_TRACKER_ALARM_NAME || alarm.name === CUTOFF_REMINDER_ALARM_NAME) {
       return runAlertTrackerFromStorage().then(() => undefined);
+    }
+    if (alarm.name === UPDATE_CHECK_ALARM_NAME) {
+      return loadSettings()
+        .then((s) => checkForExtensionUpdate(s.dismissedUpdateVersion, true))
+        .then(() => undefined);
+    }
+    if (alarm.name === PORTFOLIO_SNAPSHOT_ALARM_NAME) {
+      return recordDailyPortfolioSnapshotFromCache().catch(() => undefined);
     }
     return undefined;
   });
@@ -1739,6 +1798,25 @@ async function handleMessage(
         };
         if (!controller.signal.aborted) {
           await setCached(`gallery_v7:${cleanUser}`, updatedGallery);
+          const matchingRarity = updatedCards.filter((c) => c.rarity === msg.rarity);
+          let totalFloorCents = 0;
+          let pricedCardCount = 0;
+          for (const c of matchingRarity) {
+            const val = c.lowestAskCents ?? null;
+            if (val !== null && val > 0) {
+              totalFloorCents += val;
+              pricedCardCount += 1;
+            }
+          }
+          if (pricedCardCount > 0) {
+            await recordPortfolioSnapshot({
+              totalFloorCents,
+              cardCount: matchingRarity.length,
+              pricedCardCount,
+              rarity: msg.rarity,
+              currency: msg.currency,
+            });
+          }
           broadcastProgress({
             phase: "done",
             completed: 1,
@@ -1926,6 +2004,116 @@ async function handleMessage(
           await chrome.action.setBadgeText({ text: "" });
         }
         broadcastMessage({ type: "WATCHLIST_ALERTS_UPDATED", alerts: [] });
+        return { ok: true, data: true };
+      }
+      case "GET_UPDATE_STATUS": {
+        const settings = await loadSettings();
+        const status = await checkForExtensionUpdate(
+          settings.dismissedUpdateVersion,
+          Boolean(msg.force),
+        );
+        return { ok: true, data: status };
+      }
+      case "DISMISS_UPDATE": {
+        const cleanVersion = msg.version.trim().replace(/^v/i, "");
+        await saveSettings({ dismissedUpdateVersion: cleanVersion });
+        return { ok: true, data: true };
+      }
+      case "GET_PORTFOLIO_SNAPSHOTS": {
+        const snapshots = await getPortfolioSnapshots();
+        return { ok: true, data: snapshots };
+      }
+      case "RECORD_PORTFOLIO_SNAPSHOT": {
+        const snapshots = await recordPortfolioSnapshot({
+          totalFloorCents: msg.totalFloorCents,
+          cardCount: msg.cardCount,
+          pricedCardCount: msg.pricedCardCount,
+          rarity: msg.rarity,
+          currency: msg.currency,
+        });
+        return { ok: true, data: snapshots };
+      }
+      case "FETCH_PORTFOLIO_PNL": {
+        const cleanUser = msg.username.trim().toLowerCase();
+        if (!cleanUser) {
+          throw new Error("Enter a Sorare username or slug first.");
+        }
+        const cacheKey = `portfolio_pnl_v1:${cleanUser}:${msg.rarity}:${msg.currency}`;
+        if (!msg.forceRefresh) {
+          const cached = await getCached(cacheKey);
+          if (cached) return { ok: true, data: cached.value };
+        }
+        const gallery =
+          (await fetchGalleryForLineups(cleanUser, false, true)) ??
+          (await fetchGalleryForLineups(cleanUser, false, false));
+        if (!gallery) {
+          throw new Error("Load your Gallery first before scanning P&L history.");
+        }
+        await loadSettings();
+        await assertNoCooldown();
+        const targetCards = gallery.cards.filter((c) => c.rarity === msg.rarity);
+        const records = await sorareClient.fetchCardAcquisitionHistory(
+          targetCards,
+          msg.currency,
+        );
+        const result = {
+          username: cleanUser,
+          rarity: msg.rarity,
+          currency: msg.currency,
+          records,
+          scannedCards: records.length,
+          fetchedAtMs: Date.now(),
+        };
+        await setCached(cacheKey, result);
+        return { ok: true, data: result };
+      }
+      case "FETCH_PLAYER_PRICE_HISTORY": {
+        const cleanSlug = msg.playerSlug.trim().toLowerCase();
+        if (!cleanSlug) return { ok: true, data: [] };
+        const cacheKey = `player_price_hist_v1:${cleanSlug}:${msg.rarity}:${msg.currency}`;
+        if (!msg.forceRefresh) {
+          const cached = await getCached(cacheKey);
+          if (cached) return { ok: true, data: cached.value };
+        }
+        await loadSettings();
+        await assertNoCooldown();
+        const points = await sorareClient.fetchPlayerPriceHistory(
+          cleanSlug,
+          msg.rarity,
+          msg.currency,
+        );
+        await setCached(cacheKey, points);
+        return { ok: true, data: points };
+      }
+      case "CLOUD_START_AUTH": {
+        const challenge = await startCloudBioAuth(msg.workerUrl, msg.username);
+        return { ok: true, data: challenge };
+      }
+      case "CLOUD_VERIFY_AUTH": {
+        const verified = await verifyCloudBioAuth(
+          msg.workerUrl,
+          msg.username,
+          msg.challengeCode,
+        );
+        await saveSettings({
+          cloudSyncWorkerUrl: msg.workerUrl.trim(),
+          cloudSyncUsername: verified.username,
+        });
+        return { ok: true, data: verified };
+      }
+      case "CLOUD_PUSH_TAGS": {
+        const res = await pushCloudCardTags(msg.workerUrl, msg.tags);
+        return { ok: true, data: res };
+      }
+      case "CLOUD_FETCH_PUBLIC_TAGS": {
+        const settings = await loadSettings();
+        const url = msg.workerUrl ?? settings.cloudSyncWorkerUrl;
+        const res = await fetchPublicCloudTags(url, msg.username);
+        return { ok: true, data: res };
+      }
+      case "CLOUD_LOGOUT": {
+        await clearCloudSession();
+        await saveSettings({ cloudSyncUsername: "" });
         return { ok: true, data: true };
       }
       default:
