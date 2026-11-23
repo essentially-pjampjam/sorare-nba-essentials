@@ -163,31 +163,38 @@ async function fetchSorarePublicProfileText(username: string): Promise<string | 
       }
     }
   `;
-  const res = await fetch(SORARE_GRAPHQL_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({ query, variables: { slug: username } }),
-  });
-  if (!res.ok) return null;
-  const payload = (await res.json()) as {
-    data?: {
-      user?: {
-        slug?: string | null;
-        nickname?: string | null;
-        profile?: {
-          status?: string | null;
-          clubName?: string | null;
+  try {
+    const res = await fetch(SORARE_GRAPHQL_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ query, variables: { slug: username } }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+    const payload = (await res.json()) as {
+      data?: {
+        user?: {
+          slug?: string | null;
+          nickname?: string | null;
+          profile?: {
+            status?: string | null;
+            clubName?: string | null;
+          } | null;
         } | null;
-      } | null;
+      };
     };
-  };
-  const status = payload.data?.user?.profile?.status ?? "";
-  const clubName = payload.data?.user?.profile?.clubName ?? "";
-  const nick = payload.data?.user?.nickname ?? "";
-  return `${status}\n${clubName}\n${nick}`;
+    const user = payload.data?.user;
+    if (!user) return null;
+    const status = user.profile?.status ?? "";
+    const clubName = user.profile?.clubName ?? "";
+    const nick = user.nickname ?? "";
+    return `${status}\n${clubName}\n${nick}`;
+  } catch {
+    return null;
+  }
 }
 
 export default {
@@ -263,7 +270,7 @@ export default {
       }
 
       const profileText = await fetchSorarePublicProfileText(username);
-      if (!profileText || !profileText.includes(challengeCode)) {
+      if (!profileText || !profileText.toUpperCase().includes(challengeCode.toUpperCase())) {
         return json(
           {
             error:

@@ -641,7 +641,8 @@ export function SettingsModal({
                         workerUrlDraft,
                       );
                       onUpdateSettings({
-                        cloudSyncWorkerUrl: workerUrlDraft.trim(),
+                        cloudSyncWorkerUrl:
+                          normalizeCloudWorkerUrl(workerUrlDraft) ?? workerUrlDraft.trim(),
                         cloudSyncUsername: res.username,
                       });
                       setCloudChallenge(null);

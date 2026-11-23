@@ -2701,6 +2701,8 @@ export class SorareClient {
     currency: Currency,
     signal?: AbortSignal,
   ): Promise<PlayerPricePoint[]> {
+    const cleanSlug = playerSlug.trim();
+    if (!cleanSlug) return [];
     const query = `
       query PlayerTokenPriceHistory($playerSlug: String!, $rarity: Rarity!) {
         tokens {
@@ -2731,7 +2733,7 @@ export class SorareClient {
             deal?: { __typename?: string | null } | null;
           }> | null;
         } | null;
-      }>(query, { playerSlug, rarity }, `token_prices_${playerSlug}_${rarity}`, signal);
+      }>(query, { playerSlug: cleanSlug, rarity }, `token_prices_${cleanSlug}_${rarity}`, signal);
 
       const out: PlayerPricePoint[] = [];
       for (const node of data.tokens?.tokenPrices ?? []) {
