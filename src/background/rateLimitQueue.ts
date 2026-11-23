@@ -53,7 +53,7 @@ const defaultSleep = (ms: number): Promise<void> =>
  */
 export class RateLimitQueue {
   private maxPerMinute: number;
-  private readonly concurrency: number;
+  private concurrency: number;
   private minSpacingMs: number;
   private readonly baseRetryDelayMs: number;
   private readonly maxRetries: number;
@@ -80,9 +80,12 @@ export class RateLimitQueue {
     this.sleep = options.sleep ?? defaultSleep;
   }
 
-  setLimits(maxPerMinute: number, minSpacingMs: number): void {
+  setLimits(maxPerMinute: number, minSpacingMs: number, concurrency?: number): void {
     this.maxPerMinute = Math.max(1, maxPerMinute);
     this.minSpacingMs = Math.max(0, minSpacingMs);
+    if (typeof concurrency === "number" && Number.isFinite(concurrency)) {
+      this.concurrency = Math.max(1, Math.floor(concurrency));
+    }
   }
 
   setCooldown(untilMs: number): void {

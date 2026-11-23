@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   DAILY_MISSIONS,
   buildDailyPickIdeas,
+  filterPickerTasksForMode,
   parsePickerMission,
   type DailyMission,
   type OwnershipFilter,
@@ -75,21 +76,37 @@ export function DailyPlayHub({ gallery, pool, poolLoading, onRefreshPool, missio
         .then(setDetected)
         .catch(() => {});
     load();
-    // Opening Sorare's missions page syncs the pickers in the background: pick that up.
+    // Instant update when watchMissionPages() writes new missions to storage on SPA navigation.
+    const onStorageChange = (
+      changes: Record<string, chrome.storage.StorageChange>,
+      areaName: string,
+    ) => {
+      if (areaName === "local" && changes.picker_missions_v1?.newValue) {
+        setDetected(changes.picker_missions_v1.newValue as PickerMissionsByMode);
+      }
+    };
+    chrome.storage?.onChanged?.addListener(onStorageChange);
+    // Fallback poll in case storage events were missed.
     const timer = setInterval(load, 30_000);
-    return () => clearInterval(timer);
+    return () => {
+      chrome.storage?.onChanged?.removeListener(onStorageChange);
+      clearInterval(timer);
+    };
   }, []);
 
   const snapshot = detected[mode];
   const fresh = snapshot ? snapshot.scannedAt >= lastResetMs(Date.now()) : false;
   const specs: PickerMissionSpec[] = useMemo(() => {
     if (snapshot && fresh && snapshot.tasks.length > 0) {
-      return snapshot.tasks.map((t) => {
-        const spec = parsePickerMission(t, mode === "set" ? "common" : "limited");
-        // Some tasks (Set Daily Picker) have no reward text: borrow the matching preset's.
-        const preset = Object.values(DAILY_MISSIONS).find((p) => p.kind === spec.kind && p.rarity === spec.rarity);
-        return spec.reward === "See Sorare" && preset ? { ...spec, reward: preset.reward } : spec;
-      });
+      const modeTasks = filterPickerTasksForMode(snapshot.tasks, mode);
+      if (modeTasks.length > 0) {
+        return modeTasks.map((t) => {
+          const spec = parsePickerMission(t, mode === "set" ? "common" : "limited");
+          // Some tasks (Set Daily Picker) have no reward text: borrow the matching preset's.
+          const preset = Object.values(DAILY_MISSIONS).find((p) => p.kind === spec.kind && p.rarity === spec.rarity);
+          return spec.reward === "See Sorare" && preset ? { ...spec, reward: preset.reward } : spec;
+        });
+      }
     }
     return missions.map((m) => DAILY_MISSIONS[m]);
   }, [fresh, missions, mode, snapshot]);
@@ -133,7 +150,13 @@ export function DailyPlayHub({ gallery, pool, poolLoading, onRefreshPool, missio
         <GoButton url={missionUrl(info)} title={`Open ${info.title} on Sorare`} />
       </div>
       <div className="mb-1 text-[10px] text-slate-400">
-        {info.rule} • {info.reward} • {info.picks} pick{info.picks > 1 ? "s" : ""} • only your own {info.rarity} cards can be picked
+        {info.rule}
+        {info.maxStars != null && (
+          <span className="ml-1 inline-flex items-center rounded bg-amber-400/15 px-1 py-px font-semibold text-amber-200">
+            &lt;= {info.maxStars}★
+          </span>
+        )}{" "}
+        • {info.reward} • {info.picks} pick{info.picks > 1 ? "s" : ""} • only your own {info.rarity} cards can be picked
       </div>
       <div className="mb-1 flex flex-wrap items-center gap-2 text-[10px]">
         {snapshot && fresh ? (
@@ -269,6 +292,10 @@ export function DailyPlayHub({ gallery, pool, poolLoading, onRefreshPool, missio
                         rarity: idea.card.rarity,
                         seasonYear: idea.card.seasonYear,
                         isCaptain: false,
+                        pictureUrl: idea.card.pictureUrl,
+                        starCost: idea.card.starCost,
+                        projectedPts: idea.expected,
+                        teamSlug: idea.card.teamSlug,
                       },
                     ])
                   }

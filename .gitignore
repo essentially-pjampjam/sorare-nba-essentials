@@ -8,6 +8,7 @@ releases/
 AGENTS.md
 CLAUDE.md
 PROJECT_STATE.md
+PROJECT_AUDIT.md
 ROADMAP.md
 SPEC.md
 CHROMEWEBSTORE.md
@@ -32,3 +33,7 @@ EXPERIMENTAL.md
 *.local.md
 .preview/
 scripts/ship-helper.mjs
+logo-concepts/
+*.af~lock~
+/logo2.png
+/logo3.png

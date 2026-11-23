@@ -9,10 +9,19 @@ import {
   classifySorareContext as classifyContextFromUrl,
   extractOpenLineupsFromDocument,
   isCraftRoute as isCraftRouteUrl,
+  isNbaSorareUrl,
   isPartialLineupPage,
   normalizeNameForMatch,
+  parseWalletButtonText,
   type DomDetectedLineup,
 } from "./sorareDomParser";
+import {
+  buildDailyChecklistItems,
+  DAILY_MANUAL_STORAGE_KEY,
+  toggleManualCompletion,
+  type DailyManualCompletionState,
+} from "../calculators/dailyChecklistMath";
+import type { PickerMissionsByMode, SetShopStatus } from "../shared/types";
 
 (() => {
   const RESERVED_SEGMENTS = new Set([
@@ -88,6 +97,8 @@ import {
   let pillEl: HTMLButtonElement | null = null;
   let autoOpenedThisRoute = false;
   let decoratingBusy = false;
+  let publicGalleryTagsUser = "";
+  let publicGalleryTagsMap: Record<string, string> = {};
   let lastHref = window.location.href;
   let observerTimer: number | null = null;
   let activeHighlightedTile: HTMLElement | null = null;
@@ -193,7 +204,7 @@ import {
         btn.querySelector('linearGradient[id*="essence" i], path[fill*="green-400" i]'),
       );
       if (!hasEssenceIcon) continue;
-      const numMatch = (btn.textContent || "").replace(/,/g, "").trim().match(/^(\d{1,5})$/);
+      const numMatch = (btn.textContent || "").replace(/[\s,\u00a0]+/g, "").match(/^(\d{1,5})$/);
       // Sorare reuses the gradient id `essence-gradient-purple` on BOTH counters (checked live
       // 2026-11-21): the colors tell them apart. Limited Essence is filled with --c-green-400,
       // Set Essence with purple #8567C9. The URL is only a fallback when no color is readable.
@@ -201,7 +212,7 @@ import {
         (n.getAttribute("stop-color") || n.getAttribute("fill") || "").toLowerCase(),
       );
       const green = fills.some((f) => f.includes("green"));
-      const purple = fills.some((f) => f === "#8567c9");
+      const purple = fills.some((f) => f === "#8567c9" || f.includes("purple") || f.includes("violet"));
       if (numMatch) {
         const val = Number(numMatch[1]);
         if (Number.isFinite(val) && val >= 0 && val <= 50000) {
@@ -222,12 +233,12 @@ import {
         el.getAttribute("href") ||
         ""
       ).toLowerCase();
-      const rawText = (el.textContent || "").replace(/,/g, "").trim();
+      const rawText = (el.textContent || "").replace(/[\s,\u00a0]+/g, "");
       if (rawText.length > 24 || rawText.includes("/")) continue;
       const m = rawText.match(/^(\d{1,5})$/);
       if (!m) continue;
       const num = Number(m[1]);
-      if (!Number.isFinite(num) || num <= 0 || num > 50000) continue;
+      if (!Number.isFinite(num) || num < 0 || num > 50000) continue;
 
       if (label.includes("unique")) {
         out.unique = num;
@@ -261,32 +272,24 @@ import {
       "nav button, aside button",
     );
     for (const btn of buttons) {
-      const text = (btn.textContent || "").replace(/\u00a0/g, " ").trim();
+      const text = (btn.textContent || "").replace(/[\u00a0\u202f]/g, " ").trim();
       if (!text) continue;
 
       if (btn.querySelector('linearGradient[id*="boost" i]')) {
-        const clueMatch = text.replace(/,/g, "").match(/^(\d{1,4})$/);
+        const clueMatch = text.replace(/[\s,]+/g, "").match(/^(\d{1,4})$/);
         if (clueMatch) {
           cluesCount = Number(clueMatch[1]);
         }
       }
 
-      const fiatMatch = text.match(/^([€$£])\s*(\d+(?:[.,]\d+)?)$/);
-      if (fiatMatch) {
-        const parsed = Number.parseFloat(fiatMatch[2].replace(",", "."));
-        if (Number.isFinite(parsed)) {
-          cashSymbol = fiatMatch[1];
-          cashAmount = parsed;
-        }
+      const parsed = parseWalletButtonText(text);
+      if (parsed?.cashAmount !== undefined && parsed.cashSymbol) {
+        cashSymbol = parsed.cashSymbol;
+        cashAmount = parsed.cashAmount;
         continue;
       }
-
-      const ethMatch = text.match(/^(\d+(?:[.,]\d+)?)\s*ETH$/i);
-      if (ethMatch) {
-        const parsed = Number.parseFloat(ethMatch[1].replace(",", "."));
-        if (Number.isFinite(parsed)) {
-          ethAmount = parsed;
-        }
+      if (parsed?.ethAmount !== undefined) {
+        ethAmount = parsed.ethAmount;
       }
     }
 
@@ -435,10 +438,12 @@ import {
     autoOpenOnCraft: boolean;
     autoOpenOnSorare: boolean;
     autoShowInPageWizards: boolean;
+    trackDailyTasks: boolean;
   } = {
     autoOpenOnCraft: true,
     autoOpenOnSorare: false,
     autoShowInPageWizards: true,
+    trackDailyTasks: true,
   };
 
   interface OverlayLookup {
@@ -452,6 +457,15 @@ import {
     firstOwnerSet: new Set<string>(),
     hotMap: {},
   };
+
+  let storedPickerMissions: PickerMissionsByMode = {};
+  let storedShopStatus: SetShopStatus | null = null;
+  let storedManualDailyState: DailyManualCompletionState | null = null;
+  let dailyPanelFilter: "all" | "set" | "pro" = "all";
+  let dailyPanelOpen = false;
+  let launcherMinimized = false;
+  let dailyPillBtnEl: HTMLButtonElement | null = null;
+  let dailyPopoverEl: HTMLDivElement | null = null;
 
   const DRAFT_26_SLUGS = new Set<string>([
     "ebuka-okorie-20070410",
@@ -514,15 +528,22 @@ import {
   }
 
   try {
-    // Only read non-secret auto-open flags & public slug lookup; API keys stay isolated from content scripts
+    // Only read non-secret auto-open flags, public slug lookup & cached daily missions/shop status; API keys stay isolated
     chrome.storage.local.get(
-      ["jamassist_content_flags_v1", "jamassist_overlay_lookup_v1"],
+      [
+        "jamassist_content_flags_v1",
+        "jamassist_overlay_lookup_v1",
+        "picker_missions_v1",
+        "set_shop_status_v1",
+        DAILY_MANUAL_STORAGE_KEY,
+      ],
       (raw) => {
         const f = raw?.jamassist_content_flags_v1 as
           | {
               autoOpenOnCraft?: boolean;
               autoOpenOnSorare?: boolean;
               autoShowInPageWizards?: boolean;
+              trackDailyTasks?: boolean;
             }
           | undefined;
         if (f) {
@@ -530,9 +551,20 @@ import {
             autoOpenOnCraft: f.autoOpenOnCraft ?? true,
             autoOpenOnSorare: f.autoOpenOnSorare ?? false,
             autoShowInPageWizards: f.autoShowInPageWizards ?? true,
+            trackDailyTasks: f.trackDailyTasks ?? true,
           };
         }
         applyRawOverlayLookup(raw?.jamassist_overlay_lookup_v1);
+        if (raw?.picker_missions_v1 && typeof raw.picker_missions_v1 === "object") {
+          storedPickerMissions = raw.picker_missions_v1 as PickerMissionsByMode;
+        }
+        if (raw?.set_shop_status_v1 && typeof raw.set_shop_status_v1 === "object") {
+          storedShopStatus = raw.set_shop_status_v1 as SetShopStatus;
+        }
+        if (raw?.[DAILY_MANUAL_STORAGE_KEY] && typeof raw[DAILY_MANUAL_STORAGE_KEY] === "object") {
+          storedManualDailyState = raw[DAILY_MANUAL_STORAGE_KEY] as DailyManualCompletionState;
+        }
+        renderDailyChecklistOverlay();
         window.setTimeout(() => {
           document
             .querySelectorAll<HTMLElement>("[data-jamassist-decorated]")
@@ -548,12 +580,27 @@ import {
           autoOpenOnCraft?: boolean;
           autoOpenOnSorare?: boolean;
           autoShowInPageWizards?: boolean;
+          trackDailyTasks?: boolean;
         };
         autoOpenFlags = {
           autoOpenOnCraft: f.autoOpenOnCraft ?? true,
           autoOpenOnSorare: f.autoOpenOnSorare ?? false,
           autoShowInPageWizards: f.autoShowInPageWizards ?? true,
+          trackDailyTasks: f.trackDailyTasks ?? true,
         };
+        renderDailyChecklistOverlay();
+      }
+      if (changes.picker_missions_v1?.newValue) {
+        storedPickerMissions = changes.picker_missions_v1.newValue as PickerMissionsByMode;
+        renderDailyChecklistOverlay();
+      }
+      if (changes.set_shop_status_v1?.newValue) {
+        storedShopStatus = changes.set_shop_status_v1.newValue as SetShopStatus;
+        renderDailyChecklistOverlay();
+      }
+      if (changes[DAILY_MANUAL_STORAGE_KEY]?.newValue) {
+        storedManualDailyState = changes[DAILY_MANUAL_STORAGE_KEY].newValue as DailyManualCompletionState;
+        renderDailyChecklistOverlay();
       }
       if (changes.jamassist_overlay_lookup_v1?.newValue) {
         applyRawOverlayLookup(changes.jamassist_overlay_lookup_v1.newValue);
@@ -571,7 +618,7 @@ import {
   }
 
   function tryAutoOpenOnGesture(): void {
-    if (autoOpenedThisRoute) return;
+    if (autoOpenedThisRoute || !isNbaSorareUrl(window.location.href)) return;
     const onCraft = isCraftRoute();
     const shouldOpenCraft = onCraft && autoOpenFlags.autoOpenOnCraft;
     const shouldOpenAny = autoOpenFlags.autoOpenOnSorare;
@@ -587,8 +634,264 @@ import {
     }
   }
 
+  function removeBottomLauncher(): void {
+    const existing = document.getElementById("jamassist-sorare-root");
+    if (existing) existing.remove();
+    pillEl = null;
+    badgeSubEl = null;
+    dailyPillBtnEl = null;
+    dailyPopoverEl = null;
+    dailyPanelOpen = false;
+    launcherMinimized = false;
+    const hud = document.getElementById("jamassist-lineup-hud");
+    if (hud) {
+      clearActiveTileHighlight();
+      hud.remove();
+    }
+    const pills = document.querySelectorAll<HTMLElement>(".jamassist-card-overlay-pill");
+    if (pills.length > 0) {
+      pills.forEach((el) => el.remove());
+      document
+        .querySelectorAll<HTMLElement>("[data-jamassist-decorated]")
+        .forEach((el) => delete el.dataset.jamassistDecorated);
+    }
+  }
+
+  function renderDailyChecklistOverlay(): void {
+    if (!dailyPillBtnEl || !dailyPopoverEl) return;
+    if (
+      !autoOpenFlags.trackDailyTasks ||
+      launcherMinimized ||
+      !isNbaSorareUrl(window.location.href)
+    ) {
+      dailyPillBtnEl.classList.add("hidden");
+      dailyPopoverEl.classList.add("hidden");
+      dailyPanelOpen = false;
+      return;
+    }
+
+    const allItems = buildDailyChecklistItems({
+      shopStatus: storedShopStatus,
+      pickerMissions: storedPickerMissions,
+      manualState: storedManualDailyState,
+    });
+    const pendingItems = allItems.filter((it) => !it.done);
+
+    // Auto-disappear once all daily tasks are completed today (zero screen clutter).
+    if (pendingItems.length === 0) {
+      dailyPillBtnEl.classList.add("hidden");
+      dailyPopoverEl.classList.add("hidden");
+      dailyPanelOpen = false;
+      return;
+    }
+
+    dailyPillBtnEl.classList.remove("hidden");
+    dailyPillBtnEl.textContent = `Dailies • ${pendingItems.length} left`;
+    dailyPillBtnEl.title = `${pendingItems.length} Sorare NBA daily task${pendingItems.length === 1 ? "" : "s"} left before 07:00 UTC reset`;
+    dailyPillBtnEl.classList.toggle("active", dailyPanelOpen);
+
+    if (!dailyPanelOpen) {
+      dailyPopoverEl.classList.add("hidden");
+      return;
+    }
+    dailyPopoverEl.classList.remove("hidden");
+
+    while (dailyPopoverEl.firstChild) {
+      dailyPopoverEl.removeChild(dailyPopoverEl.firstChild);
+    }
+
+    const hdr = document.createElement("div");
+    hdr.className = "daily-hdr";
+    const hdrTitle = document.createElement("span");
+    hdrTitle.className = "daily-title";
+    hdrTitle.textContent = `Today's Dailies (${pendingItems.length} left)`;
+
+    const filterRow = document.createElement("div");
+    filterRow.className = "daily-filters";
+    const filterModes: Array<{ id: "all" | "set" | "pro"; label: string }> = [
+      { id: "all", label: "All" },
+      { id: "set", label: "Set" },
+      { id: "pro", label: "Pro" },
+    ];
+    for (const fm of filterModes) {
+      const fBtn = document.createElement("button");
+      fBtn.type = "button";
+      fBtn.className = `daily-filter-btn${dailyPanelFilter === fm.id ? " active" : ""}`;
+      fBtn.textContent = fm.label;
+      fBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        dailyPanelFilter = fm.id;
+        renderDailyChecklistOverlay();
+      });
+      filterRow.appendChild(fBtn);
+    }
+
+    const syncBtn = document.createElement("button");
+    syncBtn.type = "button";
+    syncBtn.className = "daily-sync-btn";
+    syncBtn.textContent = "↻";
+    syncBtn.title = "Re-sync daily status from open Sorare NBA tabs";
+    syncBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      try {
+        chrome.runtime.sendMessage({ type: "SYNC_DAILIES_FROM_OPEN_TABS" });
+      } catch {
+        // Ignore
+      }
+      schedulePageDailiesSync();
+    });
+
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "daily-close";
+    closeBtn.textContent = "×";
+    closeBtn.title = "Close Dailies checklist";
+    closeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      dailyPanelOpen = false;
+      renderDailyChecklistOverlay();
+    });
+
+    const hdrRight = document.createElement("div");
+    hdrRight.className = "daily-hdr-right";
+    hdrRight.append(filterRow, syncBtn, closeBtn);
+    hdr.append(hdrTitle, hdrRight);
+    dailyPopoverEl.appendChild(hdr);
+
+    const visibleItems = allItems.filter(
+      (it) => dailyPanelFilter === "all" || it.mode === dailyPanelFilter,
+    );
+
+    const list = document.createElement("div");
+    list.className = "daily-list";
+    for (const item of visibleItems) {
+      const row = document.createElement("div");
+      row.className = `daily-row${item.done ? " done" : ""}`;
+
+      const left = document.createElement("div");
+      left.className = "daily-row-left";
+
+      const checkBtn = document.createElement("button");
+      checkBtn.type = "button";
+      checkBtn.className = `daily-check-btn${item.done ? " checked" : ""}${item.autoDone ? " auto" : ""}`;
+      checkBtn.textContent = item.done ? "✓" : "";
+      checkBtn.title = item.autoDone
+        ? "Confirmed automatically from Sorare"
+        : item.manualDone
+          ? "Marked done manually (click to undo)"
+          : "Mark as done (e.g. completed on mobile)";
+      checkBtn.setAttribute("aria-label", `${item.done ? "Completed" : "Mark done"}: ${item.title}`);
+      checkBtn.disabled = item.autoDone;
+      if (!item.autoDone) {
+        checkBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const fallbackId = item.id.startsWith("set_task_")
+            ? "set_daily_picker_default"
+            : item.id.startsWith("pro_task_")
+              ? "pro_daily_picker_default"
+              : undefined;
+          const next = toggleManualCompletion(
+            storedManualDailyState,
+            item.id,
+            !item.manualDone,
+            Date.now(),
+            fallbackId,
+          );
+          storedManualDailyState = next;
+          try {
+            void chrome.storage.local.set({ [DAILY_MANUAL_STORAGE_KEY]: next });
+          } catch {
+            // Ignore
+          }
+          renderDailyChecklistOverlay();
+        });
+      }
+
+      const badge = document.createElement("span");
+      badge.className = `daily-mode-badge ${item.mode}`;
+      badge.textContent = item.modeBadge;
+
+      const textCol = document.createElement("div");
+      textCol.className = "daily-row-text";
+      const t = document.createElement("div");
+      t.className = "daily-row-title";
+      t.textContent = item.title;
+      const s = document.createElement("div");
+      s.className = "daily-row-sub";
+      s.textContent = item.sub;
+      textCol.append(t, s);
+
+      left.append(checkBtn, badge, textCol);
+
+      const actions = document.createElement("div");
+      actions.className = "daily-row-actions";
+
+      if (item.done) {
+        const donePill = document.createElement("span");
+        donePill.className = "daily-done-pill";
+        donePill.textContent = item.autoDone ? "✓ Done" : "✓ Manual";
+        actions.appendChild(donePill);
+      } else {
+        const picksBtn = document.createElement("button");
+        picksBtn.type = "button";
+        picksBtn.className = "daily-act-btn picks";
+        picksBtn.textContent = item.panelBtnLabel;
+        picksBtn.title = item.panelBtnTitle;
+        picksBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          try {
+            chrome.runtime.sendMessage({
+              type: "OPEN_SIDE_PANEL",
+              targetTab: item.tab,
+              targetMode: item.mode,
+              targetSubTab: item.subTab,
+            });
+          } catch {
+            // Ignore
+          }
+        });
+
+        const goBtn = document.createElement("button");
+        goBtn.type = "button";
+        goBtn.className = "daily-act-btn go";
+        goBtn.textContent = "Go ↗";
+        goBtn.title = `Open ${item.title} on Sorare`;
+        goBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          window.location.assign(item.url);
+        });
+
+        actions.append(picksBtn, goBtn);
+      }
+
+      row.append(left, actions);
+      list.appendChild(row);
+    }
+
+    const note = document.createElement("div");
+    note.className = "daily-note";
+    note.textContent = "0 extra API calls • Auto-syncs on Play/Missions, or check off if done on mobile.";
+    dailyPopoverEl.append(list, note);
+  }
+
+  function syncBottomLauncherVisibility(refreshText = false): void {
+    if (!isNbaSorareUrl(window.location.href)) {
+      removeBottomLauncher();
+      return;
+    }
+    if (!document.getElementById("jamassist-sorare-root")) {
+      injectBottomLauncher();
+    } else if (refreshText) {
+      updateOverlayUI();
+    }
+  }
+
   function injectBottomLauncher(): void {
-    if (!document.body || document.getElementById("jamassist-sorare-root")) {
+    if (
+      !document.body ||
+      !isNbaSorareUrl(window.location.href) ||
+      document.getElementById("jamassist-sorare-root")
+    ) {
       return;
     }
 
@@ -608,6 +911,10 @@ import {
       :host {
         all: initial;
       }
+      button,
+      input {
+        font-family: inherit;
+      }
       .wrap {
         position: fixed;
         right: 18px;
@@ -616,110 +923,434 @@ import {
         display: flex;
         align-items: center;
         gap: 6px;
+        padding: 4px;
+        border-radius: 18px;
+        border: 1px solid rgba(255, 255, 255, 0.13);
+        background: linear-gradient(180deg, rgba(26, 29, 35, 0.84) 0%, rgba(17, 19, 23, 0.89) 100%);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.16),
+          0 14px 32px -8px rgba(0, 0, 0, 0.72);
+        backdrop-filter: blur(16px) saturate(150%);
+        -webkit-backdrop-filter: blur(16px) saturate(150%);
         font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, ui-sans-serif, system-ui, sans-serif;
       }
       .pill {
         display: inline-flex;
         align-items: center;
         gap: 8px;
-        padding: 6px 13px 6px 7px;
-        border-radius: 9999px;
-        border: 1px solid rgba(255, 255, 255, 0.16);
-        background: linear-gradient(180deg, rgba(28, 39, 64, 0.78), rgba(13, 19, 34, 0.74));
+        padding: 4px 11px 4px 5px;
+        border-radius: 13px;
+        border: 1px solid rgba(255, 255, 255, 0.10);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 100%);
         color: #f8fafc;
-        box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.28),
-          inset 0 -1px 0 rgba(0, 0, 0, 0.42),
-          0 14px 32px rgba(0, 0, 0, 0.55);
-        backdrop-filter: blur(20px) saturate(170%);
-        -webkit-backdrop-filter: blur(20px) saturate(170%);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10);
         cursor: pointer;
-        transition: transform 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+        transition:
+          border-color 160ms ease-out,
+          background 160ms ease-out,
+          box-shadow 160ms ease-out,
+          scale 160ms ease-out,
+          translate 160ms ease-out;
       }
       .pill:hover {
-        transform: translateY(-1px);
-        border-color: rgba(251, 191, 36, 0.7);
-        background: linear-gradient(180deg, rgba(35, 48, 78, 0.88), rgba(15, 23, 42, 0.86));
+        border-color: rgba(56, 189, 248, 0.58);
+        background: linear-gradient(180deg, rgba(56, 189, 248, 0.16) 0%, rgba(56, 189, 248, 0.06) 100%);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.18),
+          0 6px 18px -6px rgba(56, 189, 248, 0.42);
       }
       .pill.craft-glow {
-        border-color: rgba(52, 211, 153, 0.75);
+        border-color: rgba(52, 211, 153, 0.68);
+        background: linear-gradient(180deg, rgba(52, 211, 153, 0.16) 0%, rgba(16, 185, 129, 0.06) 100%);
         box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.30),
-          0 0 0 3px rgba(16, 185, 129, 0.18),
-          0 14px 32px rgba(0, 0, 0, 0.55);
+          inset 0 1px 0 rgba(255, 255, 255, 0.22),
+          0 0 0 2px rgba(52, 211, 153, 0.18),
+          0 8px 20px -6px rgba(16, 185, 129, 0.45);
       }
       .pill.minimized {
-        padding: 5px;
+        padding: 3px;
       }
       .logo-badge {
         width: 26px;
         height: 26px;
+        padding: 0;
+        box-sizing: border-box;
         border-radius: 7px;
         display: flex;
         align-items: center;
         justify-content: center;
         flex-shrink: 0;
         overflow: hidden;
+        background: transparent;
+        filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.5));
+        transition: scale 180ms ease-out;
       }
       .logo-img {
-        width: 26px;
-        height: 26px;
+        width: 100%;
+        height: 100%;
         object-fit: contain;
         display: block;
       }
       .logo-fallback {
-        color: #020617;
+        color: #b91c1c;
         font-size: 10.5px;
         font-weight: 900;
       }
       .text {
         display: flex;
         flex-direction: column;
-        line-height: 1.15;
+        line-height: 1.18;
         text-align: left;
       }
       .title {
         font-size: 11.5px;
         font-weight: 700;
+        letter-spacing: -0.01em;
         color: #f8fafc;
       }
       .sub {
         font-size: 10px;
-        color: #fbbf24;
+        color: #7dd3fc;
         font-weight: 500;
       }
       .pill.craft-glow .sub {
         color: #6ee7b7;
       }
       .min-btn {
-        width: 22px;
-        height: 22px;
-        border-radius: 9999px;
-        border: 1px solid rgba(255, 255, 255, 0.14);
-        background: rgba(15, 23, 42, 0.72);
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+        width: 28px;
+        height: 28px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.10);
+        background: rgba(255, 255, 255, 0.04);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09);
         color: #cbd5e1;
-        font-size: 12px;
+        font-size: 13px;
+        font-weight: 600;
         line-height: 1;
         display: flex;
         align-items: center;
         justify-content: center;
         cursor: pointer;
+        transition:
+          color 150ms ease-out,
+          border-color 150ms ease-out,
+          background-color 150ms ease-out,
+          box-shadow 150ms ease-out,
+          scale 150ms ease-out,
+          translate 150ms ease-out;
       }
       .min-btn:hover {
+        color: #f8fafc;
+        border-color: rgba(56, 189, 248, 0.52);
+        background: rgba(56, 189, 248, 0.14);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.14),
+          0 4px 12px -4px rgba(0, 0, 0, 0.5);
+      }
+      .daily-pill {
+        height: 28px;
+        padding: 0 9px;
+        border-radius: 10px;
+        border: 1px solid rgba(251, 191, 36, 0.38);
+        background: linear-gradient(180deg, rgba(251, 191, 36, 0.18) 0%, rgba(245, 158, 11, 0.08) 100%);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+        color: #fde68a;
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        white-space: nowrap;
+        display: inline-flex;
+        align-items: center;
+        cursor: pointer;
+        transition:
+          color 150ms ease-out,
+          border-color 150ms ease-out,
+          background 150ms ease-out,
+          box-shadow 150ms ease-out,
+          scale 150ms ease-out,
+          translate 150ms ease-out;
+      }
+      .daily-pill:hover,
+      .daily-pill.active {
+        color: #fef3c7;
+        border-color: rgba(251, 191, 36, 0.72);
+        background: linear-gradient(180deg, rgba(251, 191, 36, 0.28) 0%, rgba(245, 158, 11, 0.14) 100%);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.20),
+          0 4px 14px -4px rgba(251, 191, 36, 0.35);
+      }
+      .daily-popover {
+        position: fixed;
+        right: 18px;
+        bottom: 66px;
+        width: 296px;
+        z-index: 2147483647;
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: linear-gradient(180deg, rgba(26, 29, 35, 0.92) 0%, rgba(15, 17, 21, 0.96) 100%);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.16),
+          0 20px 44px -10px rgba(0, 0, 0, 0.78);
+        backdrop-filter: blur(16px) saturate(150%);
+        -webkit-backdrop-filter: blur(16px) saturate(150%);
+        padding: 11px 12px;
+        color: #f1f5f9;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, ui-sans-serif, system-ui, sans-serif;
+      }
+      .daily-hdr {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+        margin-bottom: 8px;
+      }
+      .daily-title {
+        font-size: 11.5px;
+        font-weight: 700;
+        color: #fbbf24;
+      }
+      .daily-hdr-right {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .daily-filters {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        padding: 2px;
+        border-radius: 8px;
+        background: rgba(11, 16, 27, 0.75);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      .daily-filter-btn {
+        background: transparent;
+        border: none;
+        border-radius: 6px;
+        padding: 2px 6px;
+        font-size: 9.5px;
+        font-weight: 600;
+        color: #94a3b8;
+        cursor: pointer;
+      }
+      .daily-filter-btn:hover {
+        color: #e2e8f0;
+      }
+      .daily-filter-btn.active {
+        background: rgba(56, 189, 248, 0.20);
+        color: #e0f2fe;
+      }
+      .daily-sync-btn {
+        background: transparent;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 6px;
+        color: #94a3b8;
+        font-size: 11px;
+        line-height: 1;
+        padding: 3px 5px;
+        cursor: pointer;
+      }
+      .daily-sync-btn:hover {
+        color: #e0f2fe;
+        border-color: rgba(56, 189, 248, 0.45);
+      }
+      .daily-close {
+        background: transparent;
+        border: none;
+        color: #94a3b8;
+        font-size: 14px;
+        line-height: 1;
+        padding: 2px 4px;
+        cursor: pointer;
+      }
+      .daily-close:hover {
         color: #ffffff;
-        border-color: rgba(255, 255, 255, 0.35);
+      }
+      .daily-check-btn {
+        width: 16px;
+        height: 16px;
+        border-radius: 5px;
+        border: 1px solid rgba(148, 163, 184, 0.45);
+        background: rgba(15, 23, 42, 0.7);
+        color: #34d399;
+        font-size: 10px;
+        font-weight: 800;
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        flex-shrink: 0;
+        cursor: pointer;
+      }
+      .daily-check-btn:hover:not(:disabled) {
+        border-color: rgba(52, 211, 153, 0.75);
+      }
+      .daily-check-btn.checked {
+        background: rgba(52, 211, 153, 0.22);
+        border-color: rgba(52, 211, 153, 0.65);
+      }
+      .daily-check-btn.auto {
+        cursor: default;
+      }
+      .daily-list {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      .daily-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 6px 8px;
+        border-radius: 10px;
+        background: rgba(17, 23, 38, 0.75);
+        border: 1px solid rgba(255, 255, 255, 0.07);
+      }
+      .daily-row.done {
+        opacity: 0.56;
+      }
+      .daily-row-left {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-width: 0;
+        flex: 1;
+      }
+      .daily-mode-badge {
+        font-size: 8.5px;
+        font-weight: 800;
+        padding: 2px 5px;
+        border-radius: 5px;
+        letter-spacing: 0.03em;
+        flex-shrink: 0;
+      }
+      .daily-mode-badge.set {
+        background: rgba(217, 217, 217, 0.16);
+        color: #ececec;
+        border: 1px solid rgba(217, 217, 217, 0.35);
+      }
+      .daily-mode-badge.pro {
+        background: rgba(251, 191, 36, 0.16);
+        color: #fde68a;
+        border: 1px solid rgba(251, 191, 36, 0.38);
+      }
+      .daily-row-text {
+        min-width: 0;
+        flex: 1;
+      }
+      .daily-row-title {
+        font-size: 10.5px;
+        font-weight: 600;
+        color: #f8fafc;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .daily-row-sub {
+        font-size: 9.5px;
+        color: #94a3b8;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .daily-row-actions {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        flex-shrink: 0;
+      }
+      .daily-act-btn {
+        border-radius: 7px;
+        padding: 3px 6px;
+        font-size: 9.5px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .daily-act-btn.picks {
+        background: rgba(52, 211, 153, 0.16);
+        border: 1px solid rgba(52, 211, 153, 0.38);
+        color: #a7f3d0;
+      }
+      .daily-act-btn.picks:hover {
+        background: rgba(52, 211, 153, 0.26);
+      }
+      .daily-act-btn.go {
+        background: rgba(56, 189, 248, 0.16);
+        border: 1px solid rgba(56, 189, 248, 0.38);
+        color: #bae6fd;
+      }
+      .daily-act-btn.go:hover {
+        background: rgba(56, 189, 248, 0.26);
+      }
+      .daily-done-pill {
+        font-size: 9.5px;
+        font-weight: 700;
+        color: #34d399;
+      }
+      .daily-note {
+        margin-top: 7px;
+        padding-top: 6px;
+        border-top: 1px solid rgba(255, 255, 255, 0.07);
+        font-size: 9px;
+        color: #94a3b8;
+      }
+      .pill:focus-visible,
+      .daily-pill:focus-visible,
+      .min-btn:focus-visible {
+        outline: 2px solid #38bdf8;
+        outline-offset: 2px;
       }
       .hidden {
         display: none;
       }
+      @media (prefers-reduced-motion: no-preference) {
+        .wrap {
+          --jam-spring: linear(0, 0.25 14%, 0.72 32%, 1.04 54%, 0.99 78%, 1);
+          animation: jam-dock-in 240ms var(--jam-spring) both;
+        }
+        .pill,
+        .min-btn {
+          transition-timing-function: var(--jam-spring);
+        }
+        .pill:hover {
+          translate: 0 -1px;
+        }
+        .pill:hover .logo-badge {
+          scale: 1.06;
+        }
+        .pill:active {
+          scale: 0.97;
+        }
+        .min-btn:hover {
+          translate: 0 -1px;
+        }
+        .min-btn:active {
+          scale: 0.93;
+        }
+      }
+      @keyframes jam-dock-in {
+        from {
+          opacity: 0;
+          translate: 0 8px;
+          scale: 0.96;
+        }
+        to {
+          opacity: 1;
+          translate: 0 0;
+          scale: 1;
+        }
+      }
       @media (prefers-reduced-transparency: reduce) {
-        .pill, .min-btn {
-          background: #0f172a;
+        .wrap {
+          background: #14161a;
           backdrop-filter: none;
           -webkit-backdrop-filter: none;
+        }
+        .pill,
+        .min-btn {
+          background: #1a1d23;
         }
       }
     `;
@@ -772,8 +1403,13 @@ import {
     minBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       minimized = !minimized;
+      launcherMinimized = minimized;
       text.classList.toggle("hidden", minimized);
       pill.classList.toggle("minimized", minimized);
+      if (minimized) {
+        dailyPanelOpen = false;
+      }
+      renderDailyChecklistOverlay();
       minBtn.textContent = minimized ? "+" : "−";
     });
 
@@ -842,10 +1478,44 @@ import {
       }
     });
 
-    wrap.append(pill, dashBtn, minBtn);
-    shadow.append(style, wrap);
+    const dailyBtn = document.createElement("button");
+    dailyBtn.type = "button";
+    dailyBtn.className = "daily-pill hidden";
+    dailyPillBtnEl = dailyBtn;
+    dailyBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      // Auto-select context tab on first open based on current Sorare URL
+      if (!dailyPanelOpen) {
+        dailyPanelFilter = isSetModePage()
+          ? "set"
+          : /\/nba\/(play|lineups|pro)/i.test(window.location.pathname)
+            ? "pro"
+            : "all";
+        if (autoOpenFlags.trackDailyTasks) {
+          try {
+            chrome.runtime.sendMessage({ type: "SYNC_DAILIES_FROM_OPEN_TABS" });
+          } catch {
+            // Ignore
+          }
+          schedulePageDailiesSync();
+        }
+      }
+      dailyPanelOpen = !dailyPanelOpen;
+      renderDailyChecklistOverlay();
+    });
+
+    const dailyPop = document.createElement("div");
+    dailyPop.className = "daily-popover hidden";
+    dailyPop.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
+    dailyPopoverEl = dailyPop;
+
+    wrap.append(pill, dailyBtn, dashBtn, minBtn);
+    shadow.append(style, dailyPop, wrap);
     document.body.appendChild(host);
     updateOverlayUI();
+    renderDailyChecklistOverlay();
   }
 
   function checkPendingLineupHud(): void {
@@ -884,18 +1554,67 @@ import {
   }
 
   reportContext();
-  injectBottomLauncher();
-  checkPendingLineupHud();
-  void decorateSorareCardTiles();
+  syncBottomLauncherVisibility();
+  if (isNbaSorareUrl(window.location.href)) {
+    checkPendingLineupHud();
+    void decorateSorareCardTiles();
+  }
 
-  // Trigger optional auto-open on user click when on craft / configured pages
+  let dailiesSyncTimerA: number | null = null;
+  let dailiesSyncTimerB: number | null = null;
+  let dailiesSyncTimerC: number | null = null;
+  function schedulePageDailiesSync(): void {
+    if (!autoOpenFlags.trackDailyTasks) return;
+    const href = window.location.href;
+    if (!/\/nba\/(play|series)(\/|$|\?)/i.test(href)) return;
+    const sendSync = () => {
+      if (!isContextValid() || !autoOpenFlags.trackDailyTasks) return;
+      try {
+        chrome.runtime.sendMessage({
+          type: "SORARE_PAGE_CONTEXT",
+          url: window.location.href,
+          isCraftPage: isCraftRoute(),
+          username: detectUsername(),
+          syncDailies: true,
+        });
+      } catch {
+        // Ignore
+      }
+    };
+    if (dailiesSyncTimerA !== null) window.clearTimeout(dailiesSyncTimerA);
+    if (dailiesSyncTimerB !== null) window.clearTimeout(dailiesSyncTimerB);
+    if (dailiesSyncTimerC !== null) window.clearTimeout(dailiesSyncTimerC);
+    dailiesSyncTimerA = window.setTimeout(sendSync, 900);
+    dailiesSyncTimerB = window.setTimeout(sendSync, 2500);
+    dailiesSyncTimerC = window.setTimeout(sendSync, 5000);
+  }
+  schedulePageDailiesSync();
+
+  // Trigger optional auto-open on user click when on craft / configured pages, light-dismiss popover, and re-sync dailies after in-page claims/submissions
   document.addEventListener(
     "click",
-    () => {
+    (ev) => {
       tryAutoOpenOnGesture();
+      schedulePageDailiesSync();
+      if (dailyPanelOpen) {
+        const root = document.getElementById("jamassist-sorare-root");
+        const target = (ev as { target?: unknown } | undefined)?.target;
+        if (root && target !== root) {
+          dailyPanelOpen = false;
+          renderDailyChecklistOverlay();
+        }
+      }
     },
     { capture: true, passive: true },
   );
+
+  window.addEventListener("keydown", (ev) => {
+    const key = (ev as { key?: string } | undefined)?.key;
+    if (key === "Escape" && dailyPanelOpen) {
+      dailyPanelOpen = false;
+      renderDailyChecklistOverlay();
+    }
+  });
 
   function extractPlayerSlugFromHref(href: string): string | null {
     const queryMatch = href.match(
@@ -910,10 +1629,56 @@ import {
     return pathMatch?.[1]?.toLowerCase() ?? null;
   }
 
+  function extractCardSlugFromHref(href: string): string | null {
+    const m = href.match(/\/nba\/cards\/([a-z0-9_-]+)/i);
+    return m?.[1]?.toLowerCase() ?? null;
+  }
+
+  function extractVisitedClubUsername(href: string): string | null {
+    try {
+      const u = new URL(href);
+      const m = u.pathname.match(
+        /^(?:\/[a-z]{2}(?:-[a-z]{2,4})?)?\/(?:nba\/(?:my-club|club)|u)\/([a-z0-9_-]{2,40})(?:\/|$)/i,
+      );
+      const slug = m?.[1]?.toLowerCase() ?? null;
+      return slug && isValidUserSlug(slug) ? slug : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function ensurePublicGalleryTagsForRoute(): Promise<void> {
+    const visitedUser = extractVisitedClubUsername(window.location.href);
+    if (!visitedUser) {
+      publicGalleryTagsUser = "";
+      publicGalleryTagsMap = {};
+      return;
+    }
+    if (visitedUser === publicGalleryTagsUser) return;
+    publicGalleryTagsUser = visitedUser;
+    publicGalleryTagsMap = {};
+    try {
+      const resp = (await chrome.runtime.sendMessage({
+        type: "CLOUD_FETCH_PUBLIC_TAGS",
+        username: visitedUser,
+      })) as { ok?: boolean; data?: { tags?: Record<string, string> } } | undefined;
+      if (resp?.ok && resp.data?.tags && publicGalleryTagsUser === visitedUser) {
+        publicGalleryTagsMap = resp.data.tags;
+      } else if (publicGalleryTagsUser === visitedUser) {
+        publicGalleryTagsUser = "";
+      }
+    } catch {
+      if (publicGalleryTagsUser === visitedUser) {
+        publicGalleryTagsUser = "";
+      }
+    }
+  }
+
   async function decorateSorareCardTiles(): Promise<void> {
-    if (decoratingBusy || !autoOpenFlags.autoShowInPageWizards) return;
+    if (decoratingBusy || !autoOpenFlags.autoShowInPageWizards || !isNbaSorareUrl(window.location.href)) return;
     decoratingBusy = true;
     try {
+      await ensurePublicGalleryTagsForRoute();
       const anchors = Array.from(
         document.querySelectorAll<HTMLAnchorElement>(
           'a[href*="/nba/cards/"], a[href*="/nba/players/"], a[href*="card="], a[href*="player="]',
@@ -941,6 +1706,11 @@ import {
               if (rect.width < 56 || rect.height < 56) continue;
 
               const tags: string[] = [];
+              const cardSlug = extractCardSlugFromHref(link.getAttribute("href") ?? "");
+              const publicTag = cardSlug ? publicGalleryTagsMap[cardSlug] : undefined;
+              if (publicTag) {
+                tags.push(`TAG: ${publicTag.toUpperCase()}`);
+              }
               if (overlayLookup.firstOwnerSet.has(slug)) {
                 tags.push("✅ 1ST");
               } else if (overlayLookup.ownedSet.has(slug)) {
@@ -964,27 +1734,48 @@ import {
                 container.style.position = "relative";
               }
 
+              const compactTile = rect.width < 115;
               const pill = document.createElement("div");
               pill.className = "jamassist-card-overlay-pill";
-              pill.textContent = tags.slice(0, 2).join(" • ");
+              pill.textContent = compactTile ? tags[0] : tags.slice(0, 2).join(" • ");
               pill.style.position = "absolute";
-              pill.style.top = "6px";
-              pill.style.left = "6px";
+              pill.style.top = compactTile ? "5px" : "7px";
+              pill.style.left = compactTile ? "5px" : "7px";
+              pill.style.maxWidth = "calc(100% - 14px)";
+              pill.style.overflow = "hidden";
+              pill.style.textOverflow = "ellipsis";
+              pill.style.whiteSpace = "nowrap";
               pill.style.zIndex = "20";
               pill.style.pointerEvents = "none";
-              pill.style.padding = "2px 6px";
+              pill.style.padding = compactTile ? "1.5px 5.5px" : "2.5px 7.5px";
               pill.style.borderRadius = "999px";
-              pill.style.fontSize = "10px";
+              pill.style.fontSize = compactTile ? "9px" : "10px";
               pill.style.fontWeight = "700";
               pill.style.letterSpacing = "0.01em";
-              pill.style.background = "rgba(11, 13, 18, 0.88)";
-              pill.style.color = tags[0].includes("Draft")
-                ? "#fcd34d"
-                : tags[0].includes("1ST")
+              pill.style.fontFamily =
+                '-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, ui-sans-serif, system-ui, sans-serif';
+              pill.style.background =
+                "linear-gradient(180deg, rgba(20, 24, 34, 0.90) 0%, rgba(10, 12, 18, 0.95) 100%)";
+              pill.style.backdropFilter = "blur(8px) saturate(140%)";
+              const isDraft = tags[0].includes("Draft");
+              const isFirst = tags[0].includes("1ST");
+              const isHot = tags[0].includes("🔥");
+              pill.style.color = isDraft
+                ? "#fde68a"
+                : isFirst
                   ? "#6ee7b7"
-                  : "#e2e8f0";
-              pill.style.border = "1px solid rgba(251, 191, 36, 0.45)";
-              pill.style.boxShadow = "0 2px 8px rgba(0, 0, 0, 0.45)";
+                  : isHot
+                    ? "#7dd3fc"
+                    : "#e2e8f0";
+              pill.style.border = isDraft
+                ? "1px solid rgba(251, 191, 36, 0.55)"
+                : isFirst
+                  ? "1px solid rgba(52, 211, 153, 0.52)"
+                  : isHot
+                    ? "1px solid rgba(56, 189, 248, 0.48)"
+                    : "1px solid rgba(255, 255, 255, 0.22)";
+              pill.style.boxShadow =
+                "inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 4px 12px rgba(0, 0, 0, 0.55)";
               container.appendChild(pill);
             }
             resolve();
@@ -1004,19 +1795,30 @@ import {
     if (window.location.href !== lastHref) {
       lastHref = window.location.href;
       autoOpenedThisRoute = false;
-      checkPendingLineupHud();
+      if (isNbaSorareUrl(window.location.href)) {
+        checkPendingLineupHud();
+      }
     }
+    syncBottomLauncherVisibility(true);
     reportContext();
-    void decorateSorareCardTiles();
+    schedulePageDailiesSync();
+    renderDailyChecklistOverlay();
+    if (isNbaSorareUrl(window.location.href)) {
+      void decorateSorareCardTiles();
+    }
   };
 
   window.addEventListener("popstate", handleSpaNavigation);
   window.addEventListener("hashchange", handleSpaNavigation);
+  const navApi = (
+    window as Window & {
+      navigation?: { addEventListener?: (type: string, listener: () => void) => void };
+    }
+  ).navigation;
+  navApi?.addEventListener?.("currententrychange", handleSpaNavigation);
 
   const observer = new MutationObserver(() => {
-    if (!document.getElementById("jamassist-sorare-root")) {
-      injectBottomLauncher();
-    }
+    syncBottomLauncherVisibility(false);
     if (observerTimer !== null) return;
     observerTimer = window.setTimeout(() => {
       observerTimer = null;
@@ -1035,6 +1837,10 @@ import {
     rarity: string;
     seasonYear: number;
     isCaptain: boolean;
+    pictureUrl?: string | null;
+    starCost?: number | null;
+    projectedPts?: number | null;
+    teamSlug?: string | null;
   }
 
   function clearActiveTileHighlight(): void {
@@ -1118,6 +1924,40 @@ import {
     return false;
   }
 
+  function getVisibleDrawerRoots(): HTMLElement[] {
+    return Array.from(
+      document.querySelectorAll(
+        '[role="dialog"], [aria-modal="true"], [class*="drawer" i], [class*="modal" i]',
+      ),
+    ).filter(isElementVisible);
+  }
+
+  function isDrawerLoadingCards(): boolean {
+    const drawerRoots = getVisibleDrawerRoots();
+    if (drawerRoots.length === 0) return false;
+    for (const root of drawerRoots) {
+      const hasBusy = Array.from(
+        root.querySelectorAll(
+          '[aria-busy="true"], [role="progressbar"], [class*="skeleton" i], [class*="spinner" i], [class*="loading" i]',
+        ),
+      ).some(isElementVisible);
+      if (hasBusy) return true;
+    }
+    const searchInput = findDrawerSearchInput();
+    const hasFilterText = Boolean(searchInput && searchInput.value.trim().length > 0);
+    if (!hasFilterText) {
+      const hasAnyVisibleCard = drawerRoots.some((root) =>
+        Array.from(
+          root.querySelectorAll(
+            'img[src*="assets.sorare.com"], [data-card-slug], a[href*="/nba/cards/"]',
+          ),
+        ).some(isElementVisible),
+      );
+      if (!hasAnyVisibleCard) return true;
+    }
+    return false;
+  }
+
   function findCardTile(slot: LineupHighlightSlot): HTMLElement | null {
     const slugLower = slot.cardSlug.trim().toLowerCase();
     const normName = normalizeNameForMatch(slot.playerName);
@@ -1127,11 +1967,10 @@ import {
         ? normName.replace(/\s+/g, "-")
         : "";
 
-    const drawerRoots = Array.from(
-      document.querySelectorAll('[role="dialog"], [class*="drawer" i], [class*="modal" i]'),
-    ).filter(isElementVisible);
-    const searchRoots =
-      drawerRoots.length > 0 ? [...drawerRoots, document.body] : [document.body];
+    const drawerRoots = getVisibleDrawerRoots();
+    // When a Sorare slot drawer/dialog is open, restrict search strictly to the open drawer
+    // so we never click a background card on document.body while the drawer is loading cards.
+    const searchRoots = drawerRoots.length > 0 ? drawerRoots : [document.body];
 
     if (slugLower) {
       for (const root of searchRoots) {
@@ -1232,6 +2071,8 @@ import {
     autoHighlightFirst = false,
   ): void {
     clearActiveTileHighlight();
+    dailyPanelOpen = false;
+    renderDailyChecklistOverlay();
     const existing = document.getElementById("jamassist-lineup-hud");
     if (existing) existing.remove();
     const resolvedSlots: LineupHighlightSlot[] =
@@ -1254,19 +2095,24 @@ import {
     const style = document.createElement("style");
     style.textContent = `
       :host { all: initial; }
+      button, input { font-family: inherit; }
       .hud {
         position: fixed;
         right: 18px;
         bottom: 66px;
-        width: 280px;
+        width: 304px;
         z-index: 2147483647;
         border-radius: 16px;
-        border: 1px solid rgba(255,255,255,0.12);
-        background: linear-gradient(180deg, #1b1e24, #121418);
-        box-shadow: inset 0 1px 0 rgba(255,255,255,0.14), 0 18px 40px rgba(0,0,0,0.72);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: linear-gradient(180deg, rgba(26, 29, 35, 0.92) 0%, rgba(16, 18, 22, 0.96) 100%);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.16),
+          0 20px 44px -10px rgba(0, 0, 0, 0.78);
+        backdrop-filter: blur(16px) saturate(150%);
+        -webkit-backdrop-filter: blur(16px) saturate(150%);
         padding: 11px 12px;
         color: #f4f4f5;
-        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, ui-sans-serif, system-ui, sans-serif;
       }
       .hdr {
         display: flex;
@@ -1284,25 +2130,36 @@ import {
       .list { display: flex; flex-direction: column; gap: 5px; }
       .row {
         display: flex; align-items: center; justify-content: space-between; gap: 6px;
-        font-size: 11px; padding: 5px 7px; border-radius: 9px;
-        background: #1d2027; border: 1px solid rgba(255,255,255,0.06);
+        font-size: 11px; padding: 5px 7px; border-radius: 10px;
+        background: rgba(17, 23, 38, 0.78); border: 1px solid rgba(255, 255, 255, 0.07);
+        transition: border-color 150ms ease-out, background 150ms ease-out, opacity 150ms ease-out;
       }
-      .row.active { border-color: rgba(16,185,129,0.55); background: #1c2824; }
-      .row.done { opacity: 0.55; }
+      .row.active { border-color: rgba(16, 185, 129, 0.58); background: rgba(16, 185, 129, 0.12); }
+      .row.done { opacity: 0.52; }
       .row-left { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; cursor: pointer; }
       .row-left input { accent-color: #10b981; cursor: pointer; flex-shrink: 0; }
+      .thumb {
+        width: 24px; height: 24px; border-radius: 6px; overflow: hidden;
+        background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.12);
+        display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        font-size: 8.5px; font-weight: 700; color: #94a3b8;
+      }
+      .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
       .slot-tag {
         font-size: 9px; font-weight: 700; color: #cbd5e1;
         background: rgba(255,255,255,0.08); border-radius: 5px; padding: 1px 4px; flex-shrink: 0;
       }
       .cap-tag { color: #fbbf24; font-weight: 800; font-size: 9px; flex-shrink: 0; }
-      .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+      .name-wrap { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.15; }
+      .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: #f8fafc; }
+      .sub-meta { font-size: 9px; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .row.done .name { text-decoration: line-through; color: #71717a; }
       .find-btn {
         background: rgba(56,189,248,0.16); color: #7dd3fc; border: 1px solid rgba(56,189,248,0.3);
         border-radius: 6px; font-size: 9.5px; font-weight: 600; padding: 2px 6px; cursor: pointer; flex-shrink: 0;
       }
-      .find-btn:hover { background: rgba(56,189,248,0.28); }
+      .find-btn:hover:not(:disabled) { background: rgba(56,189,248,0.28); }
+      .find-btn:disabled { opacity: 0.45; cursor: default; }
       .footer {
         margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08);
         display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -1313,7 +2170,7 @@ import {
         border: none; border-radius: 8px; font-size: 10.5px; font-weight: 700;
         padding: 5px 9px; cursor: pointer; flex-shrink: 0;
       }
-      .fill-btn:hover { filter: brightness(1.08); }
+      .fill-btn:hover:not(:disabled) { filter: brightness(1.08); }
       .fill-btn:disabled { opacity: 0.45; cursor: default; filter: none; }
     `;
 
@@ -1331,11 +2188,21 @@ import {
     m.textContent = `Proj: ${projectedTotal.toFixed(1)} pts • Assisted Stepper`;
     left.append(t, m);
 
+    let stepBusy = false;
+    let activeTimers: number[] = [];
+    function clearStepTimers(): void {
+      for (const timer of activeTimers) {
+        window.clearTimeout(timer);
+      }
+      activeTimers = [];
+    }
+
     const closeBtn = document.createElement("button");
     closeBtn.type = "button";
     closeBtn.className = "close";
     closeBtn.textContent = "×";
     closeBtn.addEventListener("click", () => {
+      clearStepTimers();
       clearActiveTileHighlight();
       host.remove();
     });
@@ -1354,14 +2221,20 @@ import {
 
     const checkboxes: HTMLInputElement[] = [];
     const rows: HTMLDivElement[] = [];
+    const findButtons: HTMLButtonElement[] = [];
 
     function syncActiveRow(): void {
       const nextIdx = checkboxes.findIndex((cb) => !cb.checked);
       rows.forEach((r, i) => r.classList.toggle("active", i === nextIdx));
+      findButtons.forEach((fb) => {
+        fb.disabled = stepBusy;
+      });
       if (nextIdx === -1) {
         fillNextBtn.disabled = true;
         fillNextBtn.textContent = "All Picked";
         statusEl.textContent = "All slots checked. Review & Confirm on Sorare.";
+      } else if (stepBusy) {
+        fillNextBtn.disabled = true;
       } else {
         fillNextBtn.disabled = false;
         const target = resolvedSlots[nextIdx];
@@ -1369,42 +2242,152 @@ import {
       }
     }
 
-    function locateSlot(slot: LineupHighlightSlot, andClick: boolean, onSuccess?: () => void): void {
-      const immediateTile = findCardTile(slot);
-      if (immediateTile) {
-        highlightTile(immediateTile);
-        if (andClick) {
-          immediateTile.click();
-          onSuccess?.();
-          statusEl.textContent = `Selected ${slot.playerName} - advance to next slot.`;
-        } else {
-          statusEl.textContent = `Highlighted ${slot.playerName}.`;
+    /**
+     * Waits until Sorare's React drawer finishes placing the clicked card (the clicked tile
+     * disappears/detaches/disables) and the next slot's card list finishes loading before
+     * unlocking the next step, preventing rapid clicks while the next slot drawer is loading.
+     */
+    function waitForPlacementConfirm(clickedTile: HTMLElement, playerName: string, onDone: () => void): void {
+      const startMs = Date.now();
+      let sawTilePlaced = false;
+      let placedAtMs = 0;
+      const poll = () => {
+        const now = Date.now();
+        const elapsed = now - startMs;
+        if (!sawTilePlaced) {
+          const tileGone =
+            !clickedTile.isConnected ||
+            !isElementVisible(clickedTile) ||
+            clickedTile.hasAttribute("disabled") ||
+            clickedTile.getAttribute("aria-disabled") === "true" ||
+            clickedTile.getAttribute("aria-selected") === "true";
+          if (tileGone || elapsed >= 800) {
+            sawTilePlaced = true;
+            placedAtMs = now;
+          } else {
+            fillNextBtn.textContent = "Placing...";
+            statusEl.textContent = `Waiting for Sorare to place ${playerName}...`;
+            const id = window.setTimeout(poll, 110);
+            activeTimers.push(id);
+            return;
+          }
         }
-        return;
-      }
+
+        const sincePlaced = now - placedAtMs;
+        if (isDrawerLoadingCards() && sincePlaced < 1100) {
+          fillNextBtn.textContent = "Loading slot...";
+          statusEl.textContent = `Placed ${playerName} - loading next slot cards...`;
+          const id = window.setTimeout(poll, 120);
+          activeTimers.push(id);
+          return;
+        }
+
+        stepBusy = false;
+        onDone();
+        statusEl.textContent = `Placed ${playerName} - ready for next slot.`;
+      };
+      const firstId = window.setTimeout(poll, 140);
+      activeTimers.push(firstId);
+    }
+
+    /**
+     * Searches and polls for the target card tile up to ~3.2s while Sorare's drawer loads cards
+     * after the previous placement.
+     */
+    function locateSlot(slot: LineupHighlightSlot, andClick: boolean, onSuccess?: () => void): void {
+      if (stepBusy) return;
+      clearStepTimers();
 
       const searchInput = findDrawerSearchInput();
+      const targetNorm = normalizeNameForMatch(slot.playerName);
+      const currentInputNorm = searchInput ? normalizeNameForMatch(searchInput.value) : "";
+      const hasStaleFilter = Boolean(
+        searchInput &&
+          currentInputNorm.length > 0 &&
+          currentInputNorm !== targetNorm &&
+          !targetNorm.includes(currentInputNorm),
+      );
+
+      // Only accept an immediate match when the drawer is not actively loading and does not hold
+      // a stale search filter from the previous slot.
+      if (!hasStaleFilter && !isDrawerLoadingCards()) {
+        const immediateTile = findCardTile(slot);
+        if (immediateTile) {
+          highlightTile(immediateTile);
+          if (andClick) {
+            stepBusy = true;
+            fillNextBtn.textContent = "Placing...";
+            syncActiveRow();
+            immediateTile.click();
+            waitForPlacementConfirm(immediateTile, slot.playerName, () => {
+              onSuccess?.();
+              syncActiveRow();
+            });
+          } else {
+            statusEl.textContent = `Highlighted ${slot.playerName}.`;
+          }
+          return;
+        }
+      }
+
+      stepBusy = true;
+      fillNextBtn.textContent = "Loading cards...";
+      syncActiveRow();
+
       if (searchInput) {
         setReactInputValue(searchInput, slot.playerName);
         statusEl.textContent = `Searching "${slot.playerName}"...`;
-        window.setTimeout(() => {
+      } else {
+        statusEl.textContent = `Waiting for ${slot.playerName} card list...`;
+      }
+
+      let attempts = 0;
+      const maxAttempts = 16; // ~3.2s total (16 * 200ms)
+      let typedInSearch = Boolean(searchInput);
+
+      const retryFind = () => {
+        attempts += 1;
+        if (!typedInSearch) {
+          const lateInput = findDrawerSearchInput();
+          if (lateInput) {
+            setReactInputValue(lateInput, slot.playerName);
+            typedInSearch = true;
+            statusEl.textContent = `Searching "${slot.playerName}"...`;
+          }
+        }
+        if (!isDrawerLoadingCards() || attempts >= 3) {
           const delayedTile = findCardTile(slot);
           if (delayedTile) {
             highlightTile(delayedTile);
             if (andClick) {
+              fillNextBtn.textContent = "Placing...";
               delayedTile.click();
-              onSuccess?.();
-              statusEl.textContent = `Selected ${slot.playerName} - open next slot drawer.`;
+              waitForPlacementConfirm(delayedTile, slot.playerName, () => {
+                onSuccess?.();
+                syncActiveRow();
+              });
             } else {
+              stepBusy = false;
+              syncActiveRow();
               statusEl.textContent = `Highlighted ${slot.playerName}.`;
             }
-          } else {
-            statusEl.textContent = `Open slot drawer for ${slot.playerName} first.`;
+            return;
           }
-        }, 350);
-      } else {
-        statusEl.textContent = `Open a Sorare slot drawer to find ${slot.playerName}.`;
-      }
+        }
+        if (attempts < maxAttempts) {
+          const tId = window.setTimeout(retryFind, 200);
+          activeTimers.push(tId);
+        } else {
+          stepBusy = false;
+          syncActiveRow();
+          statusEl.textContent = typedInSearch
+            ? `Card "${slot.playerName}" not found in this drawer.`
+            : `Open a Sorare slot drawer for ${slot.playerName} first.`;
+        }
+      };
+
+      const initId = window.setTimeout(retryFind, 200);
+      activeTimers.push(initId);
     }
 
     resolvedSlots.forEach((slot) => {
@@ -1420,22 +2403,60 @@ import {
         syncActiveRow();
       });
 
+      const thumb = document.createElement("span");
+      thumb.className = "thumb";
+      if (slot.pictureUrl && /^https:\/\/assets\.sorare\.com\//i.test(slot.pictureUrl)) {
+        const img = document.createElement("img");
+        img.src = slot.pictureUrl;
+        img.alt = slot.playerName;
+        thumb.appendChild(img);
+      } else {
+        const initials = slot.playerName
+          .split(/\s+/)
+          .map((w) => w[0] ?? "")
+          .join("")
+          .slice(0, 2)
+          .toUpperCase();
+        thumb.textContent = initials || "•";
+      }
+
       const slotTag = document.createElement("span");
       slotTag.className = "slot-tag";
       slotTag.textContent = slot.slotLabel;
 
+      const nameWrap = document.createElement("span");
+      nameWrap.className = "name-wrap";
+
       const nameSpan = document.createElement("span");
       nameSpan.className = "name";
       nameSpan.textContent = slot.playerName;
+      nameWrap.appendChild(nameSpan);
 
-      label.append(cb, slotTag);
+      const metaParts: string[] = [];
+      if (typeof slot.starCost === "number" && slot.starCost > 0) {
+        metaParts.push(`${slot.starCost}★`);
+      }
+      if (typeof slot.projectedPts === "number" && slot.projectedPts > 0) {
+        metaParts.push(`${slot.projectedPts.toFixed(1)} pts`);
+      }
+      if (slot.seasonYear > 0) {
+        metaParts.push(String(slot.seasonYear));
+      }
+      if (metaParts.length > 0) {
+        const subMeta = document.createElement("span");
+        subMeta.className = "sub-meta";
+        subMeta.textContent = metaParts.join(" • ");
+        nameWrap.appendChild(subMeta);
+      }
+
+      label.append(cb, thumb, slotTag);
       if (slot.isCaptain) {
         const cap = document.createElement("span");
         cap.className = "cap-tag";
         cap.textContent = "MVP";
         label.append(cap);
       }
-      label.append(nameSpan);
+      label.append(nameWrap);
 
       const findBtn = document.createElement("button");
       findBtn.type = "button";
@@ -1449,6 +2470,7 @@ import {
       list.append(row);
       checkboxes.push(cb);
       rows.push(row);
+      findButtons.push(findBtn);
     });
 
     fillNextBtn.addEventListener("click", () => {

@@ -920,6 +920,61 @@ describe("Feature 2: Content Script /nba/series Detection & Highlight Go Support
       expect(mock.openedTabs[0]?.url).toBe("https://sorare.com/nba/play");
     }
   });
+
+  it("F2-T2-6: on-page Dailies checklist auto-hides when all Set & Pro dailies are completed after 07:00 UTC reset", async () => {
+    const nowMs = Date.now();
+    const mockDone = installChromeAndFetchMock({
+      initialStorage: {
+        set_shop_status_v1: {
+          dailyPackClaimed: true,
+          bronzePlusProgress: 1,
+          bronzePlusTarget: 3,
+          scannedAt: nowMs,
+        },
+        picker_missions_v1: {
+          set: {
+            mode: "set",
+            scannedAt: nowMs,
+            tasks: [
+              {
+                title: "Daily Picker",
+                description: "Common",
+                mode: "COMMON",
+                slug: "set-daily",
+                picks: 1,
+                state: "COMPLETED",
+              },
+            ],
+          },
+          pro: {
+            mode: "pro",
+            scannedAt: nowMs,
+            tasks: [
+              {
+                title: "Pro Daily Picker",
+                description: "Limited",
+                mode: "PRO",
+                slug: "pro-daily",
+                picks: 3,
+                state: "CLAIMED",
+              },
+            ],
+          },
+        },
+      },
+    });
+    try {
+      const resDone = await runContentScriptInVm(
+        buildSetArcadePlayHtml(),
+        "https://sorare.com/nba/series/play",
+        mockDone,
+      );
+      expect(resDone.errors).toEqual([]);
+      expect(mockDone.sentMessages.every((m) => (m.message as { type?: string })?.type !== "SCAN_PICKER_MISSIONS")).toBe(true);
+    } finally {
+      mockDone.restore();
+    }
+  });
 });
 
 // ============================================================================

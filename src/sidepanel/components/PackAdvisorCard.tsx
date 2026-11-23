@@ -14,19 +14,21 @@ const SHOP_URL = "https://sorare.com/nba/series/market";
 const currencyLabel = (c: string) => (c === "COMMON_ESSENCE" ? "Essence" : c === "COMMON_GEM" ? "gems" : c.toLowerCase());
 
 /** Set Pack & Mission Advisor: Daily Pack, Bronze+ progress, Live Today packs and per-pack 3★+ odds. */
-export function PackAdvisorCard() {
+export function PackAdvisorCard({ commonEssence: commonEssenceProp }: { commonEssence?: number } = {}) {
   const [data, setData] = useState<SetPackAdvisorData | null>(null);
-  const [commonEssence, setCommonEssence] = useState<number | null>(null);
+  const [loadedCommonEssence, setLoadedCommonEssence] = useState<number | null>(null);
   const [hasKey, setHasKey] = useState(false);
   const [busy, setBusy] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
+  const commonEssence =
+    typeof commonEssenceProp === "number" ? commonEssenceProp : loadedCommonEssence;
 
   const load = useCallback(() => {
     setBusy(true);
     Promise.all([getSetPackAdvisor(), getSettings()])
       .then(([advisor, settings]) => {
         setData(advisor);
-        setCommonEssence(typeof settings.commonEssence === "number" ? settings.commonEssence : null);
+        setLoadedCommonEssence(typeof settings.commonEssence === "number" ? settings.commonEssence : null);
         setHasKey(Boolean(settings.sorareApiKey));
       })
       .catch(() => {})
@@ -39,7 +41,13 @@ export function PackAdvisorCard() {
     setBusy(true);
     setScanError(null);
     scanSetShopStatus()
-      .then((shopStatus) => setData((d) => (d ? { ...d, shopStatus } : d)))
+      .then((shopStatus) => {
+        setData((d) => (d ? { ...d, shopStatus } : d));
+        // Refresh packs too so any newly discovered special pack on the Shop tab shows up right away.
+        return getSetPackAdvisor()
+          .then((advisor) => setData({ ...advisor, shopStatus }))
+          .catch(() => {});
+      })
       .catch((e: unknown) => setScanError(e instanceof Error ? e.message : String(e)))
       .finally(() => setBusy(false));
   };
@@ -63,7 +71,7 @@ export function PackAdvisorCard() {
             type="button"
             disabled={busy}
             onClick={scanShop}
-            title="Reads your Daily Pack and Bronze+ progress from your open Sorare Set Shop tab"
+            title="Reads your Daily Pack (from Daily Solo) and Bronze+ progress (from Set Shop) from your open Sorare Set tab"
             className="jam-btn-secondary inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[10px] font-semibold disabled:opacity-50"
           >
             <RefreshCw className={`h-3 w-3 ${busy ? "animate-spin" : ""}`} />
@@ -84,7 +92,7 @@ export function PackAdvisorCard() {
       )}
       {!data?.shopStatus && (
         <div className="mb-1.5 text-[10px] text-slate-400">
-          Open the Set Shop on Sorare (Go) and press Scan shop to add your Daily Pack and Bronze+ progress.
+          Open Set Daily Solo or Set Shop on Sorare and press Scan shop to sync your Daily Pack and Bronze+ progress.
         </div>
       )}
 
@@ -129,8 +137,8 @@ export function PackAdvisorCard() {
                 <td>
                   {a.pack.price} {currencyLabel(a.pack.currency)}
                 </td>
-                <td className="font-semibold text-emerald-300">{hasOdds ? `${a.chance3StarPct}%` : "--"}</td>
-                <td>{hasOdds ? `${a.chance4StarPct}%` : "--"}</td>
+                <td className="font-semibold text-emerald-300">{a.pack.slots.length > 0 ? `${a.chance3StarPct}%` : "--"}</td>
+                <td>{a.pack.slots.length > 0 ? `${a.chance4StarPct}%` : "--"}</td>
                 <td className="truncate text-slate-400">
                   {a.lastSlotTop
                     .slice(0, 3)

@@ -24,6 +24,14 @@ import type {
   LeaderboardBenchmark,
 } from "../shared/types";
 
+const TEST_TEAMS = [
+  { slug: "charlotte-hornets", name: "Charlotte Hornets" },
+  { slug: "boston-celtics", name: "Boston Celtics" },
+  { slug: "denver-nuggets", name: "Denver Nuggets" },
+  { slug: "new-york-knicks", name: "New York Knicks" },
+  { slug: "oklahoma-city-thunder", name: "Oklahoma City Thunder" },
+];
+
 function makeCard(
   playerSlug: string,
   playerName: string,
@@ -31,6 +39,11 @@ function makeCard(
   proj: number,
   overrides: Partial<GalleryCard> = {},
 ): GalleryCard {
+  let hash = 0;
+  for (let i = 0; i < playerSlug.length; i += 1) {
+    hash = (hash * 31 + playerSlug.charCodeAt(i)) >>> 0;
+  }
+  const team = TEST_TEAMS[hash % TEST_TEAMS.length];
   return {
     slug: `${playerSlug}-card`,
     rarity: "limited",
@@ -38,8 +51,8 @@ function makeCard(
     inSeasonEligible: true,
     grade: 1,
     powerMultiplier: 1.06,
-    teamName: "Charlotte Hornets",
-    teamSlug: "charlotte-hornets",
+    teamName: team.name,
+    teamSlug: team.slug,
     playerSlug,
     playerName,
     positions: ["basketball_guard"],

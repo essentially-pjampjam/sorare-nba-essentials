@@ -68,9 +68,27 @@ import { SorareClient } from "./sorareClient";
 import { getSavedSquadSnapshot, scanSquadFromOpenTab } from "./squadScanner";
 import { decryptSecret, isEncryptedSecret, MASK_PREFIX, maskSecret, sealForStorage } from "./secretStore";
 import { openPageLineupsAsEntries, syncLineupsFromOpenTabs, watchLineupPages } from "./lineupScanner";
-import { getDiscoveredPacks, getSavedShopStatus, scanShopStatusFromOpenTab, syncPacksFromOpenTabs, watchShopPages } from "./shopScanner";
-import { getSavedPickerMissions, scanPickerMissionsFromOpenTabs, watchMissionPages } from "./missionScanner";
+import { getDiscoveredPacks, getSavedShopStatus, scanShopStatusFromOpenTab, syncPacksFromOpenTabs, syncShopStatusFromOpenTabs, syncShopStatusFromTab, watchShopPages } from "./shopScanner";
+import { getSavedPickerMissions, scanPickerMissionsFromOpenTabs, syncAllMissionTabs, syncMissionTab, watchMissionPages } from "./missionScanner";
 import { applySealedOverrides, syncSealedStatesFromOpenTabs, watchSealedStates } from "./cardStateScanner";
+import {
+  checkForExtensionUpdate,
+  ensureUpdateCheckAlarm,
+  UPDATE_CHECK_ALARM_NAME,
+} from "./updateChecker";
+import {
+  ensurePortfolioSnapshotAlarm,
+  getPortfolioSnapshots,
+  PORTFOLIO_SNAPSHOT_ALARM_NAME,
+  recordPortfolioSnapshot,
+} from "./portfolioStore";
+import {
+  clearCloudSession,
+  fetchPublicCloudTags,
+  pushCloudCardTags,
+  startCloudBioAuth,
+  verifyCloudBioAuth,
+} from "./cloudSyncClient";
 
 const SETTINGS_KEY = "jamassist_settings_v2";
 const LEGACY_SETTINGS_KEY = "jamassist_settings_v1";
@@ -95,9 +113,11 @@ const CONTENT_ALLOWED_TYPES = new Set<string>([
   "OPEN_DASHBOARD_TAB",
   "DETECTED_USERNAME_FROM_CONTENT",
   "SORARE_PAGE_CONTEXT",
+  "SYNC_DAILIES_FROM_OPEN_TABS",
   "DETECTED_ESSENCE_FROM_CONTENT",
   "DETECTED_WALLET_FROM_CONTENT",
   "DETECTED_LINEUPS_FROM_CONTENT",
+  "CLOUD_FETCH_PUBLIC_TAGS",
 ]);
 
 function isAllowedSorareUrl(rawUrl: string | undefined): boolean {
@@ -203,9 +223,10 @@ function applyNetworkMode(settings: UserSettings): void {
   const key = settings.sorareApiKey?.trim() ?? "";
   sorareClient.setApiKey(key);
   if (key) {
-    queue.setLimits(FAST_MODE_REQUESTS_PER_MINUTE, FAST_MODE_SPACING_MS);
+    // Pipeline up to 2 in-flight queries in Fast Mode while still strictly enforcing 45/min & 220ms spacing.
+    queue.setLimits(FAST_MODE_REQUESTS_PER_MINUTE, FAST_MODE_SPACING_MS, 2);
   } else {
-    queue.setLimits(MAX_REQUESTS_PER_MINUTE, MIN_REQUEST_SPACING_MS);
+    queue.setLimits(MAX_REQUESTS_PER_MINUTE, MIN_REQUEST_SPACING_MS, 1);
   }
 }
 
@@ -220,12 +241,44 @@ function ensureWatchlistAlarm(): void {
 
 chrome.runtime.onInstalled.addListener(() => {
   ensureWatchlistAlarm();
+  ensureUpdateCheckAlarm();
+  ensurePortfolioSnapshotAlarm();
   void chrome.sidePanel
     .setPanelBehavior({ openPanelOnActionClick: true })
     .catch(() => {});
 });
 
 ensureWatchlistAlarm();
+ensureUpdateCheckAlarm();
+ensurePortfolioSnapshotAlarm();
+
+async function recordDailyPortfolioSnapshotFromCache(): Promise<void> {
+  const settings = await loadSettings();
+  const cleanUser = settings.username?.trim().toLowerCase();
+  if (!cleanUser) return;
+  const cached = await getCached<GalleryResult>(`gallery_v7:${cleanUser}`);
+  if (!cached || !cached.value.cards.length) return;
+  const rarity = settings.selectedRarity ?? "limited";
+  const matching = cached.value.cards.filter((c) => c.rarity === rarity);
+  if (matching.length === 0) return;
+  let totalFloorCents = 0;
+  let pricedCardCount = 0;
+  for (const c of matching) {
+    const val = c.lowestAskCents ?? null;
+    if (val !== null && val > 0) {
+      totalFloorCents += val;
+      pricedCardCount += 1;
+    }
+  }
+  if (pricedCardCount === 0) return;
+  await recordPortfolioSnapshot({
+    totalFloorCents,
+    cardCount: matching.length,
+    pricedCardCount,
+    rarity,
+    currency: settings.currency ?? "EUR",
+  });
+}
 
 async function runAlertTrackerFromStorage(): Promise<ReturnType<typeof runAlertTracker>> {
   const settings = await loadSettings();
@@ -248,6 +301,14 @@ if (chrome.alarms?.onAlarm) {
     }
     if (alarm.name === ALERT_TRACKER_ALARM_NAME || alarm.name === CUTOFF_REMINDER_ALARM_NAME) {
       return runAlertTrackerFromStorage().then(() => undefined);
+    }
+    if (alarm.name === UPDATE_CHECK_ALARM_NAME) {
+      return loadSettings()
+        .then((s) => checkForExtensionUpdate(s.dismissedUpdateVersion, true))
+        .then(() => undefined);
+    }
+    if (alarm.name === PORTFOLIO_SNAPSHOT_ALARM_NAME) {
+      return recordDailyPortfolioSnapshotFromCache().catch(() => undefined);
     }
     return undefined;
   });
@@ -372,6 +433,14 @@ async function loadSettings(): Promise<UserSettings> {
           typeof stored.autoShowInPageWizards === "boolean"
             ? stored.autoShowInPageWizards
             : true,
+        showEssenceMilestones:
+          typeof stored.showEssenceMilestones === "boolean"
+            ? stored.showEssenceMilestones
+            : false,
+        trackDailyTasks:
+          typeof stored.trackDailyTasks === "boolean"
+            ? stored.trackDailyTasks
+            : true,
         density: stored.density === "compact" ? "compact" : "cozy",
         watchlist: Array.isArray(stored.watchlist) ? stored.watchlist : [],
         watchlistAlerts: Array.isArray(stored.watchlistAlerts)
@@ -453,6 +522,14 @@ async function saveSettings(
       typeof patch.autoShowInPageWizards === "boolean"
         ? patch.autoShowInPageWizards
         : current.autoShowInPageWizards ?? true,
+    showEssenceMilestones:
+      typeof patch.showEssenceMilestones === "boolean"
+        ? patch.showEssenceMilestones
+        : current.showEssenceMilestones ?? false,
+    trackDailyTasks:
+      typeof patch.trackDailyTasks === "boolean"
+        ? patch.trackDailyTasks
+        : current.trackDailyTasks ?? true,
     density: patch.density ?? current.density ?? "cozy",
     watchlist: Array.isArray(patch.watchlist)
       ? patch.watchlist
@@ -489,6 +566,10 @@ async function saveSettings(
       ...current.essenceByRarity,
       ...(patch.essenceByRarity ?? {}),
     },
+    commonEssence:
+      typeof patch.commonEssence === "number" && Number.isFinite(patch.commonEssence)
+        ? Math.max(0, Math.min(50000, Math.floor(patch.commonEssence)))
+        : current.commonEssence,
     milestoneRulesByRarity: {
       ...current.milestoneRulesByRarity,
       ...(patch.milestoneRulesByRarity ?? {}),
@@ -517,6 +598,7 @@ async function saveSettings(
       autoOpenOnCraft: next.autoOpenOnCraft,
       autoOpenOnSorare: next.autoOpenOnSorare,
       autoShowInPageWizards: next.autoShowInPageWizards ?? true,
+      trackDailyTasks: next.trackDailyTasks ?? true,
     },
   });
   applyNetworkMode(next);
@@ -1042,6 +1124,8 @@ async function recordProProgress(lineups: CurrentLineupEntry[], benchmarks: Lead
   await chrome.storage.local.set({ [PRO_PROGRESS_KEY]: next });
 }
 
+const inFlightGalleryByKey = new Map<string, Promise<GalleryResult | null>>();
+
 async function fetchGalleryForLineups(
   username: string,
   forceRefresh = false,
@@ -1058,14 +1142,21 @@ async function fetchGalleryForLineups(
     const cached = await getCached<GalleryResult>(cacheKey);
     if (cached) {
       void syncOverlayLookup(cached.value.cards);
-      const domLineups = await readStoredDomLineups();
-      await syncSealedStatesFromOpenTabs();
-      const pageLineups = await syncLineupsFromOpenTabs(cleanUser);
+      const [domLineups, , pageLineups] = await Promise.all([
+        readStoredDomLineups(),
+        syncSealedStatesFromOpenTabs(),
+        syncLineupsFromOpenTabs(cleanUser),
+      ]);
+      const cachedOpenGw = selectOpenGameWeek(cached.value.fixtures, Date.now());
       return {
         ...cached.value,
         cards: await applySealedOverrides(cached.value.cards, cached.value.fetchedAt),
         currentLineups: withPageLineups(
-          mergeCurrentLineups(cached.value.currentLineups ?? [], domLineups),
+          mergeCurrentLineups(
+            cached.value.currentLineups ?? [],
+            domLineups,
+            cachedOpenGw?.fixture.slug ?? null,
+          ),
           pageLineups,
         ),
         pageLineups,
@@ -1077,83 +1168,109 @@ async function fetchGalleryForLineups(
     }
   }
 
-  await loadSettings();
-  await assertNoCooldown();
-
-  cancelActiveScan();
-  const controller = new AbortController();
-  currentScanAbort = controller;
-
-  broadcastProgress({
-    phase: "collections",
-    completed: 0,
-    total: 2,
-    message: `Loading ${cleanUser}'s NBA gallery (Pro + Common), live cutoffs & ESPN injuries...`,
-  });
-
-  const [
-    { cards, commonCards, fixtures, currentLineups, leaderboardBenchmarks },
-    domLineups,
-    pageLineups,
-  ] = await Promise.all([
-    sorareClient.fetchUserGalleryAndFixtures(cleanUser, controller.signal),
-    readStoredDomLineups(),
-    syncLineupsFromOpenTabs(cleanUser),
-  ]);
-  // Count ESPN games inside the opened Game Week (cutoff -> end), not a rolling window.
-  const openGw = selectOpenGameWeek(fixtures, Date.now());
-  const external = await fetchExternalNbaContext(
-    openGw ? { startIso: openGw.fixture.cutOffDate, endIso: openGw.fixture.endDate } : null,
-  );
-
-  // Players with no NBA game this season (L10 from last season) are never suggested or "hot".
-  const seasonStats = await fetchPlayerSeasonStats().catch(() => ({}));
-  const result: GalleryResult = {
-    username: cleanUser,
-    cards: annotateSeasonActivity(cards, seasonStats),
-    commonCards: annotateSeasonActivity(commonCards, seasonStats),
-    fixtures,
-    currentLineups: withPageLineups(
-      mergeCurrentLineups(currentLineups, domLineups, openGw?.fixture.slug ?? null),
-      pageLineups,
-    ),
-    leaderboardBenchmarks,
-    pageLineups,
-    injuriesByName: external.injuriesByName,
-    gamesPerTeam: external.gamesPerTeam,
-    scheduleByTeam: external.scheduleByTeam,
-    fetchedAt: Date.now(),
-    fromCache: false,
-  };
-
-  if (!controller.signal.aborted) {
-    // Fresh API lineups supersede stored page captures (they may predate edits made
-    // while the panel was closed); later page syncs start from a clean slate.
-    if (currentLineups.some((l) => l.source !== "dom")) {
-      await chrome.storage.local.set({ [DETECTED_LINEUPS_KEY]: [] });
-    }
-    await setCached(cacheKey, result);
-    await saveAlertSnapshot({
-      cards: result.cards,
-      currentLineups: result.currentLineups,
-      fixtures: result.fixtures,
-      currency: (await loadSettings()).currency,
-      injuriesByName: result.injuriesByName,
-    });
-    await syncOverlayLookup(result.cards);
-    await recordProProgress(
-      [...currentLineups, ...pageLineupsForHistory(pageLineups?.lineups ?? [])],
-      leaderboardBenchmarks ?? [],
-    );
-    broadcastProgress({
-      phase: "done",
-      completed: 1,
-      total: 1,
-      message: "Lineup data ready",
-    });
+  // Coalesce duplicate concurrent live loads for the same manager (e.g. visibility focus + Refresh click)
+  const existingFlight = inFlightGalleryByKey.get(cacheKey);
+  if (existingFlight && !forceRefresh) {
+    return existingFlight;
   }
 
-  return result;
+  const task = (async (): Promise<GalleryResult | null> => {
+    await loadSettings();
+    await assertNoCooldown();
+
+    cancelActiveScan();
+    const controller = new AbortController();
+    currentScanAbort = controller;
+
+    broadcastProgress({
+      phase: "collections",
+      completed: 0,
+      total: 2,
+      message: `Loading ${cleanUser}'s NBA gallery (Pro + Common), live cutoffs & ESPN injuries...`,
+    });
+
+    // Run independent non-Sorare work (ESPN season stats + local tab readers) in parallel with Sorare GraphQL.
+    const [
+      { cards, commonCards, fixtures, currentLineups, leaderboardBenchmarks },
+      domLineups,
+      pageLineups,
+      seasonStats,
+    ] = await Promise.all([
+      sorareClient.fetchUserGalleryAndFixtures(cleanUser, controller.signal),
+      readStoredDomLineups(),
+      syncLineupsFromOpenTabs(cleanUser),
+      fetchPlayerSeasonStats().catch(() => ({})),
+      syncSealedStatesFromOpenTabs().catch(() => undefined),
+    ]);
+    // Count ESPN games inside the opened Game Week (cutoff -> end), not a rolling window.
+    const openGw = selectOpenGameWeek(fixtures, Date.now());
+    const external = await fetchExternalNbaContext(
+      openGw ? { startIso: openGw.fixture.cutOffDate, endIso: openGw.fixture.endDate } : null,
+    );
+
+    const fetchedAt = Date.now();
+    // Players with no NBA game this season (L10 from last season) are never suggested or "hot".
+    const annotatedProCards = await applySealedOverrides(
+      annotateSeasonActivity(cards, seasonStats),
+      fetchedAt,
+    );
+    const result: GalleryResult = {
+      username: cleanUser,
+      cards: annotatedProCards,
+      commonCards: annotateSeasonActivity(commonCards, seasonStats),
+      fixtures,
+      currentLineups: withPageLineups(
+        mergeCurrentLineups(currentLineups, domLineups, openGw?.fixture.slug ?? null),
+        pageLineups,
+      ),
+      leaderboardBenchmarks,
+      pageLineups,
+      injuriesByName: external.injuriesByName,
+      gamesPerTeam: external.gamesPerTeam,
+      scheduleByTeam: external.scheduleByTeam,
+      fetchedAt,
+      fromCache: false,
+    };
+
+    if (!controller.signal.aborted) {
+      // Fresh API lineups supersede stored page captures (they may predate edits made
+      // while the panel was closed); later page syncs start from a clean slate.
+      if (currentLineups.some((l) => l.source !== "dom")) {
+        await chrome.storage.local.set({ [DETECTED_LINEUPS_KEY]: [] });
+      }
+      await setCached(cacheKey, result);
+      await saveAlertSnapshot({
+        cards: result.cards,
+        currentLineups: result.currentLineups,
+        fixtures: result.fixtures,
+        currency: (await loadSettings()).currency,
+        injuriesByName: result.injuriesByName,
+        gamesPerTeam: result.gamesPerTeam,
+      });
+      await syncOverlayLookup(result.cards);
+      await recordProProgress(
+        [...currentLineups, ...pageLineupsForHistory(pageLineups?.lineups ?? [])],
+        leaderboardBenchmarks ?? [],
+      );
+      broadcastProgress({
+        phase: "done",
+        completed: 1,
+        total: 1,
+        message: "Lineup data ready",
+      });
+    }
+
+    return result;
+  })();
+
+  inFlightGalleryByKey.set(cacheKey, task);
+  const cleanup = () => {
+    if (inFlightGalleryByKey.get(cacheKey) === task) {
+      inFlightGalleryByKey.delete(cacheKey);
+    }
+  };
+  task.then(cleanup, cleanup);
+  return task;
 }
 
 async function syncOverlayLookup(cards: GalleryCard[]): Promise<void> {
@@ -1373,6 +1490,7 @@ async function fetchBargainsResult(
 
 async function handleMessage(
   msg: BackgroundRequest,
+  sender?: chrome.runtime.MessageSender,
 ): Promise<BackgroundResponse<unknown>> {
   try {
     switch (msg.type) {
@@ -1419,6 +1537,30 @@ async function handleMessage(
           await chrome.storage.local.set({ [PENDING_TAB_KEY]: "craft" });
           broadcastMessage({ type: "SWITCH_TAB", tab: "craft" });
         }
+        const tabId = sender?.tab?.id;
+        const pageUrl = msg.url || sender?.tab?.url || "";
+        if (typeof tabId === "number" && /^https:\/\/sorare\.com\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?nba\//i.test(pageUrl)) {
+          const settings = await loadSettings();
+          if (settings.trackDailyTasks !== false) {
+            if (/\/nba\/(play|series)(\/|$|\?)/i.test(pageUrl)) {
+              void syncMissionTab(tabId);
+            }
+            if (/\/nba\/series(\/|$|\?)/i.test(pageUrl)) {
+              void syncShopStatusFromTab(tabId);
+            }
+          }
+        }
+        return { ok: true, data: true };
+      }
+      case "SYNC_DAILIES_FROM_OPEN_TABS": {
+        const settings = await loadSettings();
+        if (settings.trackDailyTasks === false) {
+          return { ok: true, data: false };
+        }
+        await Promise.all([
+          syncAllMissionTabs().catch(() => undefined),
+          syncShopStatusFromOpenTabs().catch(() => undefined),
+        ]);
         return { ok: true, data: true };
       }
       case "DETECTED_WALLET_FROM_CONTENT": {
@@ -1468,24 +1610,31 @@ async function handleMessage(
           if (
             typeof val === "number" &&
             Number.isFinite(val) &&
-            val > 0 &&
+            val >= 0 &&
             val <= 50000
           ) {
-            if (nextBalances[key] !== val) {
-              nextBalances[key] = val;
+            const floored = Math.floor(val);
+            if (nextBalances[key] !== floored) {
+              nextBalances[key] = floored;
               changed = true;
             }
           }
         }
         const common = incoming.common;
-        if (typeof common === "number" && Number.isFinite(common) && common >= 0 && common <= 50000 && common !== current.commonEssence) {
-          await saveSettings({ commonEssence: common });
-        }
-        if (changed) {
-          await saveSettings({ essenceByRarity: nextBalances });
+        const nextCommon =
+          typeof common === "number" && Number.isFinite(common) && common >= 0 && common <= 50000
+            ? Math.floor(common)
+            : undefined;
+        const commonChanged = nextCommon !== undefined && nextCommon !== current.commonEssence;
+        if (changed || commonChanged) {
+          await saveSettings({
+            ...(changed ? { essenceByRarity: nextBalances } : {}),
+            ...(commonChanged ? { commonEssence: nextCommon } : {}),
+          });
           broadcastMessage({
             type: "ESSENCE_UPDATED",
             essenceByRarity: nextBalances,
+            ...(commonChanged ? { commonEssence: nextCommon } : {}),
           });
         }
         return { ok: true, data: nextBalances };
@@ -1681,6 +1830,25 @@ async function handleMessage(
         };
         if (!controller.signal.aborted) {
           await setCached(`gallery_v7:${cleanUser}`, updatedGallery);
+          const matchingRarity = updatedCards.filter((c) => c.rarity === msg.rarity);
+          let totalFloorCents = 0;
+          let pricedCardCount = 0;
+          for (const c of matchingRarity) {
+            const val = c.lowestAskCents ?? null;
+            if (val !== null && val > 0) {
+              totalFloorCents += val;
+              pricedCardCount += 1;
+            }
+          }
+          if (pricedCardCount > 0) {
+            await recordPortfolioSnapshot({
+              totalFloorCents,
+              cardCount: matchingRarity.length,
+              pricedCardCount,
+              rarity: msg.rarity,
+              currency: msg.currency,
+            });
+          }
           broadcastProgress({
             phase: "done",
             completed: 1,
@@ -1818,6 +1986,7 @@ async function handleMessage(
       }
       case "GET_SEAL_DEALS": {
         const settings = await loadSettings();
+        await assertNoCooldown();
         const listings = await sorareClient.fetchNbaBargains(msg.rarity, "seal_value", settings.currency);
         return { ok: true, data: listings };
       }
@@ -1867,6 +2036,120 @@ async function handleMessage(
           await chrome.action.setBadgeText({ text: "" });
         }
         broadcastMessage({ type: "WATCHLIST_ALERTS_UPDATED", alerts: [] });
+        return { ok: true, data: true };
+      }
+      case "GET_UPDATE_STATUS": {
+        const settings = await loadSettings();
+        const status = await checkForExtensionUpdate(
+          settings.dismissedUpdateVersion,
+          Boolean(msg.force),
+        );
+        return { ok: true, data: status };
+      }
+      case "DISMISS_UPDATE": {
+        const cleanVersion = msg.version.trim().replace(/^v/i, "");
+        await saveSettings({ dismissedUpdateVersion: cleanVersion });
+        return { ok: true, data: true };
+      }
+      case "GET_PORTFOLIO_SNAPSHOTS": {
+        const snapshots = await getPortfolioSnapshots();
+        return { ok: true, data: snapshots };
+      }
+      case "RECORD_PORTFOLIO_SNAPSHOT": {
+        const snapshots = await recordPortfolioSnapshot({
+          totalFloorCents: msg.totalFloorCents,
+          cardCount: msg.cardCount,
+          pricedCardCount: msg.pricedCardCount,
+          rarity: msg.rarity,
+          currency: msg.currency,
+        });
+        return { ok: true, data: snapshots };
+      }
+      case "FETCH_PORTFOLIO_PNL": {
+        const cleanUser = msg.username.trim().toLowerCase();
+        if (!cleanUser) {
+          throw new Error("Enter a Sorare username or slug first.");
+        }
+        const cacheKey = `portfolio_pnl_v1:${cleanUser}:${msg.rarity}:${msg.currency}`;
+        if (!msg.forceRefresh) {
+          const cached = await getCached(cacheKey);
+          if (cached) return { ok: true, data: cached.value };
+        }
+        const gallery =
+          (await fetchGalleryForLineups(cleanUser, false, true)) ??
+          (await fetchGalleryForLineups(cleanUser, false, false));
+        if (!gallery) {
+          throw new Error("Load your Gallery first before scanning P&L history.");
+        }
+        await loadSettings();
+        await assertNoCooldown();
+        const targetCards = gallery.cards.filter((c) => c.rarity === msg.rarity);
+        const records = await sorareClient.fetchCardAcquisitionHistory(
+          targetCards,
+          msg.currency,
+        );
+        const result = {
+          username: cleanUser,
+          rarity: msg.rarity,
+          currency: msg.currency,
+          records,
+          scannedCards: records.length,
+          fetchedAtMs: Date.now(),
+        };
+        await setCached(cacheKey, result);
+        return { ok: true, data: result };
+      }
+      case "FETCH_PLAYER_PRICE_HISTORY": {
+        const cleanSlug = msg.playerSlug.trim().toLowerCase();
+        if (!cleanSlug) return { ok: true, data: [] };
+        const cacheKey = `player_price_hist_v1:${cleanSlug}:${msg.rarity}:${msg.currency}`;
+        if (!msg.forceRefresh) {
+          const cached = await getCached(cacheKey);
+          if (cached) return { ok: true, data: cached.value };
+        }
+        await loadSettings();
+        await assertNoCooldown();
+        const points = await sorareClient.fetchPlayerPriceHistory(
+          cleanSlug,
+          msg.rarity,
+          msg.currency,
+        );
+        await setCached(cacheKey, points);
+        return { ok: true, data: points };
+      }
+      case "CLOUD_START_AUTH": {
+        const challenge = await startCloudBioAuth(msg.workerUrl, msg.username);
+        return { ok: true, data: challenge };
+      }
+      case "CLOUD_VERIFY_AUTH": {
+        const verified = await verifyCloudBioAuth(
+          msg.workerUrl,
+          msg.username,
+          msg.challengeCode,
+        );
+        await saveSettings({
+          cloudSyncWorkerUrl: msg.workerUrl.trim(),
+          cloudSyncUsername: verified.username,
+        });
+        return { ok: true, data: verified };
+      }
+      case "CLOUD_PUSH_TAGS": {
+        const res = await pushCloudCardTags(msg.workerUrl, msg.tags);
+        return { ok: true, data: res };
+      }
+      case "CLOUD_FETCH_PUBLIC_TAGS": {
+        const settings = await loadSettings();
+        // Content scripts must never override the configured worker URL (prevents SSRF).
+        const url =
+          sender && isExtensionPageSender(sender)
+            ? (msg.workerUrl ?? settings.cloudSyncWorkerUrl)
+            : settings.cloudSyncWorkerUrl;
+        const res = await fetchPublicCloudTags(url, msg.username);
+        return { ok: true, data: res };
+      }
+      case "CLOUD_LOGOUT": {
+        await clearCloudSession();
+        await saveSettings({ cloudSyncUsername: "" });
         return { ok: true, data: true };
       }
       default:
@@ -1919,8 +2202,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Open Side Panel synchronously on message receipt before any `await` so Chrome preserves the user gesture token
   if (req.type === "OPEN_SIDE_PANEL") {
     if (req.targetTab) {
-      void chrome.storage.local.set({ [PENDING_TAB_KEY]: req.targetTab });
-      broadcastMessage({ type: "SWITCH_TAB", tab: req.targetTab });
+      void chrome.storage.local.set({
+        [PENDING_TAB_KEY]: req.targetTab,
+        ...(req.targetMode || req.targetSubTab
+          ? {
+              jamassist_pending_nav: {
+                tab: req.targetTab,
+                mode: req.targetMode,
+                subTab: req.targetSubTab,
+              },
+            }
+          : {}),
+      });
+      broadcastMessage({
+        type: "SWITCH_TAB",
+        tab: req.targetTab,
+        ...(req.targetMode ? { mode: req.targetMode } : {}),
+        ...(req.targetSubTab ? { subTab: req.targetSubTab } : {}),
+      });
     }
     if (sender.tab?.id !== undefined) {
       chrome.sidePanel
@@ -1943,7 +2242,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
-  void handleMessage(req)
+  void handleMessage(req, sender)
     .then(sendResponse)
     .catch((err) =>
       sendResponse({

@@ -327,6 +327,8 @@ export interface CurrentLineupEntry {
   cardSlugs: string[];
   captainCardSlug: string | null;
   playerNames?: string[];
+  /** Per-starter NBA team slugs aligned with cardSlugs / playerNames when known (from Apollo page cache). */
+  teamSlugs?: Array<string | null>;
   source?: "api" | "dom" | "page";
   /** DOM-synced extras (from the content script parser). */
   contestKind?: "arena" | "pro";
@@ -359,6 +361,8 @@ export interface PageLineup {
   endDate: string | null;
   cardSlugs: string[];
   playerNames: string[];
+  /** Per-starter NBA team slugs aligned with cardSlugs / playerNames when available in Sorare's page cache. */
+  teamSlugs?: Array<string | null>;
   rank: number | null;
   liveProjectedRank: number | null;
   score: number | null;
@@ -422,6 +426,10 @@ export interface LeaderboardRewardTier {
   toRank: number;
   kind: RewardTierKind;
   label: string;
+  /** Numeric USD cash amount for this rank tier (when kind === "cash"). */
+  cashUsd?: number;
+  /** Numeric Essence quantity for this rank tier (when kind === "essence"). */
+  essenceQty?: number;
 }
 
 /** One NBA game on the daily slate (ESPN scoreboard, team slugs match Sorare's). */
@@ -486,6 +494,15 @@ export interface So5FixtureSummary {
   aasmState: string;
 }
 
+export interface TeamGameContext {
+  date: string;
+  matchup: string;
+  impliedTeamTotal: number | null;
+  spread: number | null;
+  blowoutRisk: boolean;
+  isBackToBack: boolean;
+}
+
 export interface TeamSlateSchedule {
   teamSlug: string;
   teamName: string;
@@ -509,6 +526,8 @@ export interface TeamSlateSchedule {
   impliedTeamTotal?: number | null;
   /** |spread| large enough that starters risk reduced 4th-quarter minutes. */
   blowoutRisk?: boolean;
+  /** Per-game Vegas & B2B context for exact peak-of-GW order statistics. */
+  gameContexts?: TeamGameContext[];
   upcomingGames?: number;
   liveClockLabel?: string | null;
 }
@@ -521,11 +540,30 @@ export interface RawPickerTaskSnapshot {
   slug: string;
   picks: number;
   state: string;
+  /** Number of picks/appearances already submitted for this task (when present in Apollo cache). */
+  pickedCount?: number;
+  /** True when Apollo cache shows the task has submitted picks/lineup or a completed/claimed state. */
+  submitted?: boolean;
+}
+
+/** A live non-picker daily mission read from Sorare's missions or Set play page. */
+export interface RawDailyMissionSnapshot {
+  title: string;
+  description: string;
+  slug: string;
+  state: string;
+  progress: number | null;
+  target: number | null;
+  completed: boolean;
 }
 
 export interface PickerMissionsSnapshot {
   mode: "pro" | "set";
   tasks: RawPickerTaskSnapshot[];
+  /** Non-picker daily missions discovered on the same Sorare page (e.g. Set/Pro daily quests). */
+  dailyMissions?: RawDailyMissionSnapshot[];
+  /** True when an active Set Daily Solo lineup is detected in Apollo cache on Set Play pages. */
+  setSoloSubmitted?: boolean | null;
   scannedAt: number;
 }
 
@@ -750,6 +788,20 @@ export interface UserSettings {
   /** Master switch for the alert & price tracker. */
   alertsEnabled?: boolean;
   alertPreferences?: AlertPreferences;
+  /** Local card tags (Keep / Sell / Core / Trade) keyed by cardSlug. */
+  cardTags?: Record<string, CardTag>;
+  /** Saved 5-card roster presets in Lineups tab. */
+  savedRosters?: SavedRosterPreset[];
+  /** Optional Cloudflare Worker base URL for public card tag sync. */
+  cloudSyncWorkerUrl?: string;
+  /** Verified Sorare username linked to cloud sync JWT. */
+  cloudSyncUsername?: string;
+  /** Latest GitHub release version dismissed by the user. */
+  dismissedUpdateVersion?: string;
+  /** Show subtle 25% / 50% / 75% etched milestone lines on the Essence progress tube (default false). */
+  showEssenceMilestones?: boolean;
+  /** Track daily tasks (Free Daily Pack, Daily Pickers, Set Solo & Daily Missions) in the on-page Dailies bar (default true). */
+  trackDailyTasks?: boolean;
 }
 
 export type BackgroundRequest =
@@ -819,6 +871,10 @@ export type BackgroundRequest =
         rarity: CardRarity;
         seasonYear: number;
         isCaptain: boolean;
+        pictureUrl?: string | null;
+        starCost?: number | null;
+        projectedPts?: number | null;
+        teamSlug?: string | null;
       }>;
       /** Optional verified Sorare route to open before showing the HUD (Go actions). */
       targetUrl?: string;
@@ -829,6 +885,8 @@ export type BackgroundRequest =
   | {
       type: "OPEN_SIDE_PANEL";
       targetTab?: "collections" | "craft" | "lineups" | "bargains" | "gallery";
+      targetMode?: "pro" | "set";
+      targetSubTab?: "daily" | "solo_squad" | "packs" | "overview";
     }
   | {
       type: "OPEN_DASHBOARD_TAB";
@@ -844,11 +902,13 @@ export type BackgroundRequest =
       type: "DETECTED_WALLET_FROM_CONTENT";
       wallet: Partial<WalletBalanceInfo>;
     }
+  | { type: "SYNC_DAILIES_FROM_OPEN_TABS" }
   | {
       type: "SORARE_PAGE_CONTEXT";
       url: string;
       isCraftPage: boolean;
       username: string | null;
+      syncDailies?: boolean;
     }
   | { type: "RELOAD_EXTENSION" }
   | { type: "OPEN_URL_IN_ACTIVE_TAB"; url: string }
@@ -879,7 +939,54 @@ export type BackgroundRequest =
       lineups: CurrentLineupEntry[];
       /** True when the page shows only some lineups (board pages); merge instead of replace. */
       partial?: boolean;
-    };
+    }
+  | { type: "GET_UPDATE_STATUS"; force?: boolean }
+  | { type: "DISMISS_UPDATE"; version: string }
+  | { type: "GET_PORTFOLIO_SNAPSHOTS" }
+  | {
+      type: "RECORD_PORTFOLIO_SNAPSHOT";
+      totalFloorCents: number;
+      cardCount: number;
+      pricedCardCount: number;
+      rarity: Rarity;
+      currency: Currency;
+    }
+  | {
+      type: "FETCH_PORTFOLIO_PNL";
+      username: string;
+      rarity: Rarity;
+      currency: Currency;
+      forceRefresh?: boolean;
+    }
+  | {
+      type: "FETCH_PLAYER_PRICE_HISTORY";
+      playerSlug: string;
+      rarity: Rarity;
+      currency: Currency;
+      forceRefresh?: boolean;
+    }
+  | {
+      type: "CLOUD_START_AUTH";
+      username: string;
+      workerUrl: string;
+    }
+  | {
+      type: "CLOUD_VERIFY_AUTH";
+      username: string;
+      challengeCode: string;
+      workerUrl: string;
+    }
+  | {
+      type: "CLOUD_PUSH_TAGS";
+      tags: Record<string, CardTag>;
+      workerUrl: string;
+    }
+  | {
+      type: "CLOUD_FETCH_PUBLIC_TAGS";
+      username: string;
+      workerUrl?: string;
+    }
+  | { type: "CLOUD_LOGOUT" };
 
 export type BackgroundResponse<T = unknown> =
   | { ok: true; data: T }
@@ -910,6 +1017,8 @@ export interface AlertPreferences {
   /** Minimum floor rise (%) over the stored baseline that counts as a surge. */
   priceSurgePctThreshold: number;
   injuryRiskEnabled: boolean;
+  /** When true, only alert on injury downgrades for players sitting in open/submitted lineups. */
+  injuryLineupsOnly?: boolean;
   bargainAlertEnabled: boolean;
   cutoffAlertEnabled: boolean;
   dailyResetAlertEnabled: boolean;
@@ -960,9 +1069,109 @@ export interface AlertEvaluationInputs {
   currentLineups: CurrentLineupEntry[];
   previousInjuriesByName: Record<string, InjuryReportEntry>;
   currentInjuriesByName: Record<string, InjuryReportEntry>;
+  /** Team slug -> games count in the active Game Week slate (for 0G pre-lock health check). */
+  gamesPerTeam?: Record<string, number>;
   bargainListings: BargainListing[];
   watchlist: WatchlistEntry[];
   fixtures: So5FixtureSummary[];
   /** dedupeKey -> last emitted time (ms). */
   lastAlertAtByKey: Record<string, number>;
+}
+
+// ---------------------------------------------------------------------------
+// Update checker, Portfolio P&L, Wrapped, Card Tags & Cloud Sync (v2.7.5-exp18)
+// ---------------------------------------------------------------------------
+
+export interface UpdateCheckState {
+  currentVersion: string;
+  latestVersion: string | null;
+  releaseUrl: string | null;
+  releaseName: string | null;
+  publishedAt: string | null;
+  updateAvailable: boolean;
+  dismissedVersion: string | null;
+  checkedAtMs: number | null;
+}
+
+export type PortfolioTimeRange = "day" | "week" | "month";
+
+export interface PortfolioSnapshot {
+  /** YYYY-MM-DD (UTC) */
+  date: string;
+  totalFloorCents: number;
+  cardCount: number;
+  pricedCardCount: number;
+  rarity: Rarity;
+  currency: Currency;
+  capturedAtMs: number;
+}
+
+export type CardAcquisitionType =
+  | "auction"
+  | "instant_buy"
+  | "trade"
+  | "reward"
+  | "craft"
+  | "unknown";
+
+export interface CardOwnershipRecord {
+  cardSlug: string;
+  playerSlug: string;
+  playerName: string;
+  teamSlug: string | null;
+  rarity: CardRarity;
+  seasonYear: number;
+  acquiredAtMs: number | null;
+  acquiredPriceCents: number | null;
+  acquisitionType: CardAcquisitionType;
+  currentFloorCents: number | null;
+  currency: Currency;
+}
+
+export interface PlayerPricePoint {
+  date: string;
+  timestampMs: number;
+  priceCents: number;
+  currency: Currency;
+  source?: string;
+}
+
+export interface PortfolioPnlResult {
+  username: string;
+  rarity: Rarity;
+  currency: Currency;
+  records: CardOwnershipRecord[];
+  scannedCards: number;
+  fetchedAtMs: number;
+}
+
+export type WrappedMode = "regular_season" | "playoffs" | "year_end";
+
+export type CardTag = "keep" | "sell" | "core" | "trade";
+
+export interface SavedRosterPreset {
+  id: string;
+  name: string;
+  formatLabel: string;
+  cardSlugs: string[];
+  playerNames: string[];
+  projectedTotal: number;
+  createdAtMs: number;
+}
+
+export interface CloudAuthChallenge {
+  username: string;
+  challengeCode: string;
+  expiresAtIso: string;
+}
+
+export interface CloudAuthVerifyResult {
+  username: string;
+  verified: boolean;
+}
+
+export interface CloudPublicTagsResult {
+  username: string;
+  tags: Record<string, CardTag>;
+  updatedAtIso: string | null;
 }

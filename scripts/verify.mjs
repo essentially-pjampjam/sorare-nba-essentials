@@ -86,7 +86,7 @@ const dashFiles = [...walk("src"), ...docFiles].filter((f) => read(f).includes("
 check("No em-dash (U+2014) in src and workflow docs", dashFiles.length === 0, dashFiles.join(", "));
 
 // 7. Required permissions.
-for (const perm of ["sidePanel", "storage", "alarms", "notifications"]) {
+for (const perm of ["sidePanel", "storage", "alarms", "notifications", "scripting"]) {
   check(`manifest permission "${perm}"`, (manifest.permissions ?? []).includes(perm));
 }
 

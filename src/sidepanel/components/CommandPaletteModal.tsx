@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  BookOpen,
   ExternalLink,
   Layers,
   Maximize2,
@@ -12,7 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { SORARE_NBA_CARD_URL } from "../../shared/constants";
+import { formatCardSeasonLabel, SORARE_NBA_CARD_URL } from "../../shared/constants";
 import type {
   BargainListing,
   CollectionRaw,
@@ -39,6 +40,7 @@ interface CommandPaletteModalProps {
   deals: BargainListing[];
   currency: Currency;
   onSwitchTab: (tab: PaletteTab) => void;
+  onOpenGuides?: () => void;
   onOpenSettings: () => void;
   onOpenDashboard: () => void;
   onClose: () => void;
@@ -50,6 +52,7 @@ export function CommandPaletteModal({
   deals,
   currency,
   onSwitchTab,
+  onOpenGuides,
   onOpenSettings,
   onOpenDashboard,
   onClose,
@@ -165,11 +168,25 @@ export function CommandPaletteModal({
           onClose();
         },
       },
+      ...(onOpenGuides
+        ? [
+            {
+              id: "nav-guides",
+              group: "Tab" as const,
+              title: "Guides & Strategy Hub",
+              subtitle: "NBA Scoring Calculator, Caps, Stars, Vault, Set F2P & Pre-Lock Checklist",
+              onSelect: () => {
+                onOpenGuides();
+                onClose();
+              },
+            },
+          ]
+        : []),
       {
         id: "nav-settings",
         group: "Tab",
         title: "Settings, Themes & API Key",
-        subtitle: "Switch color theme, Fast API Key & Density",
+        subtitle: "Switch color theme, Fast API Key & Alerts",
         onSelect: () => {
           onOpenSettings();
           onClose();
@@ -188,17 +205,25 @@ export function CommandPaletteModal({
 
     if (q) {
       let cardHits = 0;
+      const rarityLabelMap: Record<GalleryCard["rarity"], string> = {
+        common: "Set",
+        limited: "Limited",
+        rare: "Rare",
+        super_rare: "S. Rare",
+        unique: "Unique",
+      };
       for (const c of galleryCards) {
         if (cardHits >= 8) break;
-        const hay = `${c.playerName} ${c.teamName ?? ""} ${c.seasonYear}`.toLowerCase();
+        const rarityLabel = rarityLabelMap[c.rarity] ?? c.rarity;
+        const hay = `${c.playerName} ${c.teamName ?? ""} ${c.seasonYear} ${rarityLabel}`.toLowerCase();
         if (!hay.includes(q)) continue;
         cardHits += 1;
         out.push({
           id: `card-${c.slug}`,
           group: "My Card",
           title: c.playerName,
-          subtitle: `${c.teamName ?? "NBA"} • ${c.starCost}★ • L10 ${c.l10?.toFixed(1) ?? "--"} • ${c.inSeasonEligible ? "26-27" : c.seasonYear}`,
-          badge: c.isFirstOwner ? "1ST" : undefined,
+          subtitle: `${rarityLabel} • ${c.teamName ?? "NBA"} • ${c.starCost}★ • L10 ${c.l10?.toFixed(1) ?? "--"} • ${formatCardSeasonLabel(c.seasonYear, c.inSeasonEligible)}`,
+          badge: c.isFirstOwner ? "1ST" : c.rarity === "common" ? "SET" : undefined,
           onSelect: () => {
             void openInActiveTab(`${SORARE_NBA_CARD_URL}/${c.slug}`);
             onClose();
@@ -213,10 +238,10 @@ export function CommandPaletteModal({
         if (!hay.includes(q)) continue;
         dealHits += 1;
         out.push({
-          id: `deal-${d.cardSlug}`,
+          id: `deal-${d.cardSlug}-${d.isPrimaryOffer ? "p" : d.saleType}`,
           group: "Market Deal",
           title: `${d.playerName} (${formatMoney(d.priceCents, currency)})`,
-          subtitle: `${d.inSeasonEligible ? "26-27" : d.seasonYear} • ${d.starCost}★ • L10 ${d.l10} • ${d.isPrimaryOffer ? "1ST Instant" : d.saleType === "auction" ? "Auction" : "Instant"}`,
+          subtitle: `${formatCardSeasonLabel(d.seasonYear, d.inSeasonEligible)} • ${d.starCost}★ • L10 ${d.l10} • ${d.isPrimaryOffer ? "1ST Instant" : d.saleType === "auction" ? "Auction" : "Instant"}`,
           onSelect: () => {
             void openInActiveTab(d.marketUrl);
             onClose();
@@ -263,6 +288,7 @@ export function CommandPaletteModal({
     if (item.id === "nav-bargains") return <TrendingDown className="h-3.5 w-3.5 text-emerald-400" />;
     if (item.id === "nav-gallery") return <Layers className="h-3.5 w-3.5 text-amber-400" />;
     if (item.id === "nav-dashboard") return <Maximize2 className="h-3.5 w-3.5 text-sky-300" />;
+    if (item.id === "nav-guides") return <BookOpen className="h-3.5 w-3.5 text-sky-300" />;
     if (item.id === "nav-settings") return <Settings className="h-3.5 w-3.5 text-slate-300" />;
     if (item.group === "Market Deal") return <Tag className="h-3.5 w-3.5 text-amber-400" />;
     if (item.group === "My Card") return <Layers className="h-3.5 w-3.5 text-sky-300" />;

@@ -3,10 +3,12 @@ import { estimateSealingPoints } from "./sealingPoints";
 import {
   MIN_VIABLE_CASH_PCT,
   buildContestThresholds,
+  estimateTierRewardEv,
   evaluateContestEv,
   lineupStdDev,
   probabilityAtLeast,
 } from "./entryEvMath";
+import { computePerGamePeakMultiplier } from "./vegasMath";
 import type {
   BargainListing,
   NbaPosition,
@@ -127,12 +129,36 @@ export interface SuggestedLineup {
   };
 }
 
+export type LineupBuildStrategy = "proj" | "floor" | "ceiling";
+
+/** Sorare NBA competition rule: at most 4 players from the same NBA team in a 5-card lineup. */
+export const DEFAULT_MAX_PER_TEAM = 4;
+
+function exceedsMaxPerTeam(
+  cards: Array<{ teamSlug: string | null }>,
+  maxPerTeam: number,
+): boolean {
+  if (maxPerTeam <= 0) return false;
+  const counts = new Map<string, number>();
+  for (const c of cards) {
+    if (!c.teamSlug) continue;
+    const next = (counts.get(c.teamSlug) ?? 0) + 1;
+    if (next > maxPerTeam) return true;
+    counts.set(c.teamSlug, next);
+  }
+  return false;
+}
+
 export interface AutoBuildOptions {
   /**
    * Ranking weight per team slug (default 1). Used by Set Solo "today first" to rank players who
    * play later below today's players; slot scores carry the weight, so callers divide it back out.
    */
   scoreWeightByTeam?: Record<string, number>;
+  /** Optimization objective: expected mean ("proj"), safe p10 floor ("floor"), or high p90 ceiling ("ceiling"). */
+  strategy?: LineupBuildStrategy;
+  /** Max players allowed from a single NBA team (default 4; null or 0 disables). */
+  maxPerTeam?: number | null;
   format: LineupFormat;
   rarityFilter: CardRarity | "ALL";
   projectionSource: ProjectionSource;
@@ -147,6 +173,8 @@ export interface AutoBuildOptions {
   ageFilter?: LineupAgeFilter;
   excludeSubmittedCards?: boolean;
   excludedCardSlugs?: string[];
+  /** Cards manually locked (must-start) by the manager into generated lineups. */
+  lockedCardSlugs?: string[];
   maxLineups: number;
   captainBonusPct?: number;
   benchmarks?: LeaderboardBenchmark[];
@@ -429,10 +457,10 @@ function buildCardAnalytics(args: {
 }
 
 
-/** Same-team score correlation (shared pace / usage). */
-const TEAMMATE_RHO = 0.15;
-/** Opponents in the same game: shootouts lift both sides. */
-const SAME_GAME_RHO = 0.08;
+/** Same-team score correlation (NBA teammates compete for fixed shots, usage, and rebounds). */
+const TEAMMATE_RHO = -0.05;
+/** Opponents in the same game: high-pace / OT shootouts lift both sides slightly. */
+const SAME_GAME_RHO = 0.06;
 
 function playsAgainst(
   a: TeamSlateSchedule | undefined,
@@ -495,7 +523,22 @@ export function evaluateCardForLineup(
   const l5 = card.l5 ?? null;
   const custom = customMap.get(normName) ?? null;
 
-  const peakMult = hasSchedule ? slatePeakMultiplier(gamesInSlate) : 1;
+  const sched = card.teamSlug ? scheduleByTeam?.[card.teamSlug] : undefined;
+  const context = slateContextAdjustments(sched);
+  const usePerGameOrderStats =
+    hasSchedule && Array.isArray(sched?.gameContexts) && sched.gameContexts.length > 0;
+  const peakMult = usePerGameOrderStats
+    ? computePerGamePeakMultiplier(sched!.gameContexts!, {
+        leagueAvgTotal: LEAGUE_AVG_TEAM_TOTAL,
+        ittElasticity: ITT_ELASTICITY,
+        b2bMultiplier: B2B_MULTIPLIER,
+        blowoutMultiplier: BLOWOUT_MULTIPLIER,
+        blowoutSpread: BLOWOUT_SPREAD,
+        cv: BASE_PLAYER_CV,
+      })
+    : hasSchedule
+      ? slatePeakMultiplier(gamesInSlate)
+      : 1;
   const avgAdjL10 = l10 !== null ? l10 * peakMult : null;
   const avgAdjL5 = l5 !== null ? l5 * peakMult : null;
 
@@ -542,12 +585,13 @@ export function evaluateCardForLineup(
 
   // A player whose team has no game in the slate cannot score.
   const noGame = hasSchedule && gamesInSlate === 0;
-  const sched = card.teamSlug ? scheduleByTeam?.[card.teamSlug] : undefined;
-  const context = slateContextAdjustments(sched);
   // No game this slate, or no NBA game at all this season (L10 is last season's): cannot score.
   const injuryAdjustedBase = noGame || isInactiveThisSeason(card) ? 0 : baseProjection * mult;
+  // When per-game order stats already folded Vegas/B2B into peakMult, avoid double-counting.
+  const appliedVegasMult = usePerGameOrderStats ? 1 : context.vegasMultiplier;
+  const appliedRestMult = usePerGameOrderStats ? 1 : context.restMultiplier;
   const effectiveScore =
-    injuryAdjustedBase * card.powerMultiplier * context.vegasMultiplier * context.restMultiplier;
+    injuryAdjustedBase * card.powerMultiplier * appliedVegasMult * appliedRestMult;
   const analytics = buildCardAnalytics({
     card,
     effectiveScore,
@@ -570,9 +614,9 @@ export function evaluateCardForLineup(
     ...analytics,
     boostSummary: {
       powerMultiplier: card.powerMultiplier,
-      slateMultiplier: hasSchedule ? slatePeakMultiplier(gamesInSlate) : 1,
-      vegasMultiplier: context.vegasMultiplier,
-      restMultiplier: context.restMultiplier,
+      slateMultiplier: peakMult,
+      vegasMultiplier: appliedVegasMult,
+      restMultiplier: appliedRestMult,
     },
     allSources: {
       sorareProjected: sorareProj,
@@ -791,6 +835,7 @@ export function generateTopLineups(
   const capLimit =
     starCap !== null ? starCap : options.format === "daily_120_mvp" ? 120 : null;
 
+  const lockedSet = new Set(options.lockedCardSlugs ?? []);
   const excludedSet = new Set(options.excludedCardSlugs ?? []);
   const evaluatedPool = cards
     .filter((card) => {
@@ -808,7 +853,7 @@ export function generateTopLineups(
       if (options.excludeSubmittedCards && card.openedLineupIds && card.openedLineupIds.length > 0) {
         return false;
       }
-      if (excludedSet.has(card.slug)) {
+      if (excludedSet.has(card.slug) && !lockedSet.has(card.slug)) {
         return false;
       }
       return true;
@@ -843,6 +888,18 @@ export function generateTopLineups(
     })
     .sort((a, b) => b.effectiveScore - a.effectiveScore);
 
+  const strategy: LineupBuildStrategy = options.strategy ?? "proj";
+  const maxPerTeam =
+    options.maxPerTeam === undefined ? DEFAULT_MAX_PER_TEAM : (options.maxPerTeam ?? 0);
+  const cardSigma = (ev: EvaluatedLineupCard): number =>
+    Math.max(4, ev.effectiveScore * (ev.cv || 0.35));
+  // Exact per-card linear upper bound for 5-card floor (sqrt(0.80 / 5) === 0.4)
+  const cardFloorContrib = (ev: EvaluatedLineupCard): number =>
+    ev.effectiveScore - 0.4 * Z90 * cardSigma(ev);
+  // Per-card heuristic ranking for ceiling (sqrt(1.24 / 5) ≈ 0.498)
+  const cardCeilRank = (ev: EvaluatedLineupCard): number =>
+    ev.effectiveScore + 0.5 * Z90 * cardSigma(ev);
+
   const maxToFind = Math.max(1, Math.min(10, options.maxLineups));
   const targetPoolSize = Math.max(40, maxToFind * 5 + 16);
 
@@ -858,12 +915,50 @@ export function generateTopLineups(
     });
   }
 
-  const head = basePool.slice(0, targetPoolSize);
+  // Order candidate pool by the active strategy so DFS finds strong solutions first and
+  // keeps strategy-relevant players inside targetPoolSize.
+  const strategyPool =
+    strategy === "floor"
+      ? [...basePool].sort((a, b) => cardFloorContrib(b) - cardFloorContrib(a) || b.effectiveScore - a.effectiveScore)
+      : strategy === "ceiling"
+        ? [...basePool].sort((a, b) => cardCeilRank(b) - cardCeilRank(a) || b.effectiveScore - a.effectiveScore)
+        : basePool;
+
+  const head = strategyPool.slice(0, targetPoolSize);
   const headSlugs = new Set(head.map((ev) => ev.card.slug));
-  const budgetEnablers = basePool
+  const lockedExtras = strategyPool.filter(
+    (ev) => lockedSet.has(ev.card.slug) && !headSlugs.has(ev.card.slug),
+  );
+  for (const ev of lockedExtras) headSlugs.add(ev.card.slug);
+  const budgetEnablers = strategyPool
     .filter((ev) => !headSlugs.has(ev.card.slug) && ev.card.starCost <= 2.0)
     .slice(0, 8);
-  const pool = [...head, ...budgetEnablers];
+  const pool = [...head, ...lockedExtras, ...budgetEnablers];
+
+  const buildSuffixExtremesSum = (vals: number[], takeLargest: boolean): Float64Array => {
+    const len = vals.length;
+    const out = new Float64Array((len + 1) * 6);
+    const best: number[] = [];
+    for (let i = len - 1; i >= 0; i -= 1) {
+      const v = vals[i];
+      let pos = best.length;
+      for (let j = 0; j < best.length; j += 1) {
+        if (takeLargest ? v > best[j] : v < best[j]) {
+          pos = j;
+          break;
+        }
+      }
+      best.splice(pos, 0, v);
+      if (best.length > 5) best.pop();
+      const base = i * 6;
+      let acc = 0;
+      for (let k = 1; k <= best.length; k += 1) {
+        acc += best[k - 1];
+        out[base + k] = acc;
+      }
+    }
+    return out;
+  };
 
   const lineups: SuggestedLineup[] = [];
   const usedCardSlugsGlobal = new Set<string>();
@@ -893,7 +988,7 @@ export function generateTopLineups(
       }
     }
 
-    let bestScore = -1;
+    let bestObjective = Number.NEGATIVE_INFINITY;
     let bestCombo: EvaluatedLineupCard[] | null = null;
     const seenLineupSignatures = new Set(
       lineups.map((l) =>
@@ -904,9 +999,76 @@ export function generateTopLineups(
       ),
     );
 
-    const n = available.length;
+    const lockedThisPass: EvaluatedLineupCard[] = [];
+    const lockedPlayersThisPass = new Set<string>();
+    const lockedSlugsThisPass = new Set<string>();
+    let lockedValid = true;
+    if (lockedSet.size > 0) {
+      for (const ev of available) {
+        if (!lockedSet.has(ev.card.slug)) continue;
+        if (lockedPlayersThisPass.has(ev.card.playerSlug) || lockedThisPass.length >= 5) {
+          lockedValid = false;
+          break;
+        }
+        lockedThisPass.push(ev);
+        lockedPlayersThisPass.add(ev.card.playerSlug);
+        lockedSlugsThisPass.add(ev.card.slug);
+      }
+    }
+    if (!lockedValid) break;
+    const hasLocked = lockedThisPass.length > 0;
+    const searchPool = hasLocked
+      ? available.filter((ev) => !lockedSlugsThisPass.has(ev.card.slug))
+      : available;
+
     const chosen: EvaluatedLineupCard[] = [];
     const chosenPlayers = new Set<string>();
+    const teamCounts = new Map<string, number>();
+    let initStarSum = 0;
+    let initInSeasonSum = 0;
+    let initScoreSum = 0;
+    let initSigmaSqSum = 0;
+    let initFloorContribSum = 0;
+    let initMaxEff = 0;
+    let initMaxSigma = 0;
+    for (const ev of lockedThisPass) {
+      const teamSlug = ev.card.teamSlug;
+      if (maxPerTeam > 0 && teamSlug && (teamCounts.get(teamSlug) ?? 0) >= maxPerTeam) {
+        lockedValid = false;
+        break;
+      }
+      initStarSum += ev.card.starCost;
+      if (starCap !== null && initStarSum > starCap) {
+        lockedValid = false;
+        break;
+      }
+      initInSeasonSum += ev.card.inSeasonEligible ? 1 : 0;
+      if (initInSeasonSum > inSeasonCapThisPass) {
+        lockedValid = false;
+        break;
+      }
+      const sig = cardSigma(ev);
+      initScoreSum += ev.effectiveScore;
+      initSigmaSqSum += sig * sig;
+      initFloorContribSum += cardFloorContrib(ev);
+      if (ev.effectiveScore > initMaxEff) initMaxEff = ev.effectiveScore;
+      if (sig > initMaxSigma) initMaxSigma = sig;
+      chosen.push(ev);
+      chosenPlayers.add(ev.card.playerSlug);
+      if (teamSlug) teamCounts.set(teamSlug, (teamCounts.get(teamSlug) ?? 0) + 1);
+    }
+    if (!lockedValid) break;
+
+    const n = searchPool.length;
+    const effVals = searchPool.map((ev) => ev.effectiveScore);
+    const sigmaVals = searchPool.map((ev) => cardSigma(ev));
+    const sigmaSqVals = sigmaVals.map((s) => s * s);
+    const floorContribVals = searchPool.map((ev) => cardFloorContrib(ev));
+
+    const topEffSum = buildSuffixExtremesSum(effVals, true);
+    const topSigmaSqSum = buildSuffixExtremesSum(sigmaSqVals, true);
+    const bottomSigmaSqSum = buildSuffixExtremesSum(sigmaSqVals, false);
+    const topFloorContribSum = buildSuffixExtremesSum(floorContribVals, true);
 
     const dfs = (
       startIdx: number,
@@ -914,6 +1076,10 @@ export function generateTopLineups(
       nonMvpL10Sum: number,
       inSeasonSum: number,
       currentScoreSum: number,
+      currentSigmaSqSum: number,
+      currentFloorContribSum: number,
+      chosenMaxEff: number,
+      chosenMaxSigma: number,
     ) => {
       const remainingNeed = 5 - chosen.length;
       if (remainingNeed === 0) {
@@ -921,15 +1087,28 @@ export function generateTopLineups(
 
         // Validate cap rules
         if (starCap !== null && starSum > starCap) return;
-        if (options.format === "daily_120_mvp" && nonMvpL10Sum > 120) return;
+        if (options.format === "daily_120_mvp") {
+          if (strategy === "proj" && !hasLocked && nonMvpL10Sum > 120) return;
+          if (strategy !== "proj" || hasLocked) {
+            let maxIdx = 0;
+            for (let k = 1; k < chosen.length; k += 1) {
+              if (chosen[k].effectiveScore > chosen[maxIdx].effectiveScore) maxIdx = k;
+            }
+            let l10Sum = 0;
+            for (let k = 0; k < chosen.length; k += 1) {
+              if (k !== maxIdx) l10Sum += chosen[k].card.l10 ?? 0;
+            }
+            if (l10Sum > 120) return;
+          }
+        }
 
-        // Pool is sorted descending by effectiveScore so chosen[0] is deterministically MVP
-        const approxTotal =
-          Math.round(
-            (currentScoreSum + chosen[0].effectiveScore * (captainBonusPct / 100)) *
-              10,
-          ) / 10;
-        if (approxTotal <= bestScore) return;
+        if (strategy === "proj") {
+          const approxTotal =
+            Math.round(
+              (currentScoreSum + chosenMaxEff * (captainBonusPct / 100)) * 10,
+            ) / 10;
+          if (approxTotal <= bestObjective) return;
+        }
 
         const sig = chosen
           .map((c) => c.card.slug)
@@ -938,28 +1117,66 @@ export function generateTopLineups(
         if (seenLineupSignatures.has(sig)) return;
 
         const built = assignSlotLabels(chosen, options.format, captainBonusPct);
-        if (built.totalScore > bestScore) {
-          bestScore = built.totalScore;
+        let objective = built.totalScore;
+        if (strategy === "floor") {
+          const sd = Math.sqrt(computeLineupVariance(built.slots, options.scheduleByTeam));
+          objective = built.totalScore - Z90 * sd;
+        } else if (strategy === "ceiling") {
+          const sd = Math.sqrt(computeLineupVariance(built.slots, options.scheduleByTeam));
+          objective = built.totalScore + Z90 * sd;
+        }
+        if (objective > bestObjective) {
+          bestObjective = objective;
           bestCombo = [...chosen];
         }
         return;
       }
 
       if (startIdx + remainingNeed > n) return;
-      // Tight upper-bound pruning (captain bonus applies to 1 MVP slot only)
-      const capSlotBase =
-        chosen.length > 0
-          ? chosen[0].effectiveScore
-          : available[startIdx].effectiveScore;
-      const optimisticMax =
-        currentScoreSum +
-        available[startIdx].effectiveScore * remainingNeed +
-        capSlotBase * (captainBonusPct / 100);
-      if (optimisticMax <= bestScore) return;
+      // Mathematically sound, tight upper-bound pruning per strategy
+      const suffixBase = startIdx * 6;
+      const maxEffPotential = Math.max(chosenMaxEff, topEffSum[suffixBase + 1]);
+      const capBonusUpper = maxEffPotential * (captainBonusPct / 100);
+      const maxTotalScore =
+        currentScoreSum + topEffSum[suffixBase + remainingNeed] + capBonusUpper + 0.05;
+
+      if (strategy === "proj") {
+        if (maxTotalScore <= bestObjective) return;
+      } else if (strategy === "floor") {
+        const linearFloorUpper =
+          currentFloorContribSum +
+          topFloorContribSum[suffixBase + remainingNeed] +
+          capBonusUpper +
+          0.05;
+        const minVar =
+          0.8 * (currentSigmaSqSum + bottomSigmaSqSum[suffixBase + remainingNeed]);
+        const directFloorUpper = maxTotalScore - Z90 * Math.sqrt(minVar);
+        if (Math.min(linearFloorUpper, directFloorUpper) <= bestObjective) return;
+      } else {
+        // strategy === "ceiling": variance <= 1.24 * sum(sigma_i^2) under SAME_GAME_RHO = 0.06
+        let capSigmaSqExtra = 0;
+        if (capBonusUpper > 0) {
+          const maxSigmaPotential = Math.max(
+            chosenMaxSigma,
+            Math.sqrt(topSigmaSqSum[suffixBase + 1]),
+          );
+          capSigmaSqExtra =
+            2 * maxSigmaPotential * capBonusUpper + capBonusUpper * capBonusUpper;
+        }
+        const maxVar =
+          1.24 * (currentSigmaSqSum + topSigmaSqSum[suffixBase + remainingNeed] + capSigmaSqExtra);
+        const optimisticCeil = maxTotalScore + Z90 * Math.sqrt(maxVar);
+        if (optimisticCeil <= bestObjective) return;
+      }
 
       for (let i = startIdx; i <= n - remainingNeed; i += 1) {
-        const candidate = available[i];
+        const candidate = searchPool[i];
         if (chosenPlayers.has(candidate.card.playerSlug)) continue;
+
+        const teamSlug = candidate.card.teamSlug;
+        if (maxPerTeam > 0 && teamSlug) {
+          if ((teamCounts.get(teamSlug) ?? 0) >= maxPerTeam) continue;
+        }
 
         const nextStarSum = starSum + candidate.card.starCost;
         if (starCap !== null && nextStarSum > starCap) {
@@ -970,7 +1187,7 @@ export function generateTopLineups(
           chosen.length === 0
             ? nonMvpL10Sum
             : nonMvpL10Sum + (candidate.card.l10 ?? 0);
-        if (options.format === "daily_120_mvp" && nextNonMvpL10 > 120) {
+        if (strategy === "proj" && !hasLocked && options.format === "daily_120_mvp" && nextNonMvpL10 > 120) {
           continue;
         }
 
@@ -982,19 +1199,35 @@ export function generateTopLineups(
 
         chosen.push(candidate);
         chosenPlayers.add(candidate.card.playerSlug);
+        if (teamSlug) teamCounts.set(teamSlug, (teamCounts.get(teamSlug) ?? 0) + 1);
         dfs(
           i + 1,
           nextStarSum,
           nextNonMvpL10,
           nextInSeason,
-          currentScoreSum + candidate.effectiveScore,
+          currentScoreSum + effVals[i],
+          currentSigmaSqSum + sigmaSqVals[i],
+          currentFloorContribSum + floorContribVals[i],
+          Math.max(chosenMaxEff, effVals[i]),
+          Math.max(chosenMaxSigma, sigmaVals[i]),
         );
         chosen.pop();
         chosenPlayers.delete(candidate.card.playerSlug);
+        if (teamSlug) teamCounts.set(teamSlug, (teamCounts.get(teamSlug) ?? 1) - 1);
       }
     };
 
-    dfs(0, 0, 0, 0, 0);
+    dfs(
+      0,
+      initStarSum,
+      0,
+      initInSeasonSum,
+      initScoreSum,
+      initSigmaSqSum,
+      initFloorContribSum,
+      initMaxEff,
+      initMaxSigma,
+    );
 
     if (!bestCombo) break;
     const pickedCombo = bestCombo as EvaluatedLineupCard[];
@@ -1101,6 +1334,9 @@ export interface FormatRecommendationCandidate {
   cashPlaces?: number;
   topCashLabel?: string | null;
   rewardTiers?: LeaderboardBenchmark["rewardTiers"];
+  /** Live rewardTiers-driven expected cash ($) and Essence EV for this lineup. */
+  expectedCashUsd?: number;
+  expectedEssence?: number;
   /** Probability (%) of clearing the top-20% line. */
   top20Prob: number;
   /** Probability (%) of clearing the podium line. */
@@ -1205,6 +1441,18 @@ export function recommendBestFormat(
         )
       : 0;
     const ev = evaluateContestEv(top ? top.totalScore : null, sd, thresholds);
+    const tierEv =
+      top && bm?.rewardTiers?.length
+        ? estimateTierRewardEv({
+            mean: top.totalScore,
+            sd,
+            paidPlaces: bm.paidPlaces,
+            paidCutoffScore: thresholds.cashScore,
+            podiumScore: thresholds.podiumScore,
+            top1Score: bm.top1Score,
+            rewardTiers: bm.rewardTiers,
+          })
+        : null;
     const viable = ev.viable && top !== null && top.slots.length === 5;
     const cashCut = bm?.cashCutoffScore;
     const moneyProb =
@@ -1223,6 +1471,12 @@ export function recommendBestFormat(
       cashPlaces: bm?.cashPlaces,
       topCashLabel: bm?.topCashLabel ?? null,
       rewardTiers: bm?.rewardTiers,
+      ...(tierEv
+        ? {
+            expectedCashUsd: tierEv.expectedCashUsd,
+            expectedEssence: tierEv.expectedEssence,
+          }
+        : {}),
       expectedValueScore: ev.expectedValueScore,
       viable,
       essencePct: ev.cashProb,
@@ -1587,6 +1841,14 @@ export function compareCurrentVsOptimalLineups(
         scheduleByTeam: options.scheduleByTeam,
         marketListings: options.marketListings,
         ownedPlayerSlugs,
+        projectionSource: options.projectionSource,
+        customProjectionsRaw: options.customProjectionsRaw,
+        injuriesByName: options.injuriesByName,
+        gamesPerTeam: options.gamesPerTeam,
+        minInSeasonCards: entryScope === "in_season" ? Math.max(4, options.minInSeasonCards) : 0,
+        maxPerTeam: options.maxPerTeam,
+        excludeOut: options.excludeOut,
+        excludeQuestionable: options.excludeQuestionable,
       });
 
     const roundedCurrent = Math.round(currentProjected * 10) / 10;
@@ -1687,6 +1949,8 @@ export interface BudgetBuildOptions {
   customProjectionsRaw: string;
   injuriesByName: Record<string, InjuryReportEntry>;
   gamesPerTeam: Record<string, number>;
+  scheduleByTeam?: Record<string, TeamSlateSchedule>;
+  maxPerTeam?: number | null;
   budgetCents: number;
   includeOwned: boolean;
   inSeasonOnly: boolean;
@@ -1790,6 +2054,7 @@ export function buildBudgetLineups(
         customMap,
         options.injuriesByName,
         options.gamesPerTeam,
+        options.scheduleByTeam,
       ),
     )
     .filter((ev) => ev.injuryStatus !== "OUT" && ev.effectiveScore > 0)
@@ -1811,6 +2076,8 @@ export function buildBudgetLineups(
   const starCap = getFormatStarCap(options.format);
   const capLimit =
     starCap !== null ? starCap : options.format === "daily_120_mvp" ? 120 : null;
+  const maxPerTeam =
+    options.maxPerTeam === undefined ? DEFAULT_MAX_PER_TEAM : (options.maxPerTeam ?? 0);
 
   const picks: BudgetLineupPick[] = [];
   const usedSignatures = new Set<string>();
@@ -1821,6 +2088,7 @@ export function buildBudgetLineups(
     let bestCombo: EvaluatedLineupCard[] | null = null;
     const chosen: EvaluatedLineupCard[] = [];
     const usedPlayers = new Set<string>();
+    const teamCounts = new Map<string, number>();
 
     const dfs = (
       startIdx: number,
@@ -1870,6 +2138,11 @@ export function buildBudgetLineups(
         const cand = pool[i];
         if (usedPlayers.has(cand.card.playerSlug)) continue;
 
+        const teamSlug = cand.card.teamSlug;
+        if (maxPerTeam > 0 && teamSlug && (teamCounts.get(teamSlug) ?? 0) >= maxPerTeam) {
+          continue;
+        }
+
         const candCost = slotCostBySlug[cand.card.slug]?.costCents ?? 0;
         if (costSum + candCost > options.budgetCents) continue;
 
@@ -1886,6 +2159,7 @@ export function buildBudgetLineups(
 
         chosen.push(cand);
         usedPlayers.add(cand.card.playerSlug);
+        if (teamSlug) teamCounts.set(teamSlug, (teamCounts.get(teamSlug) ?? 0) + 1);
         dfs(
           i + 1,
           nextStar,
@@ -1896,6 +2170,7 @@ export function buildBudgetLineups(
         );
         chosen.pop();
         usedPlayers.delete(cand.card.playerSlug);
+        if (teamSlug) teamCounts.set(teamSlug, (teamCounts.get(teamSlug) ?? 1) - 1);
       }
     };
 
@@ -1922,10 +2197,7 @@ export function buildBudgetLineups(
       }
     }
 
-    const variance = assigned.slots.reduce((sum, slot) => {
-      const sigma = Math.max(5, slot.slotScore * 0.22);
-      return sum + sigma * sigma;
-    }, 0);
+    const variance = computeLineupVariance(assigned.slots, options.scheduleByTeam);
     const stdDev = Math.sqrt(variance);
 
     picks.push({
@@ -1942,6 +2214,8 @@ export function buildBudgetLineups(
       hasInjuryRisk: assigned.slots.some(
         (s) => s.evaluated.injuryStatus !== "ACTIVE",
       ),
+      stdDev: Math.round(stdDev * 100) / 100,
+      variance: Math.round(variance * 100) / 100,
       odds: {
         essenceTarget: targets.essenceTarget,
         essencePct: Math.round(
@@ -1988,6 +2262,15 @@ export interface VaultVsSellAdvice {
 /** Cards below this L10 are bench depth; at or above it they still help Classic lineups. */
 export const VAULT_BENCH_L10 = 18;
 
+/** Minimum Instant Buy floor (cents) by rarity where selling beats sealing a bench card. */
+export const VAULT_SELL_FLOOR_CENTS_BY_RARITY: Record<CardRarity, number> = {
+  common: 250,
+  limited: 250,
+  rare: 1500,
+  super_rare: 6000,
+  unique: 25000,
+};
+
 export interface VaultAdviceContext {
   /** Card sits in an open / synced lineup (sealing would cancel it). */
   locked?: boolean;
@@ -2029,7 +2312,8 @@ export function evaluateVaultVsSellRoi(
 
   const l10 = card.l10 ?? 0;
   const askCents = card.lowestAskCents ?? 0;
-  if (askCents >= 250 && l10 < 28 && !context.duplicate) {
+  const sellFloorThresholdCents = VAULT_SELL_FLOOR_CENTS_BY_RARITY[card.rarity] ?? 250;
+  if (askCents >= sellFloorThresholdCents && l10 < 28 && !context.duplicate) {
     return {
       action: "SELL_CASH",
       vaultPoints,
@@ -2190,6 +2474,8 @@ export interface RecommendLineupBuysOptions {
   customProjectionsRaw: string;
   injuriesByName: Record<string, InjuryReportEntry>;
   gamesPerTeam: Record<string, number>;
+  scheduleByTeam?: Record<string, TeamSlateSchedule>;
+  maxPerTeam?: number | null;
   excludeOut?: boolean;
   excludeQuestionable?: boolean;
   captainBonusPct?: number;
@@ -2266,6 +2552,7 @@ export function recommendLineupMarketBuys(
       customMap,
       options.injuriesByName,
       options.gamesPerTeam,
+      options.scheduleByTeam,
     );
     if (options.excludeOut !== false && candEv.injuryStatus === "OUT") continue;
     if (
@@ -2278,6 +2565,8 @@ export function recommendLineupMarketBuys(
     }
     if (candEv.effectiveScore <= 0) continue;
 
+    const maxPerTeam =
+      options.maxPerTeam === undefined ? DEFAULT_MAX_PER_TEAM : (options.maxPerTeam ?? 0);
     let bestSlotRec: Omit<
       LineupBuyRecommendation,
       "ptsGainPerEuro" | "advancesCollection" | "questSynergyLabels" | "synergyScore"
@@ -2288,6 +2577,8 @@ export function recommendLineupMarketBuys(
       const nextEvaluated = baseLineup.slots.map((s, i) =>
         i === idx ? candEv : s.evaluated,
       );
+
+      if (exceedsMaxPerTeam(nextEvaluated.map((ev) => ev.card), maxPerTeam)) continue;
 
       const inSeasonCount = nextEvaluated.filter(
         (ev) => ev.card.inSeasonEligible,
@@ -2460,8 +2751,17 @@ export function recommendTwoCardComboSwaps(
       customMap,
       options.injuriesByName,
       options.gamesPerTeam,
+      options.scheduleByTeam,
     );
     if (options.excludeOut !== false && ev.injuryStatus === "OUT") continue;
+    if (
+      options.excludeQuestionable &&
+      (ev.injuryStatus === "QUESTIONABLE" ||
+        ev.injuryStatus === "DAY_TO_DAY" ||
+        ev.injuryStatus === "DOUBTFUL")
+    ) {
+      continue;
+    }
     if (ev.effectiveScore <= 0) continue;
     if (!byPlayerSlug.has(c.playerSlug)) {
       byPlayerSlug.set(c.playerSlug, {
@@ -2514,8 +2814,17 @@ export function recommendTwoCardComboSwaps(
       customMap,
       options.injuriesByName,
       options.gamesPerTeam,
+      options.scheduleByTeam,
     );
     if (options.excludeOut !== false && ev.injuryStatus === "OUT") continue;
+    if (
+      options.excludeQuestionable &&
+      (ev.injuryStatus === "QUESTIONABLE" ||
+        ev.injuryStatus === "DAY_TO_DAY" ||
+        ev.injuryStatus === "DOUBTFUL")
+    ) {
+      continue;
+    }
     if (ev.effectiveScore <= 0) continue;
     byPlayerSlug.set(m.playerSlug, {
       ev,
@@ -2536,6 +2845,8 @@ export function recommendTwoCardComboSwaps(
   const pool = [...topStars, ...enablers];
   if (pool.length < 2) return [];
 
+  const maxPerTeam =
+    options.maxPerTeam === undefined ? DEFAULT_MAX_PER_TEAM : (options.maxPerTeam ?? 0);
   const results: TwoCardComboSwapRecommendation[] = [];
 
   for (let i = 0; i < 4; i += 1) {
@@ -2563,6 +2874,7 @@ export function recommendTwoCardComboSwaps(
           }
 
           const combo5 = [...kept3, candA.ev, candB.ev];
+          if (exceedsMaxPerTeam(combo5.map((ev) => ev.card), maxPerTeam)) continue;
           const inSeasonCount = combo5.filter(
             (ev) => ev.card.inSeasonEligible,
           ).length;
@@ -2976,6 +3288,8 @@ export function analyzeFocusStrength(
     customProjectionsRaw: options.customProjectionsRaw,
     injuriesByName: options.injuriesByName,
     gamesPerTeam: options.gamesPerTeam,
+    scheduleByTeam: options.scheduleByTeam,
+    maxPerTeam: options.maxPerTeam,
     budgetCents: Number.MAX_SAFE_INTEGER,
     includeOwned: true,
     inSeasonOnly: options.inSeasonOnly,
@@ -3121,6 +3435,14 @@ export function buildEditFocusPoints(args: {
   scheduleByTeam: Record<string, TeamSlateSchedule> | undefined;
   marketListings: BargainListing[] | undefined;
   ownedPlayerSlugs: Set<string>;
+  projectionSource?: ProjectionSource;
+  customProjectionsRaw?: string;
+  injuriesByName?: Record<string, InjuryReportEntry>;
+  gamesPerTeam?: Record<string, number>;
+  minInSeasonCards?: number;
+  maxPerTeam?: number | null;
+  excludeOut?: boolean;
+  excludeQuestionable?: boolean;
 }): EditFocusPoint[] {
   const points: EditFocusPoint[] = [];
   if (args.unresolvedReason) {
@@ -3167,23 +3489,86 @@ export function buildEditFocusPoints(args: {
       });
     }
   }
-  // One buy idea: the best Instant Buy listing that beats the weakest card within the cap.
+  // One buy idea: the best Instant Buy listing that beats the weakest card under all lineup rules.
   const weakest = [...args.evaluated].sort((a, b) => a.effectiveScore - b.effectiveScore)[0];
   if (weakest && args.marketListings && args.marketListings.length > 0) {
+    const customMap = parseCustomProjections(args.customProjectionsRaw ?? "");
+    const projectionSource = args.projectionSource ?? "blended_smart";
+    const injuriesByName = args.injuriesByName ?? {};
+    const gamesPerTeam = args.gamesPerTeam ?? {};
+    const minInSeason = args.minInSeasonCards ?? 0;
+    const maxPerTeam =
+      args.maxPerTeam === undefined ? DEFAULT_MAX_PER_TEAM : (args.maxPerTeam ?? 0);
+    const keptCards = args.evaluated.filter((e) => e.card.slug !== weakest.card.slug);
+
     const pick = args.marketListings
-      .filter(
-        (l) =>
-          l.saleType === "instant_buy" &&
-          !args.ownedPlayerSlugs.has(l.playerSlug) &&
-          l.positions.some((p) => weakest.card.positions.includes(p)) &&
-          (args.starCap === null ||
-            args.currentStars - weakest.card.starCost + l.starCost <= args.starCap + 1e-9),
-      )
-      .map((l) => ({ l, gain: (l.projected ?? l.l5 ?? l.l10) - weakest.effectiveScore }))
-      .filter((x) => x.gain > 0.5)
+      .filter((l) => {
+        if (l.saleType !== "instant_buy") return false;
+        if (args.ownedPlayerSlugs.has(l.playerSlug)) return false;
+        if (keptCards.some((k) => k.card.playerSlug === l.playerSlug)) return false;
+        if (
+          args.starCap !== null &&
+          args.currentStars - weakest.card.starCost + l.starCost > args.starCap + 1e-9
+        ) {
+          return false;
+        }
+        return true;
+      })
+      .map((l) => {
+        const synthetic: GalleryCard = {
+          slug: l.cardSlug,
+          rarity: l.rarity,
+          seasonYear: l.seasonYear,
+          inSeasonEligible: l.inSeasonEligible,
+          grade: 1,
+          powerMultiplier: l.inSeasonEligible ? 1.05 : 1.0,
+          pictureUrl: l.pictureUrl ?? null,
+          isFirstOwner: Boolean(l.isFirstOwnerEligible || l.isPrimaryOffer),
+          teamName: l.teamName,
+          teamSlug: l.teamSlug ?? null,
+          playerSlug: l.playerSlug,
+          playerName: l.playerName,
+          positions: l.positions,
+          l10: l.l10,
+          l5: l.l5,
+          sorareClassicProjected: l.projected,
+          sorareDailyProjected: null,
+          starCost: l.starCost,
+        };
+        const ev = evaluateCardForLineup(
+          synthetic,
+          projectionSource,
+          customMap,
+          injuriesByName,
+          gamesPerTeam,
+          args.scheduleByTeam,
+        );
+        return { l, ev, gain: ev.effectiveScore - weakest.effectiveScore };
+      })
+      .filter(({ ev, gain }) => {
+        if (args.excludeOut !== false && ev.injuryStatus === "OUT") return false;
+        if (
+          args.excludeQuestionable &&
+          (ev.injuryStatus === "QUESTIONABLE" ||
+            ev.injuryStatus === "DAY_TO_DAY" ||
+            ev.injuryStatus === "DOUBTFUL")
+        ) {
+          return false;
+        }
+        if (ev.gamesInSlate === 0 || ev.effectiveScore <= 0) return false;
+        const nextCards = [...keptCards.map((k) => k.card), ev.card];
+        if (exceedsMaxPerTeam(nextCards, maxPerTeam)) return false;
+        if (minInSeason > 0) {
+          const inSeasonCount = nextCards.filter((c) => c.inSeasonEligible).length;
+          if (inSeasonCount < minInSeason) return false;
+        }
+        return gain > 0.5;
+      })
       .sort((a, b) => b.gain - a.gain)[0];
     if (pick) {
-      const price = pick.l.priceCents !== null ? ` for €${(pick.l.priceCents / 100).toFixed(2)}` : "";
+      const sym = pick.l.currency === "USD" ? "$" : "€";
+      const price =
+        pick.l.priceCents !== null ? ` for ${sym}${(pick.l.priceCents / 100).toFixed(2)}` : "";
       points.push({
         kind: "buy",
         playerName: pick.l.playerName,

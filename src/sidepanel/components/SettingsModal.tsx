@@ -1,8 +1,12 @@
 import {
+  Check,
+  Cloud,
+  Copy,
   Download,
   Eye,
   EyeOff,
   KeyRound,
+  LogOut,
   Palette,
   RefreshCw,
   ShieldCheck,
@@ -12,8 +16,15 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { APP_THEMES } from "../../shared/constants";
-import type { UserSettings } from "../../shared/types";
+import { normalizeCloudWorkerUrl } from "../../calculators/cardTagsMath";
+import { APP_THEMES, RARITIES } from "../../shared/constants";
+import type { CloudAuthChallenge, ProjectionSource, Rarity, UserSettings } from "../../shared/types";
+import {
+  cloudLogout,
+  pushCloudTags,
+  startCloudAuth,
+  verifyCloudAuth,
+} from "../api";
 import { AlertSettingsSection } from "./AlertSettingsSection";
 
 interface SettingsModalProps {
@@ -22,6 +33,7 @@ interface SettingsModalProps {
   focusApiKey?: boolean;
   onUpdateSettings: (patch: Partial<UserSettings>) => void;
   onOpenTierEditor: () => void;
+  onOpenWhatsNew?: () => void;
   onClearCache: () => void;
   onReloadExtension: () => void;
   onClose: () => void;
@@ -33,6 +45,7 @@ export function SettingsModal({
   focusApiKey = false,
   onUpdateSettings,
   onOpenTierEditor,
+  onOpenWhatsNew,
   onClearCache,
   onReloadExtension,
   onClose,
@@ -40,7 +53,16 @@ export function SettingsModal({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const apiKeyInputRef = useRef<HTMLInputElement>(null);
   const backupInputRef = useRef<HTMLInputElement>(null);
-  const [apiKeyDraft, setApiKeyDraft] = useState(settings.sorareApiKey ?? "");
+  const [workerUrlDraft, setWorkerUrlDraft] = useState(
+    () => settings.cloudSyncWorkerUrl ?? "",
+  );
+  const [cloudChallenge, setCloudChallenge] = useState<CloudAuthChallenge | null>(null);
+  const [cloudBusy, setCloudBusy] = useState(false);
+  const [cloudMsg, setCloudMsg] = useState<string | null>(null);
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [apiKeyDraft, setApiKeyDraft] = useState(() =>
+    settings.sorareApiKey?.startsWith("••••") ? "" : (settings.sorareApiKey ?? ""),
+  );
   const [showKey, setShowKey] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
   const [backupStatus, setBackupStatus] = useState<string | null>(null);
@@ -90,10 +112,17 @@ export function SettingsModal({
   }, [focusApiKey, onClose]);
 
   const handleSaveApiKey = () => {
+    const trimmed = apiKeyDraft.trim();
+    if (!trimmed && settings.sorareApiKey) {
+      setSavedToast(true);
+      window.setTimeout(() => setSavedToast(false), 1800);
+      return;
+    }
     onUpdateSettings({
-      sorareApiKey: apiKeyDraft.trim(),
+      sorareApiKey: trimmed,
       apiKeyPromptDismissed: true,
     });
+    setApiKeyDraft("");
     setSavedToast(true);
     window.setTimeout(() => setSavedToast(false), 1800);
   };
@@ -110,11 +139,17 @@ export function SettingsModal({
       autoOpenOnCraft: settings.autoOpenOnCraft,
       autoOpenOnSorare: settings.autoOpenOnSorare,
       autoShowInPageWizards: settings.autoShowInPageWizards ?? true,
+      showEssenceMilestones: settings.showEssenceMilestones ?? false,
+      trackDailyTasks: settings.trackDailyTasks ?? true,
       autoPriceTopN: settings.autoPriceTopN,
       projectionSource: settings.projectionSource,
       customProjectionsRaw: settings.customProjectionsRaw,
       milestoneRulesByRarity: settings.milestoneRulesByRarity,
       watchlist: settings.watchlist ?? [],
+      alertsEnabled: settings.alertsEnabled,
+      cutoffReminderEnabled: settings.cutoffReminderEnabled,
+      cutoffReminderMinutesBefore: settings.cutoffReminderMinutesBefore,
+      alertPreferences: settings.alertPreferences,
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json;charset=utf-8",
@@ -139,25 +174,73 @@ export function SettingsModal({
         setBackupStatus("Invalid JSON backup file.");
         return;
       }
+      const validThemes = new Set(APP_THEMES.map((t) => t.id));
+      const validRarities = new Set<Rarity>(RARITIES);
+      const validProjectionSources = new Set<ProjectionSource>([
+        "blended_smart",
+        "sorare_projected",
+        "sorare_l10",
+        "sorare_l5",
+        "custom_csv",
+      ]);
       const patch: Partial<UserSettings> = {};
-      if (parsed.theme) patch.theme = parsed.theme;
+      if (parsed.theme && validThemes.has(parsed.theme)) patch.theme = parsed.theme;
       if (parsed.density === "compact" || parsed.density === "cozy") {
         patch.density = parsed.density;
       }
       if (parsed.currency === "USD" || parsed.currency === "EUR") {
         patch.currency = parsed.currency;
       }
-      if (typeof parsed.craftThreshold === "number") {
+      if (parsed.selectedRarity && validRarities.has(parsed.selectedRarity)) {
+        patch.selectedRarity = parsed.selectedRarity;
+      }
+      if (typeof parsed.craftThreshold === "number" && Number.isFinite(parsed.craftThreshold)) {
         patch.craftThreshold = parsed.craftThreshold;
+      }
+      if (typeof parsed.autoOpenOnCraft === "boolean") {
+        patch.autoOpenOnCraft = parsed.autoOpenOnCraft;
+      }
+      if (typeof parsed.autoOpenOnSorare === "boolean") {
+        patch.autoOpenOnSorare = parsed.autoOpenOnSorare;
+      }
+      if (typeof parsed.autoShowInPageWizards === "boolean") {
+        patch.autoShowInPageWizards = parsed.autoShowInPageWizards;
+      }
+      if (typeof parsed.showEssenceMilestones === "boolean") {
+        patch.showEssenceMilestones = parsed.showEssenceMilestones;
+      }
+      if (typeof parsed.trackDailyTasks === "boolean") {
+        patch.trackDailyTasks = parsed.trackDailyTasks;
+      }
+      if (typeof parsed.autoPriceTopN === "number" && Number.isFinite(parsed.autoPriceTopN)) {
+        patch.autoPriceTopN = parsed.autoPriceTopN;
+      }
+      if (parsed.projectionSource && validProjectionSources.has(parsed.projectionSource)) {
+        patch.projectionSource = parsed.projectionSource;
       }
       if (typeof parsed.customProjectionsRaw === "string") {
         patch.customProjectionsRaw = parsed.customProjectionsRaw;
       }
-      if (parsed.milestoneRulesByRarity) {
+      if (parsed.milestoneRulesByRarity && typeof parsed.milestoneRulesByRarity === "object") {
         patch.milestoneRulesByRarity = parsed.milestoneRulesByRarity;
       }
       if (Array.isArray(parsed.watchlist)) {
         patch.watchlist = parsed.watchlist;
+      }
+      if (typeof parsed.alertsEnabled === "boolean") {
+        patch.alertsEnabled = parsed.alertsEnabled;
+      }
+      if (typeof parsed.cutoffReminderEnabled === "boolean") {
+        patch.cutoffReminderEnabled = parsed.cutoffReminderEnabled;
+      }
+      if (
+        typeof parsed.cutoffReminderMinutesBefore === "number" &&
+        Number.isFinite(parsed.cutoffReminderMinutesBefore)
+      ) {
+        patch.cutoffReminderMinutesBefore = parsed.cutoffReminderMinutesBefore;
+      }
+      if (parsed.alertPreferences && typeof parsed.alertPreferences === "object") {
+        patch.alertPreferences = parsed.alertPreferences;
       }
       onUpdateSettings(patch);
       setBackupStatus("Setup imported successfully.");
@@ -173,18 +256,45 @@ export function SettingsModal({
       {...({ closedby: "any" } as Record<string, string>)}
       className="glass-chrome max-h-[90vh] w-[calc(100%-24px)] max-w-md overflow-y-auto rounded-2xl p-4"
     >
-      <div className="mb-3 flex items-center justify-between">
-        <div>
-          <h2
-            id="settings-dialog-title"
-            className="text-sm font-semibold text-slate-100"
-          >
-            Settings & API Fast Mode
-          </h2>
-          <p className="text-[11px] text-slate-400">
-            pjampjam&apos;s Sorare NBA Essentials •{" "}
-            <span className="font-mono text-amber-300">v{version}</span>
-          </p>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <img
+            src="/logo.png"
+            alt="pjampjam's Sorare NBA Essentials"
+            className="h-8 w-8 shrink-0 rounded-lg object-contain"
+          />
+          <div className="min-w-0">
+            <h2
+              id="settings-dialog-title"
+              className="text-sm font-semibold text-slate-100"
+            >
+              Settings &amp; API Fast Mode
+            </h2>
+            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400">
+              <span>pjampjam&apos;s Sorare NBA Essentials</span>
+              <span
+                className={`rounded px-1.5 py-px font-mono text-[10px] font-medium ${
+                  /-exp/i.test(version)
+                    ? "border border-rose-400/50 bg-rose-500/15 text-rose-300"
+                    : "bg-white/8 text-amber-300"
+                }`}
+              >
+                v{version}
+              </span>
+              {onOpenWhatsNew && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    dialogRef.current?.close();
+                    onOpenWhatsNew();
+                  }}
+                  className="text-[10.5px] font-medium text-sky-300 hover:text-sky-200 hover:underline"
+                >
+                  What&apos;s New
+                </button>
+              )}
+            </div>
+          </div>
         </div>
         <button
           type="button"
@@ -233,7 +343,11 @@ export function SettingsModal({
               spellCheck={false}
               aria-label="Personal Sorare API key"
               onChange={(e) => setApiKeyDraft(e.target.value)}
-              placeholder="Paste personal Sorare APIKEY..."
+              placeholder={
+                settings.sorareApiKey
+                  ? `Saved (${settings.sorareApiKey}) - paste new key to replace`
+                  : "Paste personal Sorare APIKEY..."
+              }
               className="w-full rounded-lg border border-white/10 bg-[#141c2f] py-1.5 pl-2.5 pr-7 text-xs text-slate-100 placeholder-slate-500 focus:border-amber-400 focus:outline-none"
             />
             <button
@@ -363,6 +477,47 @@ export function SettingsModal({
           />
         </label>
 
+        <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-white/8 bg-[#0b101b] px-3 py-2.5">
+          <div>
+            <div className="font-medium text-slate-100">
+              Track Daily Tasks (On-Page Dailies Bar)
+            </div>
+            <div className="text-[11px] text-slate-400">
+              Tracks Free Daily Pack, Daily Solo, Daily Pickers &amp; Daily
+              Missions in the bottom-right Sorare bar. Turn off to hide the
+              Dailies bar and pause daily sync.
+            </div>
+          </div>
+          <input
+            type="checkbox"
+            checked={settings.trackDailyTasks ?? true}
+            onChange={(e) =>
+              onUpdateSettings({ trackDailyTasks: e.target.checked })
+            }
+            className="h-4 w-4 accent-amber-400"
+          />
+        </label>
+
+        <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-white/8 bg-[#0b101b] px-3 py-2.5">
+          <div>
+            <div className="font-medium text-slate-100">
+              Essence Bar Milestone Lines
+            </div>
+            <div className="text-[11px] text-slate-400">
+              Show subtle 25% / 50% / 75% etched tick lines on the liquid
+              Essence progress tube.
+            </div>
+          </div>
+          <input
+            type="checkbox"
+            checked={settings.showEssenceMilestones ?? false}
+            onChange={(e) =>
+              onUpdateSettings({ showEssenceMilestones: e.target.checked })
+            }
+            className="h-4 w-4 accent-amber-400"
+          />
+        </label>
+
         <div className="flex items-center justify-between gap-3 rounded-xl border border-white/8 bg-[#0b101b] px-3 py-2.5">
           <div>
             <div className="font-medium text-slate-100">
@@ -441,6 +596,179 @@ export function SettingsModal({
         </div>
         {backupStatus && (
           <div className="mt-1 text-[10px] text-emerald-300">{backupStatus}</div>
+        )}
+      </div>
+
+      {/* Optional Cloud Sync & Public Card Tags (Cloudflare Worker + Profile Auth) */}
+      <div className="mt-3 rounded-xl border border-white/8 bg-[#0b101b] p-3 text-xs">
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 font-semibold text-slate-200">
+            <Cloud className="h-3.5 w-3.5 text-sky-300" />
+            Cloud Card Tags Sync (Optional)
+          </div>
+          {settings.cloudSyncUsername && (
+            <span className="rounded-full border border-emerald-400/35 bg-emerald-500/15 px-2 py-px text-[10px] font-semibold text-emerald-200">
+              @{settings.cloudSyncUsername}
+            </span>
+          )}
+        </div>
+        <p className="mb-2 text-[10.5px] text-slate-400">
+          Card tags (Keep / Sell / Core / Trade) always work 100% locally. Add your Cloudflare
+          Worker URL to verify via your Sorare profile (status, club name, or nickname) and share
+          public gallery tags.
+        </p>
+
+        <div className="flex gap-1.5">
+          <input
+            type="url"
+            value={workerUrlDraft}
+            onChange={(e) => setWorkerUrlDraft(e.target.value)}
+            placeholder="https://sorare-tags.your-subdomain.workers.dev"
+            aria-label="Cloudflare Worker URL"
+            className="min-w-0 flex-1 rounded-lg border border-white/10 bg-[#141c2f] px-2.5 py-1.5 text-[11px] text-slate-100 placeholder:text-slate-500 focus:border-sky-400 focus:outline-none"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              const trimmed = workerUrlDraft.trim();
+              if (!trimmed) {
+                onUpdateSettings({ cloudSyncWorkerUrl: "" });
+                setCloudMsg("Cleared Worker URL.");
+                return;
+              }
+              const normalized = normalizeCloudWorkerUrl(trimmed);
+              if (!normalized) {
+                setCloudMsg("Enter a valid HTTPS Worker URL (or http://localhost for dev).");
+                return;
+              }
+              setWorkerUrlDraft(normalized);
+              onUpdateSettings({ cloudSyncWorkerUrl: normalized });
+              setCloudMsg("Saved Worker URL.");
+            }}
+            className="rounded-lg border border-white/10 bg-[#141c2f] px-2.5 py-1 text-[10.5px] font-semibold text-slate-200 hover:border-sky-400/40"
+          >
+            Save
+          </button>
+        </div>
+
+        {!settings.cloudSyncUsername ? (
+          <div className="mt-2 space-y-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                disabled={cloudBusy || !workerUrlDraft.trim() || !settings.username.trim()}
+                onClick={async () => {
+                  setCloudBusy(true);
+                  setCloudMsg(null);
+                  try {
+                    const ch = await startCloudAuth(settings.username, workerUrlDraft);
+                    setCloudChallenge(ch);
+                    setCloudMsg(
+                      "Paste this code into your Sorare profile status, club name, or nickname, then click Verify Profile.",
+                    );
+                  } catch (err) {
+                    setCloudMsg(err instanceof Error ? err.message : "Challenge failed.");
+                  } finally {
+                    setCloudBusy(false);
+                  }
+                }}
+                className="rounded-lg border border-sky-400/40 bg-sky-500/15 px-2.5 py-1 text-[10.5px] font-semibold text-sky-200 hover:bg-sky-500/25 disabled:opacity-40"
+              >
+                1. Generate Verify Code
+              </button>
+              {cloudChallenge && (
+                <button
+                  type="button"
+                  disabled={cloudBusy}
+                  onClick={async () => {
+                    setCloudBusy(true);
+                    setCloudMsg(null);
+                    try {
+                      const res = await verifyCloudAuth(
+                        cloudChallenge.username,
+                        cloudChallenge.challengeCode,
+                        workerUrlDraft,
+                      );
+                      onUpdateSettings({
+                        cloudSyncWorkerUrl:
+                          normalizeCloudWorkerUrl(workerUrlDraft) ?? workerUrlDraft.trim(),
+                        cloudSyncUsername: res.username,
+                      });
+                      setCloudChallenge(null);
+                      setCloudMsg(
+                        `Verified @${res.username}! You can now remove the code from your Sorare profile.`,
+                      );
+                    } catch (err) {
+                      setCloudMsg(err instanceof Error ? err.message : "Verification failed.");
+                    } finally {
+                      setCloudBusy(false);
+                    }
+                  }}
+                  className="rounded-lg border border-emerald-400/45 bg-emerald-500/20 px-2.5 py-1 text-[10.5px] font-semibold text-emerald-200 hover:bg-emerald-500/30 disabled:opacity-40"
+                >
+                  2. Verify Profile
+                </button>
+              )}
+            </div>
+
+            {cloudChallenge && (
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-sky-400/30 bg-[#111726] px-2.5 py-1.5">
+                <code className="text-[11px] font-bold text-sky-200">
+                  {cloudChallenge.challengeCode}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(cloudChallenge.challengeCode);
+                    setCopiedCode(true);
+                    window.setTimeout(() => setCopiedCode(false), 1800);
+                  }}
+                  className="inline-flex items-center gap-1 rounded border border-white/10 px-2 py-0.5 text-[10px] text-slate-200 hover:bg-white/10"
+                >
+                  {copiedCode ? <Check className="h-3 w-3 text-emerald-300" /> : <Copy className="h-3 w-3" />}
+                  {copiedCode ? "Copied" : "Copy"}
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              disabled={cloudBusy || !workerUrlDraft.trim()}
+              onClick={async () => {
+                setCloudBusy(true);
+                setCloudMsg(null);
+                try {
+                  const res = await pushCloudTags(settings.cardTags ?? {}, workerUrlDraft);
+                  setCloudMsg(`Synced ${res.count} public tags to Cloudflare D1.`);
+                } catch (err) {
+                  setCloudMsg(err instanceof Error ? err.message : "Sync failed.");
+                } finally {
+                  setCloudBusy(false);
+                }
+              }}
+              className="rounded-lg border border-emerald-400/40 bg-emerald-500/15 px-2.5 py-1 text-[10.5px] font-semibold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-40"
+            >
+              Push {Object.keys(settings.cardTags ?? {}).length} Tags to Cloud
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                await cloudLogout();
+                onUpdateSettings({ cloudSyncUsername: "" });
+                setCloudMsg("Signed out of Cloud Tag Sync.");
+              }}
+              className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-[#141c2f] px-2 py-1 text-[10.5px] text-slate-300 hover:border-rose-400/40 hover:text-rose-200"
+            >
+              <LogOut className="h-3 w-3" />
+              Sign Out
+            </button>
+          </div>
+        )}
+
+        {cloudMsg && (
+          <div className="mt-1.5 text-[10px] text-sky-300">{cloudMsg}</div>
         )}
       </div>
 

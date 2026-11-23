@@ -16,6 +16,9 @@ import type {
 } from "./types";
 
 export const SORARE_GRAPHQL_URL = "https://api.sorare.com/graphql";
+export const GITHUB_REPO_SLUG = "essentially-pjampjam/sorare-nba-essentials";
+export const GITHUB_RELEASES_API_URL = `https://api.github.com/repos/${GITHUB_REPO_SLUG}/releases/latest`;
+export const GITHUB_RELEASES_PAGE_URL = `https://github.com/${GITHUB_REPO_SLUG}/releases`;
 export { SORARE_NBA_CARD_URL, SORARE_NBA_MARKET_URL };
 
 /**
@@ -416,6 +419,8 @@ export const DEFAULT_SETTINGS: UserSettings = {
     updatedAt: null,
   },
   autoShowInPageWizards: true,
+  showEssenceMilestones: false,
+  trackDailyTasks: true,
   watchlist: [],
   watchlistAlerts: [],
   currency: "USD",
@@ -504,13 +509,13 @@ export const ESSENCE_EARNING_SOURCES = [
   },
   {
     id: "set-career-board",
-    label: "Set Career Board & Missions",
-    detail: "Cap 120 + MVP board checkpoints & daily tasks",
+    label: "Set Solo (Arcade) & Missions",
+    detail: "16★ cap Solo stages, Squad boards & daily tasks",
   },
   {
     id: "pro-leaderboards",
-    label: "Pro & Daily Pickup",
-    detail: "Champion 16★, Contender 11★, Daily Pickup Cap 120+MVP",
+    label: "Pro & Arena Leaderboards",
+    detail: "Champion 16★, Contender 11★ & Arena Rooms",
   },
   {
     id: "scrap-duplicates",

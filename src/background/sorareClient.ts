@@ -15,7 +15,9 @@ import type {
   BargainListing,
   BargainMode,
   CardCounts,
+  CardAcquisitionType,
   CardMarketPrice,
+  CardOwnershipRecord,
   CardQualityTier,
   CardRarity,
   CollectionRaw,
@@ -29,6 +31,7 @@ import type {
   LineupFormat,
   MissingSlot,
   NbaPosition,
+  PlayerPricePoint,
   QuestCardSummary,
   Rarity,
   So5FixtureSummary,
@@ -587,9 +590,7 @@ export class SorareClient {
     let doneCount = 0;
     const estimatedSteps = Math.max(1, groupList.length + 1);
 
-    for (const group of groupList) {
-      if (signal?.aborted) break;
-
+    await this.runWithFastPipelining(groupList, signal, async (group) => {
       const filters: Array<Record<string, unknown>> = [
         {
           field: "sport",
@@ -642,7 +643,7 @@ export class SorareClient {
 
       doneCount += 1;
       onStep?.(doneCount, estimatedSteps);
-    }
+    });
 
     const prices: Record<string, CardMarketPrice> = {};
     const now = Date.now();
@@ -926,8 +927,7 @@ export class SorareClient {
       { floorCents: number | null; floorCardSlug: string | null }
     > = {};
 
-    for (const player of players.slice(0, 10)) {
-      if (signal?.aborted) break;
+    await this.runWithFastPipelining(players.slice(0, 10), signal, async (player) => {
       try {
         const res = await this.postGraphQL<{
           searchCards: {
@@ -975,8 +975,44 @@ export class SorareClient {
         }
         // Individual player price miss is non-fatal
       }
-    }
+    });
     return out;
+  }
+
+  /**
+   * Runs independent batch queries with up to 2 workers in Fast Mode (API key active)
+   * and 1 worker in Safe Mode, routing every query through RateLimitQueue.
+   * Stops dispatching new items immediately on abort or fatal error (e.g. HTTP 429).
+   */
+  private async runWithFastPipelining<T>(
+    items: T[],
+    signal: AbortSignal | undefined,
+    worker: (item: T) => Promise<void>,
+  ): Promise<void> {
+    if (items.length === 0) return;
+    const workerCount = this.hasApiKey() ? Math.min(2, items.length) : 1;
+    let nextIndex = 0;
+    let fatalError: unknown = null;
+
+    const runners = Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        if (signal?.aborted || fatalError !== null) break;
+        const idx = nextIndex++;
+        try {
+          await worker(items[idx]);
+        } catch (err) {
+          if (fatalError === null) {
+            fatalError = err;
+          }
+          break;
+        }
+      }
+    });
+
+    await Promise.all(runners);
+    if (fatalError !== null) {
+      throw fatalError;
+    }
   }
 
   /**
@@ -1178,6 +1214,18 @@ export class SorareClient {
           }
         : undefined;
 
+      const editionLower = (n.cardEditionName ?? "").toLowerCase();
+      const editionFallbackPower =
+        n.rarityTyped === "common"
+          ? editionLower.includes("holo")
+            ? 1.2
+            : editionLower.includes("shiny")
+              ? 1.1
+              : 1
+          : 1;
+      const effectivePower =
+        Number.isFinite(pwr) && pwr > 1.0001 ? pwr : editionFallbackPower;
+
       const transfers = n.ownershipHistory ?? [];
       return {
         slug: n.slug,
@@ -1185,7 +1233,7 @@ export class SorareClient {
         seasonYear: n.seasonYear,
         inSeasonEligible: n.inSeasonEligible,
         grade: n.grade,
-        powerMultiplier: Number.isFinite(pwr) && pwr > 0 ? pwr : 1,
+        powerMultiplier: effectivePower,
         pictureUrl: n.pictureUrl ?? null,
         isFirstOwner: transfers.length === 1,
         playerAge: typeof n.anyPlayer.age === "number" ? n.anyPlayer.age : null,
@@ -1327,7 +1375,10 @@ export class SorareClient {
       .flatMap((s) => s.cardPacks ?? [])
       .map((p) => p.slug)
       .filter((slug) => /^[a-z0-9-]+$/.test(slug));
-    const setPrefix = liveSlugs[0]?.split("-nba-")[0] ?? "";
+    const setPrefix =
+      liveSlugs[0]?.split("-nba-")[0] ??
+      discovered[0]?.slug.split("-nba-")[0] ??
+      "divination";
     const standard = setPrefix ? ["gold", "silver", "bronze"].map((q) => `${setPrefix}-nba-${q}-pack`) : [];
     // Special offers (e.g. "Emirates Cup Platinum") are only listed for logged-in users: the
     // extension finds them on the user's Shop page, then reads price and odds publicly by slug.
@@ -1463,7 +1514,7 @@ export class SorareClient {
     const data = await this.postGraphQL<Record<string, RosterTeam | null>>(
       `query DailyPickerRosters { ${blocks.join("\n")} }`,
       {},
-      `daily_rosters_v2:${slugs.slice().sort().join(",")}`,
+      `daily_rosters_v4:${slugs.slice().sort().join(",")}`,
       signal,
     );
     const round1 = (v: number | null | undefined): number | null =>
@@ -1479,6 +1530,7 @@ export class SorareClient {
             pos === "basketball_guard" || pos === "basketball_forward" || pos === "basketball_center",
         );
         const l10 = round1(p.l10);
+        const rating = resolveStarRating(null, l10);
         cards.push({
           slug: `roster:${p.slug}`,
           rarity: "common",
@@ -1495,8 +1547,9 @@ export class SorareClient {
           l5: round1(p.l5),
           sorareClassicProjected: null,
           sorareDailyProjected: round1(p.daily),
-          starCost: resolveStarRating(null, l10).stars,
-          starSource: "estimated",
+          starCost: rating.stars,
+          starSource: rating.source,
+          gameplayTier: null,
         });
       }
     }
@@ -2507,5 +2560,199 @@ export class SorareClient {
     );
 
     return Array.from(bySlug.values());
+  }
+
+  /**
+   * Fetches ownership / acquisition history for owned cards (strictly batched under
+   * Sorare's 500 complexity / 7 depth caps) to power Skinledger-style Portfolio P&L.
+   */
+  async fetchCardAcquisitionHistory(
+    cards: GalleryCard[],
+    currency: Currency,
+    signal?: AbortSignal,
+  ): Promise<CardOwnershipRecord[]> {
+    const proCards = cards.filter((c) => c.rarity !== "common").slice(0, 30);
+    if (proCards.length === 0) return [];
+
+    const useFast = this.hasApiKey();
+    const chunkSize = useFast ? 10 : 6;
+    const query = `
+      query CardOwnershipPnl($slugs: [String!]!) {
+        anyCards(slugs: $slugs) {
+          slug
+          ownershipHistory {
+            from
+            transferType
+            amounts {
+              eurCents
+              usdCents
+              referenceCurrency
+            }
+          }
+        }
+      }
+    `;
+
+    const mapTransferType = (raw?: string | null): CardAcquisitionType => {
+      const upper = (raw ?? "").toUpperCase();
+      if (upper.includes("AUCTION")) return "auction";
+      if (upper.includes("SINGLE_SALE") || upper.includes("PRIMARY") || upper.includes("INSTANT")) {
+        return "instant_buy";
+      }
+      if (upper.includes("DIRECT") || upper.includes("TRADE") || upper.includes("SWAP")) {
+        return "trade";
+      }
+      if (upper.includes("REWARD")) return "reward";
+      if (upper.includes("CRAFT") || upper.includes("PACK") || upper.includes("MINT")) {
+        return "craft";
+      }
+      return "unknown";
+    };
+
+    const bySlug = new Map<
+      string,
+      {
+        acquiredAtMs: number | null;
+        acquiredPriceCents: number | null;
+        acquisitionType: CardAcquisitionType;
+      }
+    >();
+
+    const hashSlugs = (list: string[]): string => {
+      let h = 2166136261;
+      for (const s of list) {
+        for (let j = 0; j < s.length; j++) {
+          h ^= s.charCodeAt(j);
+          h = Math.imul(h, 16777619);
+        }
+        h ^= 44;
+        h = Math.imul(h, 16777619);
+      }
+      return (h >>> 0).toString(36);
+    };
+
+    for (let i = 0; i < proCards.length; i += chunkSize) {
+      const slice = proCards.slice(i, i + chunkSize);
+      const slugs = slice.map((c) => c.slug);
+      try {
+        const data = await this.postGraphQL<{
+          anyCards?: Array<{
+            slug: string;
+            ownershipHistory?: Array<{
+              from?: string | null;
+              transferType?: string | null;
+              amounts?: MonetaryAmountsRaw | null;
+            }> | null;
+          }> | null;
+        }>(query, { slugs }, `pnl_hist_v2_${slugs.length}_${hashSlugs(slugs)}`, signal);
+
+        for (const node of data.anyCards ?? []) {
+          const hist = node.ownershipHistory ?? [];
+          if (hist.length === 0) continue;
+          // Pick the entry with the most recent `from` timestamp (order-independent);
+          // fall back to the last entry if timestamps are absent.
+          let latest = hist[hist.length - 1];
+          let latestTs = latest.from ? Date.parse(latest.from) : NaN;
+          for (const entry of hist) {
+            const ts = entry.from ? Date.parse(entry.from) : NaN;
+            if (Number.isFinite(ts) && (!Number.isFinite(latestTs) || ts >= latestTs)) {
+              latest = entry;
+              latestTs = ts;
+            }
+          }
+          const cents = convertAmountsToCurrencyCents(latest.amounts, currency);
+          bySlug.set(node.slug, {
+            acquiredAtMs: Number.isFinite(latestTs) ? latestTs : null,
+            acquiredPriceCents: cents,
+            acquisitionType: mapTransferType(latest.transferType),
+          });
+        }
+      } catch (err) {
+        if (err instanceof RateLimitedError || err instanceof ScanCancelledError) throw err;
+        // Skip chunk gracefully if Sorare rejects or omits ownershipHistory
+      }
+    }
+
+    return proCards.map((card) => {
+      const found = bySlug.get(card.slug);
+      return {
+        cardSlug: card.slug,
+        playerSlug: card.playerSlug,
+        playerName: card.playerName,
+        teamSlug: card.teamSlug,
+        rarity: card.rarity,
+        seasonYear: card.seasonYear,
+        acquiredAtMs: found?.acquiredAtMs ?? null,
+        acquiredPriceCents: found?.acquiredPriceCents ?? null,
+        acquisitionType: found?.acquisitionType ?? "unknown",
+        currentFloorCents: card.lowestAskCents ?? null,
+        currency,
+      };
+    });
+  }
+
+  /**
+   * Fetches recent Sorare public sale price history (tokens.tokenPrices) for a player + rarity.
+   * Depth 4, complexity ~40, safe for unauthenticated and API-key modes.
+   */
+  async fetchPlayerPriceHistory(
+    playerSlug: string,
+    rarity: Rarity,
+    currency: Currency,
+    signal?: AbortSignal,
+  ): Promise<PlayerPricePoint[]> {
+    const cleanSlug = playerSlug.trim();
+    if (!cleanSlug) return [];
+    const query = `
+      query PlayerTokenPriceHistory($playerSlug: String!, $rarity: Rarity!) {
+        tokens {
+          tokenPrices(
+            playerSlug: $playerSlug
+            rarity: $rarity
+          ) {
+            date
+            amounts {
+              eurCents
+              usdCents
+              referenceCurrency
+            }
+            deal {
+              __typename
+            }
+          }
+        }
+      }
+    `;
+
+    try {
+      const data = await this.postGraphQL<{
+        tokens?: {
+          tokenPrices?: Array<{
+            date?: string | null;
+            amounts?: MonetaryAmountsRaw | null;
+            deal?: { __typename?: string | null } | null;
+          }> | null;
+        } | null;
+      }>(query, { playerSlug: cleanSlug, rarity }, `token_prices_${cleanSlug}_${rarity}`, signal);
+
+      const out: PlayerPricePoint[] = [];
+      for (const node of data.tokens?.tokenPrices ?? []) {
+        if (!node.date) continue;
+        const ts = Date.parse(node.date);
+        const cents = convertAmountsToCurrencyCents(node.amounts, currency);
+        if (!Number.isFinite(ts) || cents === null || cents <= 0) continue;
+        out.push({
+          date: node.date,
+          timestampMs: ts,
+          priceCents: cents,
+          currency,
+          source: node.deal?.__typename ?? undefined,
+        });
+      }
+      return out.sort((a, b) => a.timestampMs - b.timestampMs).slice(-60);
+    } catch (err) {
+      if (err instanceof RateLimitedError || err instanceof ScanCancelledError) throw err;
+      return [];
+    }
   }
 }

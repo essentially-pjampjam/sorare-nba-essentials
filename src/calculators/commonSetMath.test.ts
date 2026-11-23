@@ -3,6 +3,14 @@ import { buildSetTeams, rankDailyPickerCandidates } from "./commonSetMath";
 import { computeStarCost } from "./lineupOptimizerMath";
 import type { GalleryCard, InjuryReportEntry } from "../shared/types";
 
+const COMMON_TEAMS = [
+  { slug: "boston-celtics", name: "Boston Celtics" },
+  { slug: "denver-nuggets", name: "Denver Nuggets" },
+  { slug: "miami-heat", name: "Miami Heat" },
+  { slug: "dallas-mavericks", name: "Dallas Mavericks" },
+  { slug: "phoenix-suns", name: "Phoenix Suns" },
+];
+
 function makeCommon(
   playerSlug: string,
   playerName: string,
@@ -10,6 +18,11 @@ function makeCommon(
   l5: number,
   proj: number,
 ): GalleryCard {
+  let hash = 0;
+  for (let i = 0; i < playerSlug.length; i += 1) {
+    hash = (hash * 31 + playerSlug.charCodeAt(i)) >>> 0;
+  }
+  const team = COMMON_TEAMS[hash % COMMON_TEAMS.length];
   return {
     slug: `${playerSlug}-common`,
     rarity: "common",
@@ -17,8 +30,8 @@ function makeCommon(
     inSeasonEligible: true,
     grade: 0,
     powerMultiplier: 1,
-    teamName: "Boston Celtics",
-    teamSlug: "boston-celtics",
+    teamName: team.name,
+    teamSlug: team.slug,
     playerSlug,
     playerName,
     positions: ["basketball_guard"],

@@ -2,6 +2,28 @@
 
 All notable changes to pjampjam's Sorare NBA Essentials. Newest first.
 
+## 3.0.0 (2026-11-23)
+
+Major public release consolidating the entire v3 redesign, portfolio & wrapped suite, on-page Dailies & Lineup Helper overhaul, and optional cloud card tagging.
+
+Added:
+- Portfolio Value Tracker, P&L & Price History Charts (`PortfolioTrackerSection.tsx`, `portfolioMath.ts`, `sorareClient.ts`): Skinledger-style daily local floor snapshots with Day / Week / Month charts, Sorare GraphQL ownership/purchase history P&L (Biggest Spend, Best Auction Won, Best Trade, and Exclude current-season mints toggle), plus per-player recent market sale charts.
+- End-of-Season / Playoffs / Year-End Wrapped (`WrappedModal.tsx`, `wrappedMath.ts`, `wrappedShareCard.ts`): multi-slide Sorare NBA Wrapped modal with currency-aware stats and 1-click 16:9 PNG summary export.
+- 1-Click Shareable Lineup & GW Recap PNG Cards (`lineupShareCard.ts`, `recapShareCard.ts`, `ProProgressCard.tsx`): export 16:9 PNG graphics for Pro Optimal Lineups, Set Solo/Squad teams, and Game Week recaps directly to clipboard or file, plus a Pro Season Pulse & Reward Streak strip.
+- Card Tags (`Keep / Sell / Core / Trade`), Saved Rosters & Optional Cloudflare Workers/D1 Cloud Sync (`cardTagsMath.ts`, `cloudSyncClient.ts`, `cloudflare-worker/`): local card tags in Gallery, saved lineup presets in Lineups, 1-time Sorare profile verification auth (`profile.status` / `clubName` / `nickname`), and public gallery tag overlays when visiting other managers on sorare.com.
+- On-Page Dailies & Daily Missions Overlay (`sorareDetector.ts`, `dailyChecklistMath.ts`, `missionScanner.ts`, `shopScanner.ts`): zero-API-call bottom-right `Dailies • N left` pill tracking Set Free Daily Pack (in Play -> Daily Solo), Set Daily Solo, Set/Pro Daily Pickers, and Daily Missions, with default-ON `trackDailyTasks` toggle, 1-click Sync, and manual mobile check-offs that auto-reset at 07:00 UTC.
+- In-Panel GitHub Releases Update Checker (`updateChecker.ts`, `App.tsx`): daily check against GitHub Releases with a subtle dismissible update banner for sideloaded Chrome / Edge / Brave / Opera installs.
+- Visual & Strategy Tools: Liquid Essence Glass Tube with randomized rising bubbles & star-shine glints (optional milestone ticks via `showEssenceMilestones`), username-first decluttered header, Hoops Hairline logo across all surfaces, 5-card artwork preview strips with tooltips and p10-mean-p90 range bars, Playmaker Picker & named Sorare tier caps, Lock (Must-Start) & minutes chips, Position-Aware Injury Impact panel, Craft Clue EVOI advisor, Vault Unseal & Reseal profit detector, Unified Guides & Strategy Hub (`GuidesModal.tsx`), `Try Demo (@pjampjam)` onboarding, and global `Alt+Shift+S` shortcut.
+
+Changed & Fixed:
+- Smart Lineup Helper HUD (`sorareDetector.ts`): isolates searches to the open Sorare drawer, resets stale filters, waits for placement confirmation and next-slot card loading, and displays player portraits, star cost, and projected points.
+- Optimizer & Math Hardening: enforced Sorare NBA's max 4 players/team rule, direct p10/p90 DFS optimization, exact 0/1 Knapsack DP in Sealing Deal Finder, per-game Vegas/B2B peak order statistics, Negative Binomial CDF for count-stat Daily Pickers, Set Holo (+20%) / Shiny (+10%) edition bonus fallbacks, `< 24h` Quest auction window, and MV3 `chrome.storage.local` quota-safe cache eviction.
+- Performance & Hygiene: Fast-Mode concurrency-2 pipelining under rate limits, parallel ESPN/local-tab sync, React.lazy code splitting, and 446 automated checks (invariants, unit tests, and E2E tests).
+
+---
+
+## Legacy (v2.x)
+
 ## 2.7.4 (2026-11-21)
 
 Added:

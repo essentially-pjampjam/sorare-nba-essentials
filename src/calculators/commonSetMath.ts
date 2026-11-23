@@ -111,8 +111,8 @@ export function rankDailyPickerCandidates(
     const targetScore = Math.round(Math.max(20, l10 + 7) * 10) / 10;
     const edgeVsTarget = Math.round((projectedScore - targetScore) * 10) / 10;
 
-    // Single-game NBA fantasy scoring stdev (~26% of projected points, min 5.5)
-    const sigma = Math.max(5.5, projectedScore * 0.26);
+    // Single-game NBA fantasy scoring stdev (~35% CV matching the unified NBA model, min 5.5)
+    const sigma = Math.max(5.5, projectedScore * 0.35);
     const z = (projectedScore - targetScore) / sigma;
     const hitChancePct = Math.round(
       Math.max(1, Math.min(92, (1 - normalCdf(-z)) * 100)),

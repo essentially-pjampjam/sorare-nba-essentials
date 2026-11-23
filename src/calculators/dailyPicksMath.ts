@@ -1,10 +1,10 @@
 import type { GalleryCard, InjuryReportEntry, PlayerSeasonStats } from "../shared/types";
 import { rankDailyPickerCandidates } from "./commonSetMath";
-import { normalCdf, normalizePlayerName } from "./lineupOptimizerMath";
+import { normalizePlayerName } from "./lineupOptimizerMath";
 import { buildTeamOutStarMap } from "./questOptimizerMath";
 
 /** Preset mission ids (used until the live missions are scanned from Sorare). */
-export type DailyMission = "set_daily" | "pro_daily" | "rebounds" | "double_double";
+export type DailyMission = "set_daily" | "pro_daily" | "rebounds" | "playmaker" | "double_double";
 export type PickStrategy = "best" | "safe" | "risk";
 export type OwnershipFilter = "owned" | "not_owned" | "all";
 
@@ -66,6 +66,19 @@ export const DAILY_MISSIONS: Record<DailyMission, PickerMissionSpec> = {
     maxStars: 1.5,
     source: "preset",
   },
+  playmaker: {
+    id: "playmaker",
+    title: "Playmaker Picker",
+    rule: "Player ranked DNP Plus (1.5★) or less records 4+ assists",
+    reward: "25 Essence per hit, 250 if all hit",
+    picks: 3,
+    rarity: "limited",
+    kind: "stat",
+    stat: "assists",
+    target: 4,
+    maxStars: 1.5,
+    source: "preset",
+  },
   double_double: {
     id: "double_double",
     title: "Double Double Picker",
@@ -92,8 +105,66 @@ const STAT_WORDS: Array<[PickerStat, RegExp]> = [
   ["assists", /assist/],
   ["steals", /steal/],
   ["blocks", /block/],
-  ["points", /points?(?! per)/],
+  ["points", /\bpoints?\b(?!\s+per)/],
 ];
+
+const NAMED_TIER_STARS: Array<[RegExp, number]> = [
+  [/^dnp(?:\s+plus|\s*\+)$/, 1.5],
+  [/^dnp$/, 1],
+  [/^reserve(?:\s+plus|\s*\+)$/, 1.5],
+  [/^reserve$/, 1],
+  [/^roster(?:\s+plus|\s*\+)$/, 2.5],
+  [/^roster$/, 2],
+  [/^impact(?:\s+plus|\s*\+)$/, 3.5],
+  [/^impact$/, 3],
+  [/^star(?:\s+plus|\s*\+)$/, 4.5],
+  [/^star$/, 4],
+  [/^goat$/, 5],
+  [/^icon$/, 5],
+];
+
+function parseNamedTierMaxStars(text: string): number | null {
+  const candidates = [
+    ...Array.from(text.matchAll(/\b(?:ranked|rated)\s+([a-z]+(?:\s+plus|\s*\+)?)(?=\s|$|[.,;:])/g)).map((m) => m[1]),
+    ...Array.from(text.matchAll(/\b([a-z]+(?:\s+plus|\s*\+)?)\s+(?:or\s+(?:less|below|lower)|max)\b/g)).map((m) => m[1]),
+  ];
+  for (const raw of candidates) {
+    const clean = raw.replace(/\s+/g, " ").trim();
+    const match = NAMED_TIER_STARS.find(([re]) => re.test(clean));
+    if (match) return match[1];
+  }
+  return null;
+}
+
+/**
+ * Distinguishes Pro vs Set DecisivePlayerPickerTask items when Sorare's SPA Apollo cache
+ * holds tasks from both modes in the same tab.
+ */
+export function classifyPickerTaskMode(task: RawPickerTask): "pro" | "set" {
+  const desc = task.description.trim();
+  const slug = task.slug.toLowerCase();
+  const title = task.title.toLowerCase();
+  if (/^(classic|in-season):/i.test(desc)) return "pro";
+  if (/\b(xp|limited|rare|super\s*rare|unique)\b/i.test(desc)) return "pro";
+  if (/\b(classic|pro|limited|rare|playmaker|rebound|double|triple)\b/.test(slug)) return "pro";
+  if (/\b(playmaker|rebound|double[- ]double|triple[- ]double)\b/.test(title)) return "pro";
+  if ((task.picks || 1) > 1) return "pro";
+  return "set";
+}
+
+/** Filters and deduplicates cached picker tasks so Pro missions never leak into Set mode. */
+export function filterPickerTasksForMode<T extends RawPickerTask>(tasks: T[], mode: "pro" | "set"): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const t of tasks) {
+    if (classifyPickerTaskMode(t) !== mode) continue;
+    const key = (t.slug || `${t.title}::${t.description}`).toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(t);
+  }
+  return out;
+}
 
 /** Turns a live Sorare picker task into a mission spec (rule, reward, stat target, star cap). */
 export function parsePickerMission(raw: RawPickerTask, rarity: GalleryCard["rarity"]): PickerMissionSpec {
@@ -112,6 +183,7 @@ export function parsePickerMission(raw: RawPickerTask, rarity: GalleryCard["rari
     if (!stat || !target) kind = "score";
   }
   const starMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:★|stars?)\s*(?:or less|or below|max)/) ?? text.match(/rated\s+(\d+(?:\.\d+)?)/);
+  const maxStars = starMatch ? Number(starMatch[1]) : parseNamedTierMaxStars(text);
   const rewards = Array.from(desc.matchAll(/win (?:a total of )?([^.]+)/gi)).map((m) => m[1].trim());
   const rule = desc
     .split(/(?<=\.)\s+/)
@@ -130,7 +202,7 @@ export function parsePickerMission(raw: RawPickerTask, rarity: GalleryCard["rari
     kind,
     stat,
     target,
-    maxStars: starMatch ? Number(starMatch[1]) : null,
+    maxStars,
     source: "detected",
   };
 }
@@ -178,12 +250,27 @@ export interface DailyPickArgs {
 
 const round1 = (v: number) => Math.round(v * 10) / 10;
 
-/** P(X >= target) for a count stat with mean `mean` (normal approx with continuity correction). */
+/**
+ * P(X >= target) for a discrete NBA count stat with mean `mean` using an overdispersed
+ * Poisson (Negative Binomial) CDF (dispersion r = 6 -> Var(X) = mean + mean^2 / 6).
+ * Much more accurate than a Normal approximation for low-mean count stats (assists, rebounds, steals, blocks).
+ */
 export function probabilityStatAtLeast(mean: number, target: number): number {
-  if (!(mean > 0)) return 0;
-  const sd = Math.max(1.6, Math.sqrt(mean) * 1.2);
-  const z = (mean - (target - 0.5)) / sd;
-  return Math.max(0, Math.min(99, Math.round(normalCdf(z) * 100)));
+  if (!(mean > 0) || !Number.isFinite(target)) return 0;
+  const kTarget = Math.ceil(target);
+  if (kTarget <= 0) return 99;
+  const r = 6;
+  const p = r / (r + mean);
+  const q = 1 - p;
+  let logP = r * Math.log(p);
+  let cdfBelow = 0;
+  for (let k = 0; k < kTarget; k += 1) {
+    cdfBelow += Math.exp(logP);
+    if (cdfBelow >= 1) return 0;
+    logP += Math.log(k + r) - Math.log(k + 1) + Math.log(q);
+  }
+  const tail = Math.max(0, 1 - cdfBelow);
+  return Math.max(0, Math.min(99, Math.round(tail * 100)));
 }
 
 function tagPlayer(

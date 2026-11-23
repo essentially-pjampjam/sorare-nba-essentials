@@ -8,6 +8,22 @@ interface CacheEnvelope<T> {
 
 const CACHE_PREFIX = "jamassist_cache:";
 
+function isEnvelopeFresh(
+  envelope: Partial<CacheEnvelope<unknown>> | undefined,
+  ttlMs: number,
+  now: number,
+): envelope is CacheEnvelope<unknown> {
+  return Boolean(
+    envelope &&
+      typeof envelope.expiresAt === "number" &&
+      Number.isFinite(envelope.expiresAt) &&
+      typeof envelope.storedAt === "number" &&
+      Number.isFinite(envelope.storedAt) &&
+      now <= envelope.expiresAt &&
+      now - envelope.storedAt <= ttlMs,
+  );
+}
+
 export async function getCached<T>(
   key: string,
   ttlMs: number = CACHE_TTL_MS,
@@ -18,14 +34,7 @@ export async function getCached<T>(
   if (!envelope) return null;
 
   const now = Date.now();
-  if (
-    typeof envelope.expiresAt !== "number" ||
-    !Number.isFinite(envelope.expiresAt) ||
-    typeof envelope.storedAt !== "number" ||
-    !Number.isFinite(envelope.storedAt) ||
-    now > envelope.expiresAt ||
-    now - envelope.storedAt > ttlMs
-  ) {
+  if (!isEnvelopeFresh(envelope, ttlMs, now)) {
     await chrome.storage.local.remove(fullKey);
     return null;
   }
@@ -35,7 +44,7 @@ export async function getCached<T>(
 
 let writesSincePrune = 0;
 
-async function pruneExpiredCache(): Promise<void> {
+export async function pruneExpiredCache(): Promise<number> {
   const all = await chrome.storage.local.get(null);
   const now = Date.now();
   const expiredKeys: string[] = [];
@@ -54,6 +63,31 @@ async function pruneExpiredCache(): Promise<void> {
   if (expiredKeys.length > 0) {
     await chrome.storage.local.remove(expiredKeys);
   }
+  return expiredKeys.length;
+}
+
+/**
+ * Evicts the oldest cached entries (by storedAt) while never touching user
+ * settings, API keys, progress history, or non-cache keys.
+ */
+async function evictOldestCacheEntries(fraction = 0.5): Promise<number> {
+  const all = await chrome.storage.local.get(null);
+  const entries: Array<{ key: string; storedAt: number }> = [];
+  for (const [k, v] of Object.entries(all)) {
+    if (!k.startsWith(CACHE_PREFIX)) continue;
+    const env = v as Partial<CacheEnvelope<unknown>> | undefined;
+    const storedAt =
+      env && typeof env.storedAt === "number" && Number.isFinite(env.storedAt)
+        ? env.storedAt
+        : 0;
+    entries.push({ key: k, storedAt });
+  }
+  if (entries.length === 0) return 0;
+  entries.sort((a, b) => a.storedAt - b.storedAt);
+  const count = Math.max(1, Math.ceil(entries.length * Math.min(1, Math.max(0.1, fraction))));
+  const keysToRemove = entries.slice(0, count).map((e) => e.key);
+  await chrome.storage.local.remove(keysToRemove);
+  return keysToRemove.length;
 }
 
 export async function setCached<T>(
@@ -68,7 +102,28 @@ export async function setCached<T>(
     storedAt,
     expiresAt: storedAt + ttlMs,
   };
-  await chrome.storage.local.set({ [fullKey]: envelope });
+  try {
+    await chrome.storage.local.set({ [fullKey]: envelope });
+  } catch {
+    // Recover from MV3 chrome.storage.local QUOTA_BYTES exhaustion without crashing the scan.
+    try {
+      await pruneExpiredCache();
+      await chrome.storage.local.set({ [fullKey]: envelope });
+    } catch {
+      try {
+        await evictOldestCacheEntries(0.5);
+        await chrome.storage.local.set({ [fullKey]: envelope });
+      } catch {
+        try {
+          await evictOldestCacheEntries(1);
+          await chrome.storage.local.set({ [fullKey]: envelope });
+        } catch {
+          // Still over quota (e.g. oversized single payload): skip caching gracefully.
+          return storedAt;
+        }
+      }
+    }
+  }
   writesSincePrune += 1;
   if (writesSincePrune >= 8) {
     writesSincePrune = 0;

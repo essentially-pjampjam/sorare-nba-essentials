@@ -15,6 +15,7 @@ import { useMemo, useState } from "react";
 import {
   DEFAULT_CRAFT_CLUES,
   evaluateCraftPool,
+  recommendBestCraftClue,
 } from "../../calculators/craftAdvisorMath";
 import { normalizePlayerName } from "../../calculators/lineupOptimizerMath";
 import {
@@ -95,6 +96,11 @@ export function CraftTab({
     return evaluateCraftPool(craftPool.players, clues, collectionNeedSlugs);
   }, [clues, collectionNeedSlugs, craftPool]);
 
+  const clueEvoi = useMemo(() => {
+    if (!craftPool) return null;
+    return recommendBestCraftClue(craftPool.players, clues, collectionNeedSlugs);
+  }, [clues, collectionNeedSlugs, craftPool]);
+
   const sortedCandidates = useMemo(() => {
     if (!evaluation) return [];
     const dir = sortAsc ? 1 : -1;
@@ -164,7 +170,7 @@ export function CraftTab({
   if (!craftPool && !isLoading) {
     return (
       <div className="rounded-2xl border border-dashed border-white/10 bg-[#111726] p-5 text-center">
-        <Sparkles className="mx-auto mb-2 h-7 w-7 text-amber-400" />
+        <Sparkles className={`mx-auto mb-2 h-7 w-7 ${rarityMeta.accentClass}`} />
         <h3 className="text-sm font-semibold text-slate-100">
           {rarityMeta.label} Craft Reveal & EV Advisor
         </h3>
@@ -281,7 +287,7 @@ export function CraftTab({
 
         <div className="rounded-xl border border-white/8 bg-[#111726] p-2.5">
           <div className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-slate-400">
-            <Sparkles className="h-3 w-3 text-amber-400" />
+            <Sparkles className={`h-3 w-3 ${rarityMeta.accentClass}`} />
             Expected Value
           </div>
           {evaluation.expectedValueCents !== null ? (
@@ -314,6 +320,48 @@ export function CraftTab({
               ({evaluation.bestCollectionNeedPlayer.pullChancePct.toFixed(1)}%)
             </span>
           </span>
+        </div>
+      )}
+
+      {/* Craft Clue EVOI Advisor ("Best Clue to Use") */}
+      {clueEvoi && clueEvoi.bestClue && (
+        <div className="rounded-xl border border-sky-400/30 bg-sky-500/10 p-2.5 text-[11px]">
+          <div className="flex flex-wrap items-center justify-between gap-1.5">
+            <span className="inline-flex items-center gap-1.5 font-semibold text-sky-200">
+              <Sparkles className="h-3.5 w-3.5 text-sky-300" />
+              Best Clue to Use: {clueEvoi.bestClue.label}
+            </span>
+            <div className="flex items-center gap-1.5 text-[10px] tabular-nums">
+              <span className="rounded bg-sky-500/20 px-1.5 py-0.5 font-semibold text-sky-100">
+                -{clueEvoi.bestClue.expectedPoolReductionPct}% pool
+              </span>
+              {clueEvoi.bestClue.evoiCents !== null && clueEvoi.bestClue.evoiCents > 0 && (
+                <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 font-semibold text-emerald-200">
+                  +{formatMoney(clueEvoi.bestClue.evoiCents, currency)} EVOI
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="mt-1 text-[10px] text-slate-300">
+            Top outcome: <span className="text-slate-100">{clueEvoi.bestClue.bestOutcomeLabel}</span>
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-1 text-[9.5px] tabular-nums">
+            {clueEvoi.rankedClues
+              .filter((c) => !c.alreadyUsed)
+              .slice(0, 4)
+              .map((c, idx) => (
+                <span
+                  key={c.id}
+                  className={`rounded-md border px-1.5 py-0.5 ${
+                    idx === 0
+                      ? "border-sky-400/40 bg-sky-500/20 text-sky-100 font-semibold"
+                      : "border-white/10 bg-black/25 text-slate-400"
+                  }`}
+                >
+                  #{idx + 1} {c.label} (-{c.expectedPoolReductionPct}%)
+                </span>
+              ))}
+          </div>
         </div>
       )}
 

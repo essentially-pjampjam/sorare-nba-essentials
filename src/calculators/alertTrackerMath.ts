@@ -151,6 +151,7 @@ export function evaluateAlertEvents(
             (l.playerNames ?? []).some((n) => normalizeName(n) === key),
         )
         .map((l) => l.id);
+      if (prefs.injuryLineupsOnly && lineupIds.length === 0) continue;
       push("injury_risk", `${key}:${cur.status}`, {
         title: `${cur.playerName}: ${prevStatus} → ${cur.status}`,
         message: `${cur.comment || cur.rawStatus}${lineupIds.length ? ` In ${lineupIds.length} open lineup(s): consider a swap.` : ""}`,
@@ -186,11 +187,29 @@ export function evaluateAlertEvents(
     const windowMs = (config.cutoffReminderMinutesBefore ?? DEFAULT_CUTOFF_REMINDER_MINUTES) * 60_000;
     if (snap.gwRemainingMs > 0 && snap.gwRemainingMs <= windowMs) {
       const mins = Math.round(snap.gwRemainingMs / 60_000);
-      push("gw_cutoff", snap.gwFixtureSlug ?? "gw", {
-        title: `GW locks in ${mins} min`,
-        message: "Check your lineups before the Game Week cutoff.",
-        targetUrl: buildArenaLineupsUrl(snap.gwFixtureSlug),
-      });
+      const health = findPreLockLineupRisks(
+        inputs.currentLineups,
+        inputs.cards,
+        inputs.currentInjuriesByName,
+        inputs.gamesPerTeam,
+      );
+      if (health.flagged.length > 0) {
+        const sortedFlagged = [...health.flagged].sort();
+        const preview = sortedFlagged.slice(0, 4).join(", ");
+        const extra = sortedFlagged.length > 4 ? ` (+${sortedFlagged.length - 4} more)` : "";
+        push("gw_cutoff", `${snap.gwFixtureSlug ?? "gw"}:risks:${sortedFlagged.join("|")}`, {
+          title: `GW locks in ${mins} min: ${sortedFlagged.length} lineup risk${sortedFlagged.length === 1 ? "" : "s"}`,
+          message: `Action needed before lock: ${preview}${extra}.`,
+          lineupIds: health.affectedLineupIds,
+          targetUrl: buildArenaLineupsUrl(snap.gwFixtureSlug),
+        });
+      } else {
+        push("gw_cutoff", snap.gwFixtureSlug ?? "gw", {
+          title: `GW locks in ${mins} min`,
+          message: "Check your lineups before the Game Week cutoff.",
+          targetUrl: buildArenaLineupsUrl(snap.gwFixtureSlug),
+        });
+      }
     }
   }
 
@@ -203,4 +222,88 @@ export function evaluateAlertEvents(
   }
 
   return events;
+}
+
+/**
+ * Scans open/submitted lineups for already-OUT, DOUBTFUL, or 0G (no game this slate) starters
+ * so the pre-lock GW cutoff alert surfaces concrete swap risks before lock.
+ */
+export function findPreLockLineupRisks(
+  currentLineups: AlertEvaluationInputs["currentLineups"],
+  cards: AlertEvaluationInputs["cards"],
+  currentInjuriesByName: Record<string, InjuryReportEntry>,
+  gamesPerTeam?: Record<string, number>,
+): { flagged: string[]; affectedLineupIds: string[] } {
+  if (currentLineups.length === 0) return { flagged: [], affectedLineupIds: [] };
+  const cardBySlug = new Map(cards.map((c) => [c.slug, c]));
+  const cardByNormName = new Map(cards.map((c) => [normalizeName(c.playerName), c]));
+  const injuryByNormName = new Map<string, InjuryReportEntry>();
+  for (const [rawKey, entry] of Object.entries(currentInjuriesByName)) {
+    const key = normalizeName(entry.playerName || rawKey);
+    if (key) injuryByNormName.set(key, entry);
+  }
+  const hasSchedule = Boolean(gamesPerTeam && Object.keys(gamesPerTeam).length > 0);
+
+  const flaggedMap = new Map<string, string>();
+  const affectedLineupSet = new Set<string>();
+
+  for (const lineup of currentLineups) {
+    const starters: Array<{ name: string; normName: string; teamSlug: string | null; knownCard: boolean }> = [];
+    const seenInLineup = new Set<string>();
+    const lineupTeams = lineup.teamSlugs ?? [];
+
+    for (let i = 0; i < lineup.cardSlugs.length; i += 1) {
+      const slug = lineup.cardSlugs[i];
+      const card = cardBySlug.get(slug);
+      if (!card) continue;
+      const norm = normalizeName(card.playerName);
+      if (seenInLineup.has(norm)) continue;
+      seenInLineup.add(norm);
+      starters.push({
+        name: card.playerName,
+        normName: norm,
+        teamSlug: card.teamSlug ?? lineupTeams[i] ?? null,
+        knownCard: true,
+      });
+    }
+    const rawNames = lineup.playerNames ?? [];
+    for (let i = 0; i < rawNames.length; i += 1) {
+      const rawName = rawNames[i];
+      const norm = normalizeName(rawName);
+      if (!norm || seenInLineup.has(norm)) continue;
+      seenInLineup.add(norm);
+      const card = cardByNormName.get(norm);
+      const fallbackTeamSlug = lineupTeams[i] ?? null;
+      starters.push({
+        name: card?.playerName ?? rawName,
+        normName: norm,
+        teamSlug: card?.teamSlug ?? fallbackTeamSlug,
+        knownCard: Boolean(card || fallbackTeamSlug),
+      });
+    }
+
+    for (const starter of starters) {
+      const reasons: string[] = [];
+      const injury = injuryByNormName.get(starter.normName);
+      if (injury?.status === "OUT" || injury?.status === "DOUBTFUL") {
+        reasons.push(injury.status);
+      }
+      if (
+        hasSchedule &&
+        starter.knownCard &&
+        (!starter.teamSlug || (gamesPerTeam?.[starter.teamSlug] ?? 0) === 0)
+      ) {
+        reasons.push("0G");
+      }
+      if (reasons.length > 0) {
+        affectedLineupSet.add(lineup.id);
+        flaggedMap.set(starter.normName, `${starter.name} (${reasons.join("/")})`);
+      }
+    }
+  }
+
+  return {
+    flagged: Array.from(flaggedMap.values()),
+    affectedLineupIds: Array.from(affectedLineupSet),
+  };
 }

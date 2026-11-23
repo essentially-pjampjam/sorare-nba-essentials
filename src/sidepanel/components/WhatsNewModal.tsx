@@ -20,6 +20,17 @@ const RELEASE_HIGHLIGHTS: Array<{
   items: string[];
 }> = [
   {
+    version: "3.0.0",
+    title: "v3.0.0: Portfolio & P&L Charts, Wrapped, Shareable Cards, On-Page Dailies & Liquid Glass UI",
+    items: [
+      "Added Skinledger-style Portfolio Value & P&L tracking in Gallery: daily local floor snapshots with Day/Week/Month charts, Sorare acquisition P&L (Biggest Spend, Best Auction Won, Best Trade, Exclude current-season mints toggle), and per-player recent market sale charts.",
+      "Added 1-click 16:9 PNG exporters for Pro Optimal Lineups, Set Solo/Squad teams, Game Week Recaps, and a multi-slide Sorare NBA Wrapped modal (Regular Season / Playoffs / Year-End).",
+      "Added local + optional Cloudflare Workers/D1 Card Tags (Keep / Sell / Core / Trade), Saved Roster presets in Lineups, 1-time Sorare profile verification auth, and public gallery tag overlays on sorare.com.",
+      "Added the on-page bottom-right Dailies & Daily Missions checklist (Set Free Daily Pack in Daily Solo, Set Solo, Daily Pickers, Daily Missions) with default-ON tracking toggle, 1-click Sync, and manual mobile check-offs that auto-reset at 07:00 UTC.",
+      "Redesigned the side panel with a Liquid Essence Glass Tube (optional milestone lines in Settings), username-first top bar, Hoops Hairline logo, 5-card artwork preview strips, Smart Lineup Helper drawer stepper, Guides & Strategy Hub, Try Demo mode, Alt+Shift+S shortcut, and a daily GitHub Releases update checker.",
+    ],
+  },
+  {
     version: "2.7.4",
     title: "v2.7.4: Set | Pro Switch, Your Lineups & New Look",
     items: [

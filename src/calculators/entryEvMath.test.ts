@@ -7,7 +7,7 @@ import {
 } from "./entryEvMath";
 
 describe("entryEvMath", () => {
-  it("lineup spread grows with same-team correlation", () => {
+  it("lineup spread reflects slight negative NBA teammate correlation", () => {
     const solo = lineupStdDev([
       { projectedScore: 30, teamSlug: "a" },
       { projectedScore: 30, teamSlug: "b" },
@@ -16,7 +16,7 @@ describe("entryEvMath", () => {
       { projectedScore: 30, teamSlug: "a" },
       { projectedScore: 30, teamSlug: "a" },
     ]);
-    expect(stacked).toBeGreaterThan(solo);
+    expect(stacked).toBeLessThan(solo);
     expect(solo).toBeCloseTo(Math.sqrt(2) * 30 * 0.35, 5);
   });
 

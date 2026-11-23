@@ -159,6 +159,45 @@ export function summarizeProHistory(history: ProProgressRecord[]): ProGameWeekSu
     });
 }
 
+export interface ProSeasonPulse {
+  gameWeeks: number;
+  totalLineups: number;
+  rewardedLineups: number;
+  cashLineups: number;
+  rewardHitRatePct: number;
+  cashHitRatePct: number;
+  bestTopPct: number | null;
+  /** Consecutive most-recent Game Weeks with at least 1 rewarded lineup. */
+  currentRewardStreak: number;
+}
+
+/** Aggregated hit rates, best finish, and active reward streak from local Pro history. */
+export function summarizeProSeasonPulse(history: ProProgressRecord[]): ProSeasonPulse | null {
+  const weeks = summarizeProHistory(history);
+  if (weeks.length === 0) return null;
+  const totalLineups = weeks.reduce((s, w) => s + w.lineups, 0);
+  const rewardedLineups = weeks.reduce((s, w) => s + w.rewarded, 0);
+  const cashLineups = weeks.reduce((s, w) => s + w.cash, 0);
+  const pcts = weeks
+    .map((w) => w.bestTopPct)
+    .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+  let currentRewardStreak = 0;
+  for (const w of weeks) {
+    if (w.rewarded > 0) currentRewardStreak += 1;
+    else break;
+  }
+  return {
+    gameWeeks: weeks.length,
+    totalLineups,
+    rewardedLineups,
+    cashLineups,
+    rewardHitRatePct: totalLineups > 0 ? Math.round((rewardedLineups / totalLineups) * 100) : 0,
+    cashHitRatePct: totalLineups > 0 ? Math.round((cashLineups / totalLineups) * 100) : 0,
+    bestTopPct: pcts.length > 0 ? Math.min(...pcts) : null,
+    currentRewardStreak,
+  };
+}
+
 export interface PageLineupRow extends ProLineupProgress {
   liveProjectedRank: number | null;
   playerNames: string[];

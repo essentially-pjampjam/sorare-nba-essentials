@@ -159,6 +159,7 @@ interface CollectionsTabProps {
   hasScanned: boolean;
   hasUsername: boolean;
   isLoading: boolean;
+  onTryDemo?: () => void;
 }
 
 function extractCollectionSeasonTag(slug: string): string | null {
@@ -217,6 +218,7 @@ export function CollectionsTab({
   hasScanned,
   hasUsername,
   isLoading,
+  onTryDemo,
 }: CollectionsTabProps) {
   const [sortField, setSortField] = useState<SortField>("minCard");
   const [sortAsc, setSortAsc] = useState<boolean>(true);
@@ -535,7 +537,7 @@ export function CollectionsTab({
   if (!hasScanned && !isLoading) {
     return (
       <div className="rounded-2xl border border-white/8 bg-[#111726] p-6 text-center">
-        <Sparkles className="mx-auto mb-2.5 h-7 w-7 text-amber-400" />
+        <Sparkles className={`mx-auto mb-2.5 h-7 w-7 ${rarityMeta.accentClass}`} />
         <h2 className="text-sm font-semibold text-slate-100">
           {hasUsername
             ? `Ready to Scan ${rarityMeta.label}`
@@ -546,7 +548,7 @@ export function CollectionsTab({
           individual collections only when you click them - keeping Sorare fast
           and rate-limit safe.
         </p>
-        {hasUsername && (
+        {hasUsername ? (
           <button
             type="button"
             onClick={onScanNow}
@@ -554,7 +556,15 @@ export function CollectionsTab({
           >
             Scan {rarityMeta.label} Collections
           </button>
-        )}
+        ) : onTryDemo ? (
+          <button
+            type="button"
+            onClick={onTryDemo}
+            className="mt-3.5 rounded-xl border border-sky-400/40 bg-sky-500/15 px-4 py-1.5 text-xs font-semibold text-sky-200 hover:border-sky-300 hover:bg-sky-500/25"
+          >
+            Try Demo (@pjampjam)
+          </button>
+        ) : null}
       </div>
     );
   }
@@ -580,11 +590,11 @@ export function CollectionsTab({
 
         <div className="rounded-xl border border-white/8 bg-[#111726] p-3">
           <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-slate-400">
-            <Sparkles className="h-3 w-3 text-amber-400" />
+            <Sparkles className={`h-3 w-3 ${rarityMeta.accentClass}`} />
             Live Quest Essence
           </div>
           <div className="mt-1 flex items-baseline gap-1.5">
-            <span className="text-lg font-semibold text-amber-300">
+            <span className={`text-lg font-semibold ${rarityMeta.accentClass}`}>
               {questEval.totalLiveQuestEssence.toLocaleString()}
             </span>
             <span className="text-[11px] text-slate-400">Essence</span>
@@ -644,7 +654,7 @@ export function CollectionsTab({
         <div className="rounded-2xl border border-white/8 bg-[#111726] p-3">
           <div className="mb-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-slate-400">
             <span className="inline-flex items-center gap-1.5 text-slate-200">
-              <Sparkles className="h-3.5 w-3.5 text-amber-400" />
+              <Sparkles className={`h-3.5 w-3.5 ${rarityMeta.accentClass}`} />
               Nearing Goal Radar
             </span>
             <span>Real Quests &amp; Bonus %</span>
@@ -935,11 +945,11 @@ export function CollectionsTab({
                           <div className="flex items-center justify-between gap-2 text-[9.5px] text-slate-400">
                             <span>
                               {hasLoadedQuestDeals || allScannedBargains.length > 0
-                                ? "No live matches on Sorare right now (auctions only show if < 1h left). Click Refresh or check Sorare directly."
+                                ? "No live matches on Sorare right now (auctions only show if < 24h left). Click Refresh or check Sorare directly."
                                 : questBuyFilter === "primary_instant"
                                   ? "Click Load Prices to find direct Sorare Primary Offers."
                                   : questBuyFilter === "auction"
-                                    ? "Click Load Prices to scan live <1h 2026 auctions."
+                                    ? "Click Load Prices to scan live <24h 2026 auctions."
                                     : "Click Load Prices to rank cheapest eligible buys."}
                             </span>
                             {onLoadQuestDeals ? (

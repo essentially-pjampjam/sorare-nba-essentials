@@ -1,5 +1,5 @@
 import { ChevronRight, ExternalLink, Lock, RefreshCw } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { planSealBudget, rankSealDeals } from "../../calculators/sealDealsMath";
 import type { BargainListing, Currency, GalleryResult, Rarity } from "../../shared/types";
 import { getSealDeals, openInActiveTab } from "../api";
@@ -22,14 +22,32 @@ export function SealDealsSection({ gallery, rarity, currency }: { gallery: Galle
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [budget, setBudget] = useState(500);
+  const requestIdRef = useRef(0);
+
+  useEffect(() => {
+    requestIdRef.current += 1;
+    setListings(null);
+    setError(null);
+    setBusy(false);
+  }, [rarity, currency]);
 
   const scan = () => {
+    const reqId = ++requestIdRef.current;
     setBusy(true);
     setError(null);
     getSealDeals(rarity)
-      .then(setListings)
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setBusy(false));
+      .then((res) => {
+        if (requestIdRef.current !== reqId) return;
+        setListings(res);
+      })
+      .catch((e: unknown) => {
+        if (requestIdRef.current !== reqId) return;
+        setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (requestIdRef.current !== reqId) return;
+        setBusy(false);
+      });
   };
 
   const owned = useMemo(() => new Set((gallery?.cards ?? []).map((c) => c.playerSlug)), [gallery]);

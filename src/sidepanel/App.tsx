@@ -1,7 +1,7 @@
 import { mergeApiAndDomLineups } from "../shared/domLineupMerge";
 import {
   AlertCircle,
-  AlignJustify,
+  BookOpen,
   Zap,
   Heart,
   KeyRound,
@@ -15,13 +15,15 @@ import {
   Settings,
   Sparkles,
   TrendingDown,
+  Trophy,
   UserCheck,
   Wallet,
   Wand2,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { analyzeCollections } from "../calculators/collectionEssenceMath";
+import { normalizeSavedRosters, setCardTagInMap } from "../calculators/cardTagsMath";
 import {
   DEFAULT_SETTINGS,
   RARITIES,
@@ -32,14 +34,20 @@ import type {
   BargainListing,
   BargainMode,
   BargainsResult,
+  CardOwnershipRecord,
+  CardTag,
   CraftPoolResult,
   Currency,
   EssenceMilestoneRule,
   GalleryResult,
+  PortfolioPnlResult,
+  ProProgressRecord,
   ProjectionSource,
   Rarity,
+  SavedRosterPreset,
   ScanProgress,
   ScanResult,
+  UpdateCheckState,
   UserSettings,
 } from "../shared/types";
 import {
@@ -47,12 +55,17 @@ import {
   clearCache,
   clearWatchlistAlerts,
   connectProgressPort,
+  dismissUpdate,
   fetchBargains,
   fetchCraftPool,
   fetchGalleryForLineups,
   getDetectedUsername,
+  getProProgressHistory,
+  getSetPackAdvisor,
   getSettings,
+  getUpdateStatus,
   openDashboardTab,
+  openInActiveTab,
   priceCollection,
   priceCraftCandidates,
   priceGalleryCards,
@@ -62,17 +75,41 @@ import {
   saveSettings,
   scanCollections,
 } from "./api";
-import { CommandPaletteModal } from "./components/CommandPaletteModal";
-import { SettingsModal } from "./components/SettingsModal";
+import { LoadingStage } from "./components/LoadingStage";
 import { SupportModal } from "./components/SupportModal";
+import { EssenceTubeBar } from "./components/EssenceTubeBar";
 import { TierEditorModal } from "./components/TierEditorModal";
-import { WhatsNewModal } from "./components/WhatsNewModal";
-import { BargainsTab } from "./tabs/BargainsTab";
 import { CollectionsTab } from "./tabs/CollectionsTab";
-import { CraftTab } from "./tabs/CraftTab";
-import { GalleryTab } from "./tabs/GalleryTab";
-import { LineupsTab } from "./tabs/LineupsTab";
 import { formatRelativeAge } from "./utils/format";
+
+const BargainsTab = lazy(() =>
+  import("./tabs/BargainsTab").then((m) => ({ default: m.BargainsTab })),
+);
+const CraftTab = lazy(() =>
+  import("./tabs/CraftTab").then((m) => ({ default: m.CraftTab })),
+);
+const GalleryTab = lazy(() =>
+  import("./tabs/GalleryTab").then((m) => ({ default: m.GalleryTab })),
+);
+const LineupsTab = lazy(() =>
+  import("./tabs/LineupsTab").then((m) => ({ default: m.LineupsTab })),
+);
+
+const CommandPaletteModal = lazy(() =>
+  import("./components/CommandPaletteModal").then((m) => ({ default: m.CommandPaletteModal })),
+);
+const GuidesModal = lazy(() =>
+  import("./components/GuidesModal").then((m) => ({ default: m.GuidesModal })),
+);
+const SettingsModal = lazy(() =>
+  import("./components/SettingsModal").then((m) => ({ default: m.SettingsModal })),
+);
+const WhatsNewModal = lazy(() =>
+  import("./components/WhatsNewModal").then((m) => ({ default: m.WhatsNewModal })),
+);
+const WrappedModal = lazy(() =>
+  import("./components/WrappedModal").then((m) => ({ default: m.WrappedModal })),
+);
 
 type ActiveTab = "collections" | "craft" | "lineups" | "bargains" | "gallery";
 
@@ -88,9 +125,23 @@ function getExtensionVersion(): string {
 
 export function App() {
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
+  const [updateState, setUpdateState] = useState<UpdateCheckState | null>(null);
+  const [showWrapped, setShowWrapped] = useState(false);
+  const [wrappedHistory, setWrappedHistory] = useState<ProProgressRecord[]>([]);
+  const [pnlRecords, setPnlRecords] = useState<CardOwnershipRecord[]>([]);
   const [usernameDraft, setUsernameDraft] = useState<string>("");
   const [detectedUsername, setDetectedUsername] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<ActiveTab>("collections");
+  // Global Set | Pro mode (mirrors Sorare's own Set / Pro switch). Per-device convenience.
+  const [playMode, setPlayMode] = useState<"pro" | "set">(() => {
+    try {
+      return localStorage.getItem("jamassist_play_mode") === "set" ? "set" : "pro";
+    } catch {
+      return "pro";
+    }
+  });
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() =>
+    playMode === "set" ? "lineups" : "collections",
+  );
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [craftPool, setCraftPool] = useState<CraftPoolResult | null>(null);
   const [galleryResult, setGalleryResult] = useState<GalleryResult | null>(
@@ -104,10 +155,13 @@ export function App() {
   >({});
   const [bargainMode, setBargainMode] = useState<BargainMode>("instant_value");
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isCollectionsInitialScan, setIsCollectionsInitialScan] =
+    useState<boolean>(false);
   const [isCraftLoading, setIsCraftLoading] = useState<boolean>(false);
   const [isGalleryLoading, setIsGalleryLoading] = useState<boolean>(false);
   const [isPricingGallery, setIsPricingGallery] = useState<boolean>(false);
   const [isBargainsLoading, setIsBargainsLoading] = useState<boolean>(false);
+  const [isWatchlistChecking, setIsWatchlistChecking] = useState<boolean>(false);
   const [isQuestDealsLoading, setIsQuestDealsLoading] =
     useState<boolean>(false);
   const [hasLoadedQuestDeals, setHasLoadedQuestDeals] =
@@ -121,15 +175,13 @@ export function App() {
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [showSupport, setShowSupport] = useState<boolean>(false);
   const [showWhatsNew, setShowWhatsNew] = useState<boolean>(false);
+  const [showGuides, setShowGuides] = useState<boolean>(false);
   const [showHeaderMenu, setShowHeaderMenu] = useState<boolean>(false);
-  // Global Set | Pro mode (mirrors Sorare's own Set / Pro switch). Per-device convenience.
-  const [playMode, setPlayMode] = useState<"pro" | "set">(() => {
-    try {
-      return localStorage.getItem("jamassist_play_mode") === "set" ? "set" : "pro";
-    } catch {
-      return "pro";
-    }
+  const [setPackTarget, setSetPackTarget] = useState<{ label: string; price: number }>({
+    label: "Bronze Pack",
+    price: 1000,
   });
+  const [setSubTabNav, setSetSubTabNav] = useState<{ tab: "daily" | "solo_squad" | "packs" | "overview"; seq: number } | null>(null);
   const selectPlayMode = (next: "pro" | "set") => {
     setPlayMode(next);
     try {
@@ -140,6 +192,41 @@ export function App() {
     // Collections, Craft and Deals are Pro-only (Limited and up).
     if (next === "set") setActiveTab((t) => (t === "collections" || t === "craft" || t === "bargains" ? "lineups" : t));
   };
+  const navigateTab = (
+    tab: ActiveTab,
+    mode?: "pro" | "set",
+    subTab?: "daily" | "packs" | "overview",
+  ) => {
+    if (mode === "pro" || mode === "set") {
+      setPlayMode(mode);
+      try {
+        localStorage.setItem("jamassist_play_mode", mode);
+      } catch {
+        // per-device convenience only
+      }
+    } else if (tab === "collections" || tab === "craft" || tab === "bargains") {
+      setPlayMode("pro");
+      try {
+        localStorage.setItem("jamassist_play_mode", "pro");
+      } catch {
+        // per-device convenience only
+      }
+    }
+    if (subTab === "daily" || subTab === "packs" || subTab === "overview") {
+      try {
+        if (subTab === "overview") {
+          localStorage.setItem("jamassist_lineups_pro_subtab", "overview");
+        } else {
+          localStorage.setItem("jamassist_lineups_set_subtab", subTab);
+        }
+      } catch {
+        // ignore storage failure
+      }
+      setSetSubTabNav((prev) => ({ tab: subTab, seq: (prev?.seq ?? 0) + 1 }));
+    }
+    setActiveTab(tab);
+  };
+  const [initialized, setInitialized] = useState<boolean>(false);
   // The sticky header's height feeds --jam-header-h so the quick-jump bars stick right below it.
   const stickyHeaderRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -150,7 +237,7 @@ export function App() {
     );
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [initialized]);
   const [editingUsername, setEditingUsername] = useState<boolean>(false);
   const [hasUnseenWhatsNew, setHasUnseenWhatsNew] = useState<boolean>(() => {
     try {
@@ -165,7 +252,8 @@ export function App() {
   const [showCmdPalette, setShowCmdPalette] = useState<boolean>(false);
   const [focusApiKeyInSettings, setFocusApiKeyInSettings] =
     useState<boolean>(false);
-  const [initialized, setInitialized] = useState<boolean>(false);
+  const scanResultRef = useRef<ScanResult | null>(null);
+  scanResultRef.current = scanResult;
 
   const isDashboardMode = useMemo(() => {
     try {
@@ -207,6 +295,14 @@ export function App() {
       const clean = username.trim().toLowerCase();
       if (!clean) return;
       if (!cacheOnly) {
+        const current = scanResultRef.current;
+        const hadMatching = Boolean(
+          current &&
+            current.rarity === rarity &&
+            current.inSeasonOnly === inSeasonOnly,
+        );
+        setProgress(null);
+        setIsCollectionsInitialScan(!hadMatching);
         setIsLoading(true);
         setError(null);
       }
@@ -232,6 +328,7 @@ export function App() {
       } finally {
         if (!cacheOnly) {
           setIsLoading(false);
+          setIsCollectionsInitialScan(false);
         }
       }
     },
@@ -240,6 +337,7 @@ export function App() {
 
   const loadCraftPool = useCallback(
     async (rarity: Rarity, currency: Currency, forceRefresh = false) => {
+      setProgress(null);
       setIsCraftLoading(true);
       setError(null);
       try {
@@ -262,6 +360,7 @@ export function App() {
       const clean = username.trim().toLowerCase();
       if (!clean) return;
       if (!cacheOnly) {
+        setProgress(null);
         setIsGalleryLoading(true);
         setError(null);
       }
@@ -298,6 +397,7 @@ export function App() {
     ) => {
       setBargainMode(mode);
       if (!cacheOnly) {
+        setProgress(null);
         setIsBargainsLoading(true);
         setError(null);
       }
@@ -329,6 +429,7 @@ export function App() {
   );
 
   const handleLoadQuestDeals = useCallback(async () => {
+    setProgress(null);
     setIsQuestDealsLoading(true);
     setError(null);
     try {
@@ -362,8 +463,22 @@ export function App() {
         }));
       }
 
+      const instantRes = await fetchBargains(
+        activeRarity,
+        "instant_value",
+        settings.currency,
+        true,
+        false,
+      );
+      if (instantRes) {
+        setBargainPoolByKey((prev) => ({
+          ...prev,
+          [`${instantRes.rarity}:${instantRes.currency}:${instantRes.mode}`]:
+            instantRes,
+        }));
+      }
+
       if (scanResult && scanResult.rarity === activeRarity) {
-        const pricedSet = new Set(scanResult.pricedCollectionSlugs);
         const closestInSeasonTeam = [...scanResult.collections]
           .filter((c) => !c.complete && c.inSeason && Boolean(c.teamSlug))
           .sort((a, b) => {
@@ -372,7 +487,7 @@ export function App() {
             if (ra !== rb) return ra - rb;
             return b.fulfilledSlotsCount - a.fulfilledSlotsCount;
           })[0];
-        if (closestInSeasonTeam && !pricedSet.has(closestInSeasonTeam.slug)) {
+        if (closestInSeasonTeam) {
           const pricedScan = await priceCollection(
             scanResult.username,
             closestInSeasonTeam.slug,
@@ -421,13 +536,14 @@ export function App() {
       (partial) => {
         setScanResult(partial);
       },
-      (tab) => {
-        setActiveTab(tab);
+      (tab, mode, subTab) => {
+        navigateTab(tab, mode, subTab);
       },
-      (essenceByRarity) => {
+      (essenceByRarity, commonEssence) => {
         setSettings((prev) => ({
           ...prev,
           essenceByRarity,
+          ...(typeof commonEssence === "number" ? { commonEssence } : {}),
         }));
       },
       (walletBalance) => {
@@ -458,12 +574,16 @@ export function App() {
       },
     );
 
+    void getUpdateStatus()
+      .then(setUpdateState)
+      .catch(() => {});
+
     void (async () => {
       try {
         const [loaded, detected, pendingRaw] = await Promise.all([
           getSettings(),
           getDetectedUsername(),
-          chrome.storage.local.get("jamassist_pending_tab"),
+          chrome.storage.local.get(["jamassist_pending_tab", "jamassist_pending_nav"]),
         ]);
         setSettings(loaded);
         const safeDetected =
@@ -477,7 +597,14 @@ export function App() {
         const pendingTab = pendingRaw?.jamassist_pending_tab as
           | ActiveTab
           | undefined;
-        const resolvedTab = urlTab ?? pendingTab;
+        const pendingNav = pendingRaw?.jamassist_pending_nav as
+          | {
+              tab?: ActiveTab;
+              mode?: "pro" | "set";
+              subTab?: "daily" | "packs" | "overview";
+            }
+          | undefined;
+        const resolvedTab = urlTab ?? pendingNav?.tab ?? pendingTab;
         if (
           resolvedTab === "craft" ||
           resolvedTab === "collections" ||
@@ -485,27 +612,37 @@ export function App() {
           resolvedTab === "bargains" ||
           resolvedTab === "gallery"
         ) {
-          setActiveTab(resolvedTab);
-          if (pendingTab) {
-            void chrome.storage.local.remove("jamassist_pending_tab");
+          navigateTab(resolvedTab, pendingNav?.mode, pendingNav?.subTab);
+          if (pendingTab || pendingNav) {
+            void chrome.storage.local.remove(["jamassist_pending_tab", "jamassist_pending_nav"]);
           }
         }
         const initialUser = loaded.username || safeDetected || "";
         setUsernameDraft(initialUser);
-        setInitialized(true);
 
-        // Cache-only on startup so opening Side Panel never blasts Sorare with automatic API calls
+        // Cache-only on startup so opening Side Panel never blasts Sorare with automatic API calls.
+        // Wait briefly for local cache reads before showing the workspace so the UI never flashes empty.
+        const cacheHydrationTasks: Promise<unknown>[] = [
+          loadBargains(loaded.selectedRarity, "instant_value", loaded.currency, false, true),
+        ];
         if (initialUser) {
-          void runScan(
-            initialUser,
-            loaded.selectedRarity,
-            loaded.currency,
-            loaded.inSeasonOnly,
-            false,
-            true,
+          cacheHydrationTasks.push(
+            runScan(
+              initialUser,
+              loaded.selectedRarity,
+              loaded.currency,
+              loaded.inSeasonOnly,
+              false,
+              true,
+            ),
+            loadGallery(initialUser, false, true),
           );
-          void loadGallery(initialUser, false, true);
         }
+        await Promise.race([
+          Promise.allSettled(cacheHydrationTasks),
+          new Promise<void>((resolve) => window.setTimeout(resolve, 2500)),
+        ]);
+        setInitialized(true);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
         setInitialized(true);
@@ -518,6 +655,42 @@ export function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = settings.theme;
   }, [settings.theme]);
+
+  useEffect(() => {
+    if (playMode !== "set") return;
+    let cancelled = false;
+    getSetPackAdvisor()
+      .then((advisor) => {
+        if (cancelled) return;
+        const essencePacks = (advisor?.packs ?? [])
+          .filter((p) => p.currency === "COMMON_ESSENCE" && p.price > 0)
+          .sort((a, b) => a.price - b.price);
+        if (essencePacks.length > 0) {
+          const cheapest = essencePacks[0];
+          const label = /bronze/i.test(cheapest.title) ? "Bronze Pack" : cheapest.title;
+          setSetPackTarget({ label, price: cheapest.price });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [playMode]);
+
+  // Longevity auto-sync: quietly refresh stale live data (>15m old) when returning to the side panel
+  useEffect(() => {
+    const STALE_MS = 15 * 60_000;
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible") return;
+      const targetUser = (settings.username || detectedUsername || "").trim();
+      if (!targetUser || isGalleryLoading || !galleryResult) return;
+      if (Date.now() - galleryResult.fetchedAt >= STALE_MS) {
+        void loadGallery(targetUser, false, false);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [detectedUsername, galleryResult, isGalleryLoading, settings.username]);
 
   const updateSettings = useCallback(async (patch: Partial<UserSettings>) => {
     setSettings((prev) => ({
@@ -692,10 +865,13 @@ export function App() {
 
   const handleCancelScan = async () => {
     await cancelScan();
+    setProgress(null);
     setIsLoading(false);
+    setIsCollectionsInitialScan(false);
     setIsCraftLoading(false);
     setIsGalleryLoading(false);
     setIsBargainsLoading(false);
+    setIsWatchlistChecking(false);
     setIsQuestDealsLoading(false);
     setPricingSlug(null);
   };
@@ -749,28 +925,58 @@ export function App() {
   }, [activeRarity, settings.currency, settings.username, usernameDraft]);
 
   const essenceTimerRef = useRef<number | null>(null);
+  const commonEssenceTimerRef = useRef<number | null>(null);
+  const latestEssenceRef = useRef(settings.essenceByRarity);
+  latestEssenceRef.current = settings.essenceByRarity;
+
+  useEffect(() => {
+    return () => {
+      if (essenceTimerRef.current !== null) window.clearTimeout(essenceTimerRef.current);
+      if (commonEssenceTimerRef.current !== null) window.clearTimeout(commonEssenceTimerRef.current);
+    };
+  }, []);
 
   const handleEssenceChange = (val: string) => {
-    const parsed = Math.max(0, Math.floor(Number(val) || 0));
-    setSettings((prev) => ({
-      ...prev,
-      essenceByRarity: {
+    const parsed = Math.max(0, Math.min(50000, Math.floor(Number(val) || 0)));
+    const targetRarity = activeRarity;
+    setSettings((prev) => {
+      const nextMap = {
         ...prev.essenceByRarity,
-        [activeRarity]: parsed,
-      },
-    }));
+        [targetRarity]: parsed,
+      };
+      latestEssenceRef.current = nextMap;
+      return {
+        ...prev,
+        essenceByRarity: nextMap,
+      };
+    });
     if (essenceTimerRef.current !== null) {
       window.clearTimeout(essenceTimerRef.current);
     }
-    const targetRarity = activeRarity;
     essenceTimerRef.current = window.setTimeout(() => {
       essenceTimerRef.current = null;
       void saveSettings({
         essenceByRarity: {
-          ...settings.essenceByRarity,
+          ...latestEssenceRef.current,
           [targetRarity]: parsed,
         },
       }).catch(() => {});
+    }, 250);
+  };
+
+  const handleCommonEssenceChange = (val: string) => {
+    const trimmed = val.trim();
+    const parsed = trimmed === "" ? 0 : Math.max(0, Math.min(50000, Math.floor(Number(trimmed) || 0)));
+    setSettings((prev) => ({
+      ...prev,
+      commonEssence: parsed,
+    }));
+    if (commonEssenceTimerRef.current !== null) {
+      window.clearTimeout(commonEssenceTimerRef.current);
+    }
+    commonEssenceTimerRef.current = window.setTimeout(() => {
+      commonEssenceTimerRef.current = null;
+      void saveSettings({ commonEssence: parsed }).catch(() => {});
     }, 250);
   };
 
@@ -833,13 +1039,94 @@ export function App() {
     Math.round((activeEssence / settings.craftThreshold) * 100),
   );
   const essenceGap = Math.max(0, settings.craftThreshold - activeEssence);
+  const craftReadyCount =
+    settings.craftThreshold > 0 ? Math.floor(activeEssence / settings.craftThreshold) : 0;
+  const commonEssenceVal = typeof settings.commonEssence === "number" ? settings.commonEssence : 0;
+  const setEssencePct = Math.min(
+    100,
+    Math.round((commonEssenceVal / Math.max(1, setPackTarget.price)) * 100),
+  );
+  const setEssenceGap = Math.max(0, setPackTarget.price - commonEssenceVal);
+  const setPackReadyCount =
+    setPackTarget.price > 0 ? Math.floor(commonEssenceVal / setPackTarget.price) : 0;
+  const isSetBar = playMode === "set";
+  const barAmount = isSetBar ? commonEssenceVal : activeEssence;
+  const barPct = isSetBar ? setEssencePct : essencePct;
+  const barRarity: Rarity | "set" = isSetBar ? "set" : activeRarity;
+  const barReady = isSetBar ? setEssenceGap === 0 : essenceGap === 0;
   const anyLoading =
     isLoading ||
     isCraftLoading ||
     isGalleryLoading ||
     isPricingGallery ||
     isBargainsLoading ||
+    isWatchlistChecking ||
     isQuestDealsLoading;
+
+  const hasCollectionsData = Boolean(
+    scanResult &&
+      scanResult.rarity === activeRarity &&
+      scanResult.inSeasonOnly === settings.inSeasonOnly,
+  );
+  const hasCraftData = Boolean(
+    craftPool && craftPool.rarity === activeRarity && craftPool.currency === settings.currency,
+  );
+  const hasLineupsOrGalleryData = Boolean(galleryResult);
+  const hasBargainsData = Boolean(
+    bargainsResult &&
+      bargainsResult.rarity === activeRarity &&
+      bargainsResult.currency === settings.currency,
+  );
+
+  const isActiveTabInitialLoading =
+    !initialized ||
+    (activeTab === "collections" &&
+      isLoading &&
+      (isCollectionsInitialScan || !hasCollectionsData)) ||
+    (activeTab === "craft" && isCraftLoading && !hasCraftData) ||
+    (activeTab === "lineups" && isGalleryLoading && !hasLineupsOrGalleryData) ||
+    (activeTab === "bargains" && isBargainsLoading && !hasBargainsData) ||
+    (activeTab === "gallery" && isGalleryLoading && !hasLineupsOrGalleryData);
+
+  const loadingStageMeta = useMemo(() => {
+    if (!initialized) {
+      return {
+        title: "Loading Sorare NBA Essentials",
+        subtitle: "Restoring cached workspace & settings...",
+      };
+    }
+    const rarityLabel = RARITY_META[activeRarity].label;
+    if (activeTab === "collections") {
+      return {
+        title: `Scanning ${rarityLabel} Collections`,
+        subtitle: "Loading collections, League Quests & market floors...",
+      };
+    }
+    if (activeTab === "craft") {
+      return {
+        title: `Loading ${rarityLabel} Craft Pool`,
+        subtitle: "Fetching craft candidates & clue probabilities...",
+      };
+    }
+    if (activeTab === "bargains") {
+      return {
+        title: `Scanning ${rarityLabel} Market Deals`,
+        subtitle: "Fetching live instant buys & ending auctions...",
+      };
+    }
+    if (activeTab === "gallery") {
+      return {
+        title: playMode === "set" ? "Loading Set Gallery" : `Loading ${rarityLabel} Gallery`,
+        subtitle: "Fetching cards, sealed state & season stats...",
+      };
+    }
+    return {
+      title: playMode === "set" ? "Loading Set Lineups" : `Loading ${rarityLabel} Lineups`,
+      subtitle: "Fetching cards, NBA schedule, Vegas odds & injuries...",
+    };
+  }, [activeRarity, activeTab, initialized, playMode]);
+
+  const progressAccentRarity: Rarity | "set" = playMode === "set" ? "set" : activeRarity;
 
   return (
     <div
@@ -848,62 +1135,23 @@ export function App() {
       data-density={settings.density ?? "cozy"}
     >
       <div className={isDashboardMode ? "jam-dashboard-mode" : ""}>
-      <div ref={stickyHeaderRef} className="jam-sticky-wrap sticky top-0 z-30 px-2.5 pb-1.5 pt-2.5">
-        <header className="glass-chrome rounded-2xl px-3 py-2.5">
-          {/* Row 1: identity, username, Refresh, overflow menu */}
-          <div className="flex items-center gap-2">
-            {/* Logo with the connection bolt: blue = API key active (Fast Mode), gray = public mode. */}
-            <button
-              type="button"
-              onClick={() => setShowSettings(true)}
-              className="relative h-8 w-8 shrink-0"
-              title={
-                settings.sorareApiKey
-                  ? "Fast Mode: your Sorare API key is active (click for Settings)"
-                  : "Public mode, no API key: click to add one in Settings for faster, fuller data"
-              }
-              aria-label={settings.sorareApiKey ? "Fast Mode active, open Settings" : "No API key, open Settings to add one"}
-            >
-              <img src="/logo.png" alt="pjampjam's Sorare NBA Essentials" className="h-8 w-8 rounded-lg object-contain" />
-              <span
-                className={`absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full border-2 border-[var(--jam-chrome-bot)] ${
-                  settings.sorareApiKey ? "bg-sky-400 text-slate-950" : "bg-slate-600 text-slate-200"
-                }`}
-              >
-                <Zap className="h-2.5 w-2.5" fill="currentColor" />
+      <div ref={stickyHeaderRef} className="jam-sticky-wrap sticky top-0 z-30 px-2.5 pb-1 pt-2">
+        <header className="glass-chrome rounded-2xl px-2.5 py-2">
+          <h1 className="sr-only">pjampjam&apos;s Sorare NBA Essentials</h1>
+          {/* Row 1: username (left), Fast Mode bolt, Refresh, Guides, overflow menu */}
+          <div className="flex items-center gap-1.5">
+            {isDashboardMode && (
+              <span className="jam-logo-badge flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-lg">
+                <img src="/logo.png" alt="pjampjam's Sorare NBA Essentials" className="h-full w-full object-contain" />
               </span>
-            </button>
-            <div className="flex min-w-0 shrink-0 flex-col justify-center gap-0.5 leading-none">
-              <h1 className="whitespace-nowrap text-xs font-semibold tracking-tight text-slate-100">Sorare NBA</h1>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowWhatsNew(true);
-                  setHasUnseenWhatsNew(false);
-                  try {
-                    window.localStorage.setItem("jamassist_last_seen_version", version);
-                  } catch {
-                    // Ignore
-                  }
-                }}
-                className={`inline-flex w-fit items-center gap-1 whitespace-nowrap rounded px-1 py-px font-mono text-[9px] font-medium transition ${
-                  isExperimentalBuild
-                    ? "border border-rose-400/50 bg-rose-500/15 text-rose-300 hover:bg-rose-500/25"
-                    : "bg-white/8 text-amber-300 hover:bg-amber-400/20"
-                }`}
-                title={`${isExperimentalBuild ? "Experimental build " : ""}v${version} • What's New & Send Feedback`}
-              >
-                <span>{versionBadgeLabel}</span>
-                {hasUnseenWhatsNew && <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />}
-              </button>
-            </div>
+            )}
 
             <div className="min-w-0 flex-1">
               {settings.username && !editingUsername ? (
                 <button
                   type="button"
                   onClick={() => setEditingUsername(true)}
-                  className="glass-pill inline-flex h-7 max-w-full items-center gap-1 rounded-lg px-2 text-[11px] font-semibold text-slate-100 hover:border-sky-400/50"
+                  className="glass-pill inline-flex h-7 max-w-full items-center gap-1.5 rounded-lg px-2.5 text-[11.5px] font-semibold text-slate-100 hover:border-sky-400/50"
                   title="Change the Sorare manager"
                 >
                   <span className="truncate">@{settings.username}</span>
@@ -921,15 +1169,15 @@ export function App() {
                     type="text"
                     value={usernameDraft}
                     onChange={(e) => setUsernameDraft(e.target.value)}
-                    placeholder="Sorare slug"
+                    placeholder="Sorare username..."
                     aria-label="Sorare username or slug"
                     autoFocus={editingUsername}
-                    className="glass-pill w-full min-w-0 rounded-lg px-2 py-1 text-[11px] text-slate-100 placeholder-slate-500 focus:border-sky-400/70 focus:outline-none"
+                    className="glass-pill h-7 w-full min-w-0 rounded-lg px-2.5 text-[11px] text-slate-100 placeholder-slate-500 focus:border-sky-400/70 focus:outline-none"
                   />
                   <button
                     type="submit"
                     disabled={anyLoading || !usernameDraft.trim()}
-                    className="glass-pill shrink-0 rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-100 transition hover:border-sky-400/50 disabled:opacity-50"
+                    className="glass-pill h-7 shrink-0 rounded-lg px-2.5 text-[11px] font-semibold text-slate-100 transition hover:border-sky-400/50 disabled:opacity-50"
                   >
                     Scan
                   </button>
@@ -939,9 +1187,27 @@ export function App() {
 
             <button
               type="button"
+              onClick={() => setShowSettings(true)}
+              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition ${
+                settings.sorareApiKey
+                  ? "border-sky-400/45 bg-sky-500/18 text-sky-300 hover:border-sky-300/70 hover:bg-sky-500/28"
+                  : "border-white/10 bg-white/[0.04] text-slate-400 hover:border-white/20 hover:text-slate-200"
+              }`}
+              title={
+                settings.sorareApiKey
+                  ? "Fast Mode: your Sorare API key is active (click for Settings)"
+                  : "Public mode, no API key: click to add one in Settings for faster, fuller data"
+              }
+              aria-label={settings.sorareApiKey ? "Fast Mode active, open Settings" : "No API key, open Settings to add one"}
+            >
+              <Zap className="h-3.5 w-3.5" fill={settings.sorareApiKey ? "currentColor" : "none"} />
+            </button>
+
+            <button
+              type="button"
               disabled={
                 anyLoading ||
-                ((activeTab === "collections" || activeTab === "lineups") &&
+                ((activeTab === "collections" || activeTab === "lineups" || activeTab === "gallery") &&
                   !(settings.username || usernameDraft).trim())
               }
               onClick={handleRefreshActiveTab}
@@ -952,16 +1218,29 @@ export function App() {
               Refresh
             </button>
 
+            <button
+              type="button"
+              onClick={() => setShowGuides(true)}
+              className="glass-pill flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sky-300 transition hover:border-sky-400/50 hover:text-sky-100"
+              title="Guides & Strategy Hub (Scoring Calculator, Caps, Vault, Pre-Lock)"
+              aria-label="Open Guides & Strategy Hub"
+            >
+              <BookOpen className="h-3.5 w-3.5" />
+            </button>
+
             <div className="relative shrink-0">
               <button
                 type="button"
                 onClick={() => setShowHeaderMenu((v) => !v)}
-                className="glass-pill flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 transition hover:border-sky-400/50 hover:text-slate-100"
-                title="Search, currency, density, support, pop-out, settings"
+                className="glass-pill relative flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 transition hover:border-sky-400/50 hover:text-slate-100"
+                title="Search, currency, support, pop-out, settings, What's New"
                 aria-label="More options"
                 aria-expanded={showHeaderMenu}
               >
                 <MoreHorizontal className="h-3.5 w-3.5" />
+                {hasUnseenWhatsNew && (
+                  <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                )}
               </button>
               {showHeaderMenu && (
                 <>
@@ -976,14 +1255,6 @@ export function App() {
                     <button type="button" onClick={() => void handleToggleCurrency()} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/8">
                       <Wallet className="h-3.5 w-3.5 text-slate-400" /> Currency <span className="ml-auto font-semibold">{settings.currency}</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => void updateSettings({ density: settings.density === "compact" ? "cozy" : "compact" })}
-                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/8"
-                    >
-                      <AlignJustify className="h-3.5 w-3.5 text-slate-400" /> Density
-                      <span className="ml-auto text-[10px] text-slate-400">{settings.density === "compact" ? "Compact" : "Cozy"}</span>
-                    </button>
                     {!isDashboardMode && (
                       <button type="button" onClick={() => void openDashboardTab(activeTab)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/8">
                         <Maximize2 className="h-3.5 w-3.5 text-slate-400" /> Pop out dashboard
@@ -994,6 +1265,33 @@ export function App() {
                     </button>
                     <button type="button" onClick={() => setShowSettings(true)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/8">
                       <Settings className="h-3.5 w-3.5 text-slate-400" /> Settings &amp; themes
+                    </button>
+                    <div className="my-1 border-t border-white/8" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowWhatsNew(true);
+                        setHasUnseenWhatsNew(false);
+                        try {
+                          window.localStorage.setItem("jamassist_last_seen_version", version);
+                        } catch {
+                          // Ignore
+                        }
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/8"
+                    >
+                      <Sparkles className="h-3.5 w-3.5 text-amber-300" />
+                      <span>What&apos;s New</span>
+                      <span
+                        className={`ml-auto inline-flex items-center gap-1 rounded px-1 py-px font-mono text-[9.5px] font-medium ${
+                          isExperimentalBuild
+                            ? "border border-rose-400/50 bg-rose-500/15 text-rose-300"
+                            : "bg-white/8 text-amber-300"
+                        }`}
+                      >
+                        {versionBadgeLabel}
+                        {hasUnseenWhatsNew && <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />}
+                      </span>
                     </button>
                   </div>
                 </>
@@ -1021,13 +1319,15 @@ export function App() {
             )}
 
           {/* Mode bar on every tab: Set (Common) | Limited | Rare | Super Rare | Unique | Essence */}
-          <div className="mt-2 space-y-1">
+          <div className="mt-1.5 space-y-1">
             <div className="grid grid-cols-6 gap-1">
               <button
                 type="button"
                 onClick={() => selectPlayMode("set")}
+                data-active={playMode === "set" ? "true" : undefined}
+                data-rarity="set"
                 title="Set (Common cards): Set lineups, packs, Squad, Set gallery and duplicates"
-                className={`h-7 truncate rounded-lg border px-1 text-[10.5px] font-medium transition ${
+                className={`jam-mode-pill h-7 truncate rounded-lg border px-1 text-[10.5px] font-medium transition ${
                   playMode === "set"
                     ? "border-set-400/60 bg-set-500/25 font-semibold text-set-200"
                     : "border-white/8 bg-white/[0.03] text-slate-400 hover:text-slate-200"
@@ -1042,11 +1342,13 @@ export function App() {
                   <button
                     key={rarity}
                     type="button"
+                    data-active={active ? "true" : undefined}
+                    data-rarity={rarity}
                     onClick={() => {
                       selectPlayMode("pro");
                       void handleSelectRarity(rarity);
                     }}
-                    className={`h-7 truncate rounded-lg border px-1 text-[10.5px] font-medium transition ${
+                    className={`jam-mode-pill h-7 truncate rounded-lg border px-1 text-[10.5px] font-medium transition ${
                       active ? `${meta.badgeClass} font-semibold` : "border-white/8 bg-white/[0.03] text-slate-400 hover:text-slate-200"
                     }`}
                   >
@@ -1064,55 +1366,103 @@ export function App() {
               {playMode === "set" ? (
                 <div
                   className="glass-pill flex h-7 min-w-0 items-center gap-1 rounded-lg px-1.5"
-                  title="Set Essence (synced from sorare.com Set pages)"
+                  title="Set Essence (auto-syncs from sorare.com Set pages, or click to type)"
                 >
                   <Sparkles className="h-3 w-3 shrink-0 text-set-300" />
-                  <span className="truncate text-[11px] font-semibold tabular-nums text-slate-100">
-                    {typeof settings.commonEssence === "number" ? settings.commonEssence.toLocaleString() : "--"}
-                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={50000}
+                    step={1}
+                    placeholder="--"
+                    value={typeof settings.commonEssence === "number" ? settings.commonEssence : ""}
+                    onChange={(e) => handleCommonEssenceChange(e.target.value)}
+                    className="w-full min-w-0 bg-transparent text-[11px] font-semibold tabular-nums text-slate-100 placeholder-slate-400 focus:outline-none"
+                    aria-label="Current Set Essence balance"
+                  />
                 </div>
               ) : (
                 <div
                   className="glass-pill flex h-7 min-w-0 items-center gap-1 rounded-lg px-1.5"
-                  title="Your Sorare Essence (auto-syncs from sorare.com sidebar, or click to type)"
+                  title={`${RARITY_META[activeRarity].label} Essence (auto-syncs from sorare.com sidebar, or click to type)`}
                 >
-                  <Sparkles className="h-3 w-3 shrink-0 text-amber-400" />
+                  <Sparkles className={`h-3 w-3 shrink-0 ${RARITY_META[activeRarity].accentClass}`} />
                   <input
                     type="number"
                     min={0}
                     step={1}
                     value={activeEssence}
                     onChange={(e) => handleEssenceChange(e.target.value)}
-                    className="w-full min-w-0 bg-transparent text-[11px] font-semibold text-slate-100 focus:outline-none"
-                    aria-label="Current Essence balance"
+                    className="w-full min-w-0 bg-transparent text-[11px] font-semibold tabular-nums text-slate-100 focus:outline-none"
+                    aria-label={`Current ${RARITY_META[activeRarity].label} Essence balance`}
                   />
                 </div>
               )}
             </div>
-            {playMode === "pro" && (activeTab === "collections" || activeTab === "craft" || activeTab === "bargains") && (
-              <div className="flex items-center gap-2 text-[10px]">
-                <div className="h-1 flex-1 overflow-hidden rounded-full bg-slate-950/70">
-                  <div
-                    className="h-full transition-all duration-300"
-                    style={{ width: `${essencePct}%`, backgroundColor: essenceGap === 0 ? "var(--jam-money)" : "var(--jam-info)" }}
-                  />
-                </div>
-                {essenceGap === 0 ? (
-                  <span className="shrink-0 font-semibold text-emerald-300">Craft ready</span>
+            <div className="flex items-center gap-2 text-[10px]">
+              <EssenceTubeBar
+                rarity={barRarity}
+                pct={barPct}
+                amount={barAmount}
+                ready={barReady}
+                showMilestones={settings.showEssenceMilestones ?? false}
+                ariaLabel={
+                  isSetBar
+                    ? `Set Essence progress toward ${setPackTarget.label}`
+                    : `${RARITY_META[activeRarity].label} Essence progress toward Craft`
+                }
+              />
+              {isSetBar ? (
+                setEssenceGap === 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      selectPlayMode("set");
+                      setActiveTab("lineups");
+                      setSetSubTabNav((prev) => ({ tab: "packs", seq: (prev?.seq ?? 0) + 1 }));
+                    }}
+                    className="jam-ready-pill shrink-0 cursor-pointer rounded-full px-2 py-0.5 font-semibold text-emerald-200 transition"
+                    title="Open Set Packs & Mission Advisor"
+                  >
+                    {setPackReadyCount >= 2 ? `${setPackReadyCount}x Packs ready` : "Pack ready"}
+                  </button>
                 ) : (
-                  <span className="shrink-0 tabular-nums text-slate-400">{essenceGap.toLocaleString()} Essence to craft</span>
-                )}
-                {settings.walletBalance?.cashAmount !== null && settings.walletBalance?.cashAmount !== undefined && (
-                  <span className="shrink-0 tabular-nums text-emerald-300" title="Auto-synced from sorare.com sidebar wallet">
-                    {`${settings.walletBalance.cashSymbol ?? "€"}${settings.walletBalance.cashAmount.toFixed(2)}`}
+                  <span className="shrink-0 tabular-nums text-slate-400">
+                    {setEssenceGap.toLocaleString()} Essence to {setPackTarget.label}
                   </span>
-                )}
-              </div>
-            )}
+                )
+              ) : (
+                <>
+                  {essenceGap === 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => navigateTab("craft")}
+                      className="jam-ready-pill shrink-0 cursor-pointer rounded-full px-2 py-0.5 font-semibold text-emerald-200 transition"
+                      title="Open Craft tab"
+                    >
+                      {craftReadyCount >= 2 ? `${craftReadyCount}x Craft ready` : "Craft ready"}
+                    </button>
+                  ) : (
+                    <span className="shrink-0 tabular-nums text-slate-400">
+                      {essenceGap.toLocaleString()} Essence to craft
+                    </span>
+                  )}
+                  {settings.walletBalance?.cashAmount !== null &&
+                    settings.walletBalance?.cashAmount !== undefined && (
+                      <span
+                        className="shrink-0 tabular-nums text-emerald-300"
+                        title="Auto-synced from sorare.com sidebar wallet"
+                      >
+                        {`${settings.walletBalance.cashSymbol ?? "€"}${settings.walletBalance.cashAmount.toFixed(2)}`}
+                      </span>
+                    )}
+                </>
+              )}
+            </div>
           </div>
 
           {/* Accessible Tablist + Scan Age */}
-          <div className="mt-2 flex items-center justify-between gap-1 border-t border-white/8 pt-1.5 text-[11px]">
+          <div className="mt-1.5 flex items-center justify-between gap-1 border-t border-white/8 pt-1 text-[11px]">
             <div
               role="tablist"
               aria-label="Workspace views"
@@ -1128,16 +1478,16 @@ export function App() {
                 if (e.key === "ArrowRight") {
                   e.preventDefault();
                   const next = order[(idx + 1) % order.length];
-                  setActiveTab(next);
+                  navigateTab(next);
                   document.getElementById(`tab-${next}`)?.focus();
                 } else if (e.key === "ArrowLeft") {
                   e.preventDefault();
                   const prev = order[(idx - 1 + order.length) % order.length];
-                  setActiveTab(prev);
+                  navigateTab(prev);
                   document.getElementById(`tab-${prev}`)?.focus();
                 }
               }}
-              className="flex min-w-0 flex-wrap items-center gap-0.5"
+              className="flex min-w-0 flex-wrap items-center gap-1"
             >
               <button
                 type="button"
@@ -1146,18 +1496,12 @@ export function App() {
                 aria-controls="panel-collections"
                 aria-selected={activeTab === "collections"}
                 tabIndex={activeTab === "collections" ? 0 : -1}
-                onClick={() => {
-                  if (playMode === "set") selectPlayMode("pro");
-                  setActiveTab("collections");
-                }}
+                onClick={() => navigateTab("collections")}
                 data-pro-only={playMode === "set" ? "true" : undefined}
                 title={playMode === "set" ? "Pro only (Limited and up): click to switch to Pro" : undefined}
-                className={`px-2 py-1 font-medium transition ${
-                  activeTab === "collections"
-                    ? "text-slate-50 shadow-[inset_0_-2px_0_var(--jam-info)]"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
+                className="jam-nav-tab"
               >
+                <Trophy className="h-3 w-3" />
                 Collections
               </button>
               <button
@@ -1167,17 +1511,10 @@ export function App() {
                 aria-controls="panel-craft"
                 aria-selected={activeTab === "craft"}
                 tabIndex={activeTab === "craft" ? 0 : -1}
-                onClick={() => {
-                  if (playMode === "set") selectPlayMode("pro");
-                  setActiveTab("craft");
-                }}
+                onClick={() => navigateTab("craft")}
                 data-pro-only={playMode === "set" ? "true" : undefined}
                 title={playMode === "set" ? "Pro only (Limited and up): click to switch to Pro" : undefined}
-                className={`inline-flex items-center gap-1 px-2 py-1 font-medium transition ${
-                  activeTab === "craft"
-                    ? "text-slate-50 shadow-[inset_0_-2px_0_var(--jam-info)]"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
+                className="jam-nav-tab"
               >
                 <Sparkles className="h-3 w-3" />
                 Craft
@@ -1189,12 +1526,8 @@ export function App() {
                 aria-controls="panel-lineups"
                 aria-selected={activeTab === "lineups"}
                 tabIndex={activeTab === "lineups" ? 0 : -1}
-                onClick={() => setActiveTab("lineups")}
-                className={`inline-flex items-center gap-1 px-2 py-1 font-medium transition ${
-                  activeTab === "lineups"
-                    ? "text-slate-50 shadow-[inset_0_-2px_0_var(--jam-info)]"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
+                onClick={() => navigateTab("lineups")}
+                className="jam-nav-tab"
               >
                 <Wand2 className="h-3 w-3" />
                 Lineups
@@ -1206,17 +1539,10 @@ export function App() {
                 aria-controls="panel-bargains"
                 aria-selected={activeTab === "bargains"}
                 tabIndex={activeTab === "bargains" ? 0 : -1}
-                onClick={() => {
-                  if (playMode === "set") selectPlayMode("pro");
-                  setActiveTab("bargains");
-                }}
+                onClick={() => navigateTab("bargains")}
                 data-pro-only={playMode === "set" ? "true" : undefined}
                 title={playMode === "set" ? "Pro only (Limited and up): click to switch to Pro" : undefined}
-                className={`inline-flex items-center gap-1 px-2 py-1 font-medium transition ${
-                  activeTab === "bargains"
-                    ? "text-slate-50 shadow-[inset_0_-2px_0_var(--jam-info)]"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
+                className="jam-nav-tab"
               >
                 <TrendingDown className="h-3 w-3" />
                 Deals
@@ -1233,12 +1559,8 @@ export function App() {
                 aria-controls="panel-gallery"
                 aria-selected={activeTab === "gallery"}
                 tabIndex={activeTab === "gallery" ? 0 : -1}
-                onClick={() => setActiveTab("gallery")}
-                className={`inline-flex items-center gap-1 px-2 py-1 font-medium transition ${
-                  activeTab === "gallery"
-                    ? "text-slate-50 shadow-[inset_0_-2px_0_var(--jam-info)]"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
+                onClick={() => navigateTab("gallery")}
+                className="jam-nav-tab"
               >
                 <Layers className="h-3 w-3" />
                 Gallery
@@ -1255,8 +1577,43 @@ export function App() {
       </div>
 
       <main className="p-3">
+        {updateState?.updateAvailable && updateState.latestVersion && (
+          <div className="mb-2.5 flex items-center justify-between gap-2 rounded-xl border border-emerald-400/35 bg-emerald-500/10 px-3 py-1.5 text-[11px] text-emerald-100">
+            <div className="min-w-0 truncate">
+              <span className="font-semibold text-emerald-300">
+                Update available: v{updateState.latestVersion}
+              </span>{" "}
+              <span className="text-slate-300">(running v{updateState.currentVersion})</span>
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              {updateState.releaseUrl && (
+                <button
+                  type="button"
+                  onClick={() => void openInActiveTab(updateState.releaseUrl!)}
+                  className="rounded-lg border border-emerald-400/50 bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-100 hover:bg-emerald-500/30"
+                >
+                  Download
+                </button>
+              )}
+              <button
+                type="button"
+                aria-label="Dismiss update banner"
+                onClick={() => {
+                  const v = updateState.latestVersion!;
+                  setUpdateState((prev) =>
+                    prev ? { ...prev, updateAvailable: false, dismissedVersion: v } : null,
+                  );
+                  void dismissUpdate(v);
+                }}
+                className="rounded p-0.5 text-slate-400 hover:bg-white/10 hover:text-slate-100"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
         {/* Optional local API key onboarding card */}
-        {initialized &&
+        {!isActiveTabInitialLoading &&
           !settings.sorareApiKey &&
           !settings.apiKeyPromptDismissed && (
             <div className="mb-3 rounded-xl border border-amber-400/25 bg-[#111726] p-2.5 text-xs">
@@ -1309,22 +1666,46 @@ export function App() {
             </div>
           )}
 
-        {anyLoading && (
-          <div className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-            <div className="flex min-w-0 items-center gap-2">
-              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-amber-400" />
-              <span className="truncate">
-                {progress?.message ?? "Loading Sorare NBA data..."}
-              </span>
+        {anyLoading && !isActiveTabInitialLoading && (
+          <div className="glass-pill mb-3 space-y-1.5 rounded-xl border-sky-400/30 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">
+            <div className="flex items-center justify-between gap-2">
+              <div role="status" aria-live="polite" className="flex min-w-0 items-center gap-2">
+                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-sky-300" />
+                <span className="truncate">
+                  {progress?.message ?? "Loading Sorare NBA data..."}
+                </span>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {progress && progress.total > 0 && (
+                  <span className="tabular-nums text-[10.5px] font-semibold text-sky-200">
+                    {Math.min(100, Math.round((progress.completed / progress.total) * 100))}%
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void handleCancelScan()}
+                  className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-white/15 bg-slate-950/60 px-2 py-0.5 text-[10px] font-medium text-slate-200 hover:border-sky-400/50 hover:bg-slate-800"
+                >
+                  <X className="h-3 w-3" />
+                  Cancel
+                </button>
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={() => void handleCancelScan()}
-              className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-amber-400/30 bg-[#111726] px-2 py-0.5 text-[10px] font-medium text-amber-200 hover:bg-slate-800"
-            >
-              <X className="h-3 w-3" />
-              Cancel
-            </button>
+            {progress && progress.total > 0 ? (
+              <progress
+                className="jam-progress"
+                data-rarity={progressAccentRarity}
+                value={Math.min(progress.completed, progress.total)}
+                max={progress.total}
+                aria-label="Scan progress"
+              />
+            ) : (
+              <progress
+                className="jam-progress"
+                data-rarity={progressAccentRarity}
+                aria-label="Scan in progress"
+              />
+            )}
           </div>
         )}
 
@@ -1335,12 +1716,23 @@ export function App() {
           </div>
         )}
 
-        {initialized && activeTab === "collections" && (
+        {isActiveTabInitialLoading && (
+          <LoadingStage
+            title={loadingStageMeta.title}
+            subtitle={loadingStageMeta.subtitle}
+            progress={progress}
+            rarity={progressAccentRarity}
+            onCancel={initialized && anyLoading ? () => void handleCancelScan() : undefined}
+          />
+        )}
+
+        {!isActiveTabInitialLoading && activeTab === "collections" && (
           <div
             role="tabpanel"
             id="panel-collections"
             aria-labelledby="tab-collections"
             tabIndex={0}
+            className="jam-panel-enter"
           >
             <CollectionsTab
               analyses={analysis.analyses}
@@ -1371,7 +1763,7 @@ export function App() {
               onCancelScan={() => void handleCancelScan()}
               onLoadQuestDeals={() => void handleLoadQuestDeals()}
               onSwitchTab={(tab) => {
-                setActiveTab(tab);
+                navigateTab(tab);
                 if (tab === "bargains" && !bargainsResult && !isBargainsLoading) {
                   void loadBargains(
                     activeRarity,
@@ -1404,19 +1796,35 @@ export function App() {
               onToggleInSeasonOnly={() => void handleToggleInSeasonOnly()}
               searchQuery={searchQuery}
               onSearchQueryChange={setSearchQuery}
-              hasScanned={Boolean(scanResult)}
+              hasScanned={hasCollectionsData}
               hasUsername={Boolean((settings.username || usernameDraft).trim())}
               isLoading={isLoading}
+              onTryDemo={() => {
+                setUsernameDraft("pjampjam");
+                void updateSettings({ username: "pjampjam", usernameLockedByUser: false });
+                void runScan("pjampjam", activeRarity, settings.currency, settings.inSeasonOnly, false, false);
+              }}
             />
           </div>
         )}
 
-        {initialized && activeTab === "craft" && (
+        <Suspense
+          fallback={
+            <LoadingStage
+              title={loadingStageMeta.title}
+              subtitle={loadingStageMeta.subtitle}
+              progress={null}
+              rarity={progressAccentRarity}
+            />
+          }
+        >
+        {!isActiveTabInitialLoading && activeTab === "craft" && (
           <div
             role="tabpanel"
             id="panel-craft"
             aria-labelledby="tab-craft"
             tabIndex={0}
+            className="jam-panel-enter"
           >
             <CraftTab
               craftPool={
@@ -1442,16 +1850,20 @@ export function App() {
           </div>
         )}
 
-        {initialized && activeTab === "lineups" && (
+        {!isActiveTabInitialLoading && activeTab === "lineups" && (
           <div
             role="tabpanel"
             id="panel-lineups"
             aria-labelledby="tab-lineups"
             tabIndex={0}
+            className="jam-panel-enter"
           >
             <LineupsTab
               mode={playMode === "set" ? "set_common" : "pro"}
               onModeChange={(m) => selectPlayMode(m === "set_common" ? "set" : "pro")}
+              requestedSetSubTab={setSubTabNav}
+              onConsumeRequestedSetSubTab={() => setSetSubTabNav(null)}
+              commonEssence={settings.commonEssence}
               gallery={galleryResult}
               bargains={bargainsResult}
               allScannedBargains={allScannedBargains}
@@ -1490,16 +1902,42 @@ export function App() {
                   false,
                 )
               }
+              onTryDemo={() => {
+                setUsernameDraft("pjampjam");
+                void updateSettings({ username: "pjampjam", usernameLockedByUser: false });
+                void loadGallery("pjampjam", false, false);
+              }}
+              savedRosters={normalizeSavedRosters(settings.savedRosters)}
+              onSaveRoster={(preset: SavedRosterPreset) => {
+                const next = normalizeSavedRosters([
+                  preset,
+                  ...(settings.savedRosters ?? []),
+                ]);
+                void updateSettings({ savedRosters: next });
+              }}
+              onDeleteRoster={(id: string) => {
+                const next = normalizeSavedRosters(
+                  (settings.savedRosters ?? []).filter((r) => r.id !== id),
+                );
+                void updateSettings({ savedRosters: next });
+              }}
+              onOpenWrapped={() => {
+                void getProProgressHistory()
+                  .then(setWrappedHistory)
+                  .catch(() => {});
+                setShowWrapped(true);
+              }}
             />
           </div>
         )}
 
-        {initialized && activeTab === "bargains" && (
+        {!isActiveTabInitialLoading && activeTab === "bargains" && (
           <div
             role="tabpanel"
             id="panel-bargains"
             aria-labelledby="tab-bargains"
             tabIndex={0}
+            className="jam-panel-enter"
           >
             <BargainsTab
               bargains={
@@ -1512,18 +1950,18 @@ export function App() {
               collectionNeedSlugs={collectionNeedSlugs}
               rarity={activeRarity}
               currency={settings.currency}
-              isLoading={isBargainsLoading}
+              isLoading={isBargainsLoading || isWatchlistChecking}
               gallery={galleryResult}
               watchlist={settings.watchlist ?? []}
               watchlistAlerts={settings.watchlistAlerts ?? []}
               onUpdateWatchlist={(next) => void updateSettings({ watchlist: next })}
               onRunWatchlistCheck={() => {
-                setIsBargainsLoading(true);
+                setIsWatchlistChecking(true);
                 void runWatchlistCheck()
                   .then((alerts) =>
                     setSettings((prev) => ({ ...prev, watchlistAlerts: alerts })),
                   )
-                  .finally(() => setIsBargainsLoading(false));
+                  .finally(() => setIsWatchlistChecking(false));
               }}
               onClearWatchlistAlerts={() => {
                 void clearWatchlistAlerts().then(() =>
@@ -1542,12 +1980,13 @@ export function App() {
             />
           </div>
         )}
-        {initialized && activeTab === "gallery" && (
+        {!isActiveTabInitialLoading && activeTab === "gallery" && (
           <div
             role="tabpanel"
             id="panel-gallery"
             aria-labelledby="tab-gallery"
             tabIndex={0}
+            className="jam-panel-enter"
           >
             <GalleryTab
               pool={playMode === "set" ? "common" : "pro"}
@@ -1566,32 +2005,98 @@ export function App() {
                 )
               }
               onPriceGallery={() => void handlePriceGallery()}
+              cardTags={settings.cardTags ?? {}}
+              onSetCardTag={(cardSlug: string, tag: CardTag | null) => {
+                const next = setCardTagInMap(settings.cardTags ?? {}, cardSlug, tag);
+                void updateSettings({ cardTags: next });
+              }}
+              onPnlLoaded={(pnl: PortfolioPnlResult) => {
+                setPnlRecords(pnl.records);
+              }}
+              onOpenWrapped={() => {
+                void getProProgressHistory()
+                  .then(setWrappedHistory)
+                  .catch(() => {});
+                setShowWrapped(true);
+              }}
             />
           </div>
         )}
+        </Suspense>
       </main>
 
       {showSupport && <SupportModal onClose={() => setShowSupport(false)} />}
 
-      {showWhatsNew && (
-        <WhatsNewModal
-          version={version}
-          onClose={() => setShowWhatsNew(false)}
-        />
-      )}
+      <Suspense fallback={null}>
+        {showWhatsNew && (
+          <WhatsNewModal
+            version={version}
+            onClose={() => setShowWhatsNew(false)}
+          />
+        )}
 
-      {showCmdPalette && (
-        <CommandPaletteModal
-          galleryCards={galleryResult?.cards ?? []}
-          collections={scanResult?.collections ?? []}
-          deals={allScannedBargains}
-          currency={settings.currency}
-          onSwitchTab={(t) => setActiveTab(t)}
-          onOpenSettings={() => setShowSettings(true)}
-          onOpenDashboard={() => void openDashboardTab(activeTab)}
-          onClose={() => setShowCmdPalette(false)}
-        />
-      )}
+        {showWrapped && (
+          <WrappedModal
+            open={showWrapped}
+            onClose={() => setShowWrapped(false)}
+            username={settings.username || galleryResult?.username || null}
+            progressHistory={wrappedHistory}
+            galleryCards={[
+              ...(galleryResult?.cards ?? []),
+              ...(galleryResult?.commonCards ?? []),
+            ]}
+            ownershipRecords={pnlRecords}
+            essenceByRarity={settings.essenceByRarity}
+            commonEssence={settings.commonEssence}
+            currency={settings.currency}
+          />
+        )}
+
+        {showGuides && <GuidesModal onClose={() => setShowGuides(false)} />}
+
+        {showCmdPalette && (
+          <CommandPaletteModal
+            galleryCards={[
+              ...(galleryResult?.cards ?? []),
+              ...(galleryResult?.commonCards ?? []),
+            ]}
+            collections={scanResult?.collections ?? []}
+            deals={allScannedBargains}
+            currency={settings.currency}
+            onSwitchTab={(t) => navigateTab(t)}
+            onOpenGuides={() => setShowGuides(true)}
+            onOpenSettings={() => setShowSettings(true)}
+            onOpenDashboard={() => void openDashboardTab(activeTab)}
+            onClose={() => setShowCmdPalette(false)}
+          />
+        )}
+
+        {showSettings && (
+          <SettingsModal
+            version={version}
+            settings={settings}
+            focusApiKey={focusApiKeyInSettings}
+            onUpdateSettings={(patch) => void updateSettings(patch)}
+            onOpenTierEditor={() => setShowTierEditor(true)}
+            onOpenWhatsNew={() => {
+              setShowSettings(false);
+              setShowWhatsNew(true);
+              setHasUnseenWhatsNew(false);
+              try {
+                window.localStorage.setItem("jamassist_last_seen_version", version);
+              } catch {
+                // Ignore
+              }
+            }}
+            onClearCache={() => void clearCache()}
+            onReloadExtension={() => void reloadExtension()}
+            onClose={() => {
+              setFocusApiKeyInSettings(false);
+              setShowSettings(false);
+            }}
+          />
+        )}
+      </Suspense>
 
       {showTierEditor && (
         <TierEditorModal
@@ -1602,23 +2107,27 @@ export function App() {
         />
       )}
 
-      {showSettings && (
-        <SettingsModal
-          version={version}
-          settings={settings}
-          focusApiKey={focusApiKeyInSettings}
-          onUpdateSettings={(patch) => void updateSettings(patch)}
-          onOpenTierEditor={() => setShowTierEditor(true)}
-          onClearCache={() => void clearCache()}
-          onReloadExtension={() => void reloadExtension()}
-          onClose={() => {
-            setFocusApiKeyInSettings(false);
-            setShowSettings(false);
-          }}
-        />
-      )}
-
       <footer className="px-3 pb-4 pt-1 text-center text-[10px] text-slate-500">
+        <button
+          type="button"
+          onClick={() => {
+            setShowWhatsNew(true);
+            setHasUnseenWhatsNew(false);
+            try {
+              window.localStorage.setItem("jamassist_last_seen_version", version);
+            } catch {
+              // Ignore
+            }
+          }}
+          className={`mr-1.5 inline-flex items-center rounded px-1 py-px font-mono text-[9.5px] font-medium transition ${
+            isExperimentalBuild
+              ? "border border-rose-400/40 bg-rose-500/12 text-rose-300 hover:bg-rose-500/20"
+              : "bg-white/8 text-amber-300 hover:bg-amber-400/20"
+          }`}
+          title="View What's New & Changelog"
+        >
+          {versionBadgeLabel}
+        </button>
         Use at own risk • Estimates only (not financial advice) • Unofficial
         companion by pjampjam (not affiliated with Sorare or NBA) • Local-only
         storage • MIT License

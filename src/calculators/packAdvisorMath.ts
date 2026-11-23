@@ -88,7 +88,7 @@ export function buildPackAdvice(
 ): PackAdvice[] {
   const out: PackAdvice[] = [];
   if (status?.dailyPackClaimed === false) {
-    out.push({ kind: "daily", priority: 1, text: "Open your free Daily Pack (Daily Boost step 1)." });
+    out.push({ kind: "daily", priority: 1, text: "Open your free Daily Pack in Daily Solo (Daily Boost step 1)." });
   } else if (status?.dailyPackClaimed === true) {
     out.push({ kind: "daily", priority: 9, text: "Daily Pack already opened today." });
   }
@@ -106,14 +106,16 @@ export function buildPackAdvice(
   for (const a of analyses.filter((x) => x.pack.category === "LIVE_TODAY")) {
     const end = a.pack.endDate ? Date.parse(a.pack.endDate) : NaN;
     const hours = Number.isFinite(end) ? Math.max(0, Math.round(((end - nowMs) / 3_600_000) * 10) / 10) : null;
+    const oddsNote = a.pack.slots.length > 0 ? `, ${a.chance3StarPct}% for a 3★+` : "";
     out.push({
       kind: "live_today",
       priority: 5,
-      text: `${a.pack.title}: players of today's teams (useful for today's lineups and Daily Picker), ${a.chance3StarPct}% for a 3★+${hours !== null ? `, ends in ${hours}h` : ""}.`,
+      text: `${a.pack.title}: players of today's teams (useful for today's lineups and Daily Picker)${oddsNote}${hours !== null ? `, ends in ${hours}h` : ""}.`,
     });
   }
-  const essencePacks = analyses.filter((a) => a.pack.currency === "COMMON_ESSENCE" && a.costPer3StarPct !== null);
-  const best = essencePacks.sort((a, b) => (a.costPer3StarPct ?? 1e9) - (b.costPer3StarPct ?? 1e9))[0];
+  const allEssencePacks = analyses.filter((a) => a.pack.currency === "COMMON_ESSENCE" && a.pack.price > 0);
+  const essencePacksWithOdds = allEssencePacks.filter((a) => a.costPer3StarPct !== null);
+  const best = [...essencePacksWithOdds].sort((a, b) => (a.costPer3StarPct ?? 1e9) - (b.costPer3StarPct ?? 1e9))[0];
   if (best) {
     out.push({
       kind: "value",
@@ -122,7 +124,7 @@ export function buildPackAdvice(
     });
   }
   if (commonEssence !== null) {
-    const cheapest = essencePacks.map((a) => a.pack.price).sort((a, b) => a - b)[0];
+    const cheapest = allEssencePacks.map((a) => a.pack.price).sort((a, b) => a - b)[0];
     if (cheapest && commonEssence < cheapest) {
       out.push({
         kind: "essence",

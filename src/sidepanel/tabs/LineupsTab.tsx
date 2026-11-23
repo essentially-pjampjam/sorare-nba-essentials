@@ -2,6 +2,7 @@ import {
   Activity,
   ArrowLeftRight,
   ArrowRight,
+  Bookmark,
   Calendar,
   Check,
   ChevronRight,
@@ -10,6 +11,7 @@ import {
   ExternalLink,
   FileSpreadsheet,
   Flame,
+  ImageDown,
   Info,
   Layers,
   Lock,
@@ -17,19 +19,25 @@ import {
   SlidersHorizontal,
   Snowflake,
   Sparkles,
+  Trash2,
   TrendingUp,
   Trophy,
   Wallet,
   Wand2,
   Zap,
 } from "lucide-react";
-import { JumpBar } from "../components/JumpBar";
 import { StatusStrip } from "../components/StatusStrip";
 import { DailyPlayHub } from "../components/DailyPlayHub";
 import { SquadActivityCard } from "../components/SquadActivityCard";
 import { PackAdvisorCard } from "../components/PackAdvisorCard";
 import { ProProgressCard } from "../components/ProProgressCard";
 import { GoButton } from "../components/GoButton";
+import { LineupCardStrip } from "../components/LineupCardStrip";
+import { LineupRangeBar } from "../components/LineupRangeBar";
+import { RewardPreviewStrip } from "../components/RewardPreviewStrip";
+import { InjuryImpactPanel } from "../components/InjuryImpactPanel";
+import { exportLineupSharePng } from "../utils/lineupShareCard";
+import { evaluateInjuryBeneficiaries } from "../../calculators/injuryImpactMath";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildSetTeams,
@@ -43,6 +51,7 @@ import {
   generateTopLineups,
   analyzeFocusStrength,
   getCompetitionEntryLimit,
+  normalizePlayerName,
   optimizeMultiCompetitionPortfolio,
   recommendBestFormat,
   resolveSyncedLineupCardSlugs,
@@ -70,6 +79,7 @@ import type {
   LineupFormat,
   ProjectionSource,
   Rarity,
+  SavedRosterPreset,
   WalletBalanceInfo,
   DailyPickerPool,
 } from "../../shared/types";
@@ -101,8 +111,16 @@ interface LineupsTabProps {
   /** Global Set | Pro switch (top bar). When set, the tab's own switch is hidden. */
   mode?: "pro" | "set_common";
   onModeChange?: (mode: "pro" | "set_common") => void;
+  requestedSetSubTab?: { tab: "daily" | "solo_squad" | "packs" | "overview"; seq: number } | null;
+  onConsumeRequestedSetSubTab?: () => void;
+  commonEssence?: number;
   initialFormat?: LineupFormat;
   onToggleCutoffReminder?: (enabled: boolean) => void;
+  onTryDemo?: () => void;
+  savedRosters?: SavedRosterPreset[];
+  onSaveRoster?: (preset: SavedRosterPreset) => void;
+  onDeleteRoster?: (id: string) => void;
+  onOpenWrapped?: () => void;
 }
 
 const FORMAT_OPTIONS: Array<{ id: LineupFormat; label: string; sub: string }> = [
@@ -201,8 +219,16 @@ export function LineupsTab({
   initialArenaMode = "pro",
   mode,
   onModeChange,
+  requestedSetSubTab,
+  onConsumeRequestedSetSubTab,
+  commonEssence,
   initialFormat = "contender_11",
   onToggleCutoffReminder,
+  onTryDemo,
+  savedRosters = [],
+  onSaveRoster,
+  onDeleteRoster,
+  onOpenWrapped,
 }: LineupsTabProps) {
   const [localArenaMode, setLocalArenaMode] = useState<"pro" | "set_common">(initialArenaMode);
   const arenaMode = mode ?? localArenaMode;
@@ -224,6 +250,21 @@ export function LineupsTab({
   const [disjointLineups, setDisjointLineups] = useState(true);
   const [excludeSubmittedCards, setExcludeSubmittedCards] = useState(false);
   const [excludedCardSlugs, setExcludedCardSlugs] = useState<string[]>([]);
+  const [lockedCardSlugs, setLockedCardSlugs] = useState<string[]>([]);
+  const toggleLockCard = (slug: string, playerSlug?: string) => {
+    setLockedCardSlugs((prev) => {
+      if (prev.includes(slug)) return prev.filter((s) => s !== slug);
+      const withoutSamePlayer = playerSlug
+        ? prev.filter((s) => {
+            const existing = gallery?.cards.find((card) => card.slug === s);
+            return existing?.playerSlug !== playerSlug;
+          })
+        : prev;
+      if (withoutSamePlayer.length >= 5) return prev;
+      return [...withoutSamePlayer, slug];
+    });
+    setExcludedCardSlugs((prev) => prev.filter((s) => s !== slug));
+  };
   const [expandedSlotSlug, setExpandedSlotSlug] = useState<string | null>(null);
   const [setBuildMode, setSetBuildMode] = useState<SetBuildMode>("solo");
   const [setTeamCount, setSetTeamCount] = useState<number>(4);
@@ -233,6 +274,25 @@ export function LineupsTab({
   const [showCustomEditor, setShowCustomEditor] = useState(false);
   const [customDraft, setCustomDraft] = useState(customProjectionsRaw);
   const [copiedRank, setCopiedRank] = useState<number | null>(null);
+  const [sharedCardState, setSharedCardState] = useState<{ key: string; label: string } | null>(null);
+  const handleShareLineupCard = useCallback(
+    async (key: string, payload: Parameters<typeof exportLineupSharePng>[0]) => {
+      setSharedCardState({ key, label: "..." });
+      try {
+        const result = await exportLineupSharePng(payload);
+        setSharedCardState({
+          key,
+          label: result === "copied" ? "Copied PNG" : "Saved PNG",
+        });
+      } catch {
+        setSharedCardState({ key, label: "Failed" });
+      }
+      window.setTimeout(() => {
+        setSharedCardState((prev) => (prev?.key === key ? null : prev));
+      }, 2200);
+    },
+    [],
+  );
   const [buildSeed, setBuildSeed] = useState(0);
   const [rebuildNotice, setRebuildNotice] = useState<string | null>(null);
   const lineupsResultRef = useRef<HTMLDivElement>(null);
@@ -273,6 +333,50 @@ export function LineupsTab({
       gallery.injuriesByName,
     );
   }, [gallery]);
+
+  const [proSubTab, setProSubTab] = useState<"overview" | "builder" | "upgrades">(() => {
+    try {
+      const saved = localStorage.getItem("jamassist_lineups_pro_subtab");
+      return saved === "builder" || saved === "upgrades" ? saved : "overview";
+    } catch {
+      return "overview";
+    }
+  });
+  const selectProSubTab = (next: "overview" | "builder" | "upgrades") => {
+    setProSubTab(next);
+    try {
+      localStorage.setItem("jamassist_lineups_pro_subtab", next);
+    } catch {
+      // ignore storage failure
+    }
+  };
+
+  const [setSubTab, setSetSubTab] = useState<"daily" | "solo_squad" | "packs">(() => {
+    try {
+      const saved = localStorage.getItem("jamassist_lineups_set_subtab");
+      return saved === "solo_squad" || saved === "packs" ? saved : "daily";
+    } catch {
+      return "daily";
+    }
+  });
+  const selectSetSubTab = (next: "daily" | "solo_squad" | "packs") => {
+    setSetSubTab(next);
+    try {
+      localStorage.setItem("jamassist_lineups_set_subtab", next);
+    } catch {
+      // ignore storage failure
+    }
+  };
+  useEffect(() => {
+    if (requestedSetSubTab) {
+      if (requestedSetSubTab.tab === "overview") {
+        selectProSubTab("overview");
+      } else {
+        selectSetSubTab(requestedSetSubTab.tab);
+      }
+      onConsumeRequestedSetSubTab?.();
+    }
+  }, [requestedSetSubTab, onConsumeRequestedSetSubTab]);
 
   const submittedCardsCount = useMemo(() => {
     if (!gallery) return 0;
@@ -360,6 +464,13 @@ export function LineupsTab({
 
   // Live Daily Picker slate (today's games before the next 07:00 UTC reset + their rosters).
   const [dailyPool, setDailyPool] = useState<DailyPickerPool | null>(null);
+  const injuryImpacts = useMemo(() => {
+    if (!gallery) return [];
+    return evaluateInjuryBeneficiaries(gallery.cards, gallery.injuriesByName, {
+      rosterCards: dailyPool?.rosterCards,
+      gamesPerTeam: gallery.gamesPerTeam,
+    });
+  }, [dailyPool?.rosterCards, gallery]);
   const [dailyPoolLoading, setDailyPoolLoading] = useState(false);
   const loadDailyPool = useCallback((refresh: boolean) => {
     setDailyPoolLoading(true);
@@ -438,12 +549,16 @@ export function LineupsTab({
     return Array.from(new Set([...excludedCardSlugs, ...synced]));
   }, [excludeSubmittedCards, excludedCardSlugs, gallery]);
 
+  // Lineup strategy: max projection, safe floor (p10) or high ceiling (p90), optimized directly in DFS.
+  const [lineupStrategy, setLineupStrategy] = useState<"proj" | "floor" | "ceiling">("proj");
+
   const built = useMemo(() => {
     if (!gallery) return null;
     // Reference buildSeed so clicking Auto-Build triggers explicit recomputation feedback
     void buildSeed;
     return generateTopLineups(gallery.cards, {
       format,
+      strategy: lineupStrategy,
       rarityFilter: rarityScope,
       projectionSource,
       customProjectionsRaw,
@@ -458,8 +573,8 @@ export function LineupsTab({
       ageFilter,
       excludeSubmittedCards,
       excludedCardSlugs: effectiveExcludedCardSlugs,
-      // Extra candidates so the Safe floor / High ceiling strategies have real choices.
-      maxLineups: Math.min(10, entryLimit * 2),
+      lockedCardSlugs,
+      maxLineups: entryLimit,
       captainBonusPct: 0,
       benchmarks: gallery.leaderboardBenchmarks,
       benchmarkSeasonScope,
@@ -477,26 +592,18 @@ export function LineupsTab({
     excludeSubmittedCards,
     format,
     gallery,
+    lineupStrategy,
+    lockedCardSlugs,
     minInSeasonCards,
     projectionSource,
     rarityScope,
     strictInSeasonOnly,
   ]);
 
-  // Lineup strategy: max projection, safe floor (p10) or high ceiling (p90), up to the entry limit.
-  const [lineupStrategy, setLineupStrategy] = useState<"proj" | "floor" | "ceiling">("proj");
-  const shownLineups = useMemo(() => {
-    const list = built?.lineups ?? [];
-    const score = (l: (typeof list)[number]) => {
-      const sd = l.stdDev ?? 0;
-      return lineupStrategy === "floor"
-        ? l.totalScore - 1.2816 * sd
-        : lineupStrategy === "ceiling"
-          ? l.totalScore + 1.2816 * sd
-          : l.totalScore;
-    };
-    return [...list].sort((a, b) => score(b) - score(a)).slice(0, entryLimit);
-  }, [built, entryLimit, lineupStrategy]);
+  const shownLineups = useMemo(
+    () => (built?.lineups ?? []).slice(0, entryLimit),
+    [built, entryLimit],
+  );
 
   const effectiveMarketListings = useMemo(
     () =>
@@ -562,6 +669,7 @@ export function LineupsTab({
       customProjectionsRaw,
       injuriesByName: gallery.injuriesByName,
       gamesPerTeam: gallery.gamesPerTeam,
+      scheduleByTeam: gallery.scheduleByTeam,
       budgetCents,
       includeOwned: includeOwnedInBudget,
       inSeasonOnly: strictInSeasonOnly,
@@ -651,6 +759,7 @@ export function LineupsTab({
         customProjectionsRaw,
         injuriesByName: gallery.injuriesByName,
         gamesPerTeam: gallery.gamesPerTeam,
+        scheduleByTeam: gallery.scheduleByTeam,
         excludeOut,
         excludeQuestionable,
         captainBonusPct: 0,
@@ -696,6 +805,7 @@ export function LineupsTab({
         customProjectionsRaw,
         injuriesByName: gallery.injuriesByName,
         gamesPerTeam: gallery.gamesPerTeam,
+        scheduleByTeam: gallery.scheduleByTeam,
         excludeOut,
         excludeQuestionable,
         captainBonusPct: 0,
@@ -735,14 +845,25 @@ export function LineupsTab({
           Loads your Sorare NBA gallery, upcoming Game Week schedule, and live
           ESPN injury reports to auto-build top lineups and estimate win odds.
         </p>
-        <button
-          type="button"
-          disabled={!hasUsername}
-          onClick={() => onLoadGallery(false)}
-          className="mt-3.5 rounded-xl jam-btn-primary px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-sm disabled:opacity-50"
-        >
-          {hasUsername ? "Load Gallery & Injuries" : "Enter Username First"}
-        </button>
+        <div className="mt-3.5 flex flex-wrap items-center justify-center gap-2">
+          <button
+            type="button"
+            disabled={!hasUsername}
+            onClick={() => onLoadGallery(false)}
+            className="rounded-xl jam-btn-primary px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-sm disabled:opacity-50"
+          >
+            {hasUsername ? "Load Gallery & Injuries" : "Enter Username First"}
+          </button>
+          {!hasUsername && onTryDemo && (
+            <button
+              type="button"
+              onClick={onTryDemo}
+              className="rounded-xl border border-sky-400/40 bg-sky-500/15 px-3.5 py-1.5 text-xs font-semibold text-sky-200 hover:border-sky-300 hover:bg-sky-500/25"
+            >
+              Try Demo (@pjampjam)
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -791,39 +912,138 @@ export function LineupsTab({
       </div>
       )}
 
-      <JumpBar
-        items={
-          arenaMode === "pro"
-            ? [
-                { id: "sec-progress", label: "Progress" },
-                { id: "sec-swaps", label: "Upgrade swaps" },
-                { id: "sec-entry", label: "Best contest" },
-                { id: "sec-pro-daily", label: "Daily Play" },
-                { id: "sec-builder", label: "Lineup builder" },
-                { id: "sec-market", label: "Market buys" },
-                { id: "sec-schedule", label: "Schedule" },
-                { id: "sec-guides", label: "Guides" },
-              ]
-            : [
-                { id: "sec-set-packs", label: "Packs" },
-                { id: "sec-set-squad", label: "Squad" },
-                { id: "sec-set-builder", label: "Team builder" },
-                { id: "sec-set-daily", label: "Daily Play" },
-                { id: "sec-set-guide", label: "Guide" },
-              ]
-        }
-      />
-
-      {arenaMode === "pro" && (
-        <>
-          <div id="sec-progress">
-            <ProProgressCard gallery={gallery} />
-          </div>
-        </>
+      {/* Focused Sub-Tabs (reduces cognitive overload by splitting Overview, Builder, and Upgrades) */}
+      {arenaMode === "pro" ? (
+        <div
+          role="tablist"
+          aria-label="Pro lineup views"
+          className="jam-subtabs"
+        >
+          {(
+            [
+              { id: "overview", label: "Overview & Live" },
+              { id: "builder", label: "Builder" },
+              { id: "upgrades", label: "Upgrades & Schedule" },
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={proSubTab === t.id}
+              onClick={() => selectProSubTab(t.id)}
+              className="jam-subtab cursor-pointer"
+            >
+              {t.label}
+              {t.id === "upgrades" && injuryImpacts.length > 0 && (
+                <span className="rounded-full bg-rose-500/25 px-1.5 py-0.2 text-[9px] font-bold text-rose-200">
+                  {injuryImpacts.length}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div
+          role="tablist"
+          aria-label="Set lineup views"
+          className="jam-subtabs"
+        >
+          {(
+            [
+              { id: "daily", label: "Daily Play" },
+              { id: "solo_squad", label: "Solo & Squad" },
+              { id: "packs", label: "Packs" },
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={setSubTab === t.id}
+              onClick={() => selectSetSubTab(t.id)}
+              className="jam-subtab cursor-pointer"
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
       )}
 
+      {arenaMode === "pro" && (
+        <div
+          role="tabpanel"
+          aria-label="Overview & Live"
+          hidden={proSubTab !== "overview"}
+          className={proSubTab === "overview" ? "jam-panel-enter space-y-3" : "hidden"}
+        >
+          <div id="sec-progress">
+            <ProProgressCard gallery={gallery} onOpenWrapped={onOpenWrapped} />
+          </div>
+
+          {savedRosters.length > 0 && (
+            <div className="rounded-2xl border border-white/8 bg-[#111726] p-3">
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Bookmark className="h-3.5 w-3.5 text-amber-300" />
+                  <span className="text-xs font-semibold text-slate-100">
+                    Saved Roster Presets ({savedRosters.length})
+                  </span>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                {savedRosters.map((preset) => (
+                  <div
+                    key={preset.id}
+                    className="flex items-center justify-between gap-2 rounded-lg border border-white/6 bg-[#0b101b] px-2.5 py-1.5 text-[10.5px]"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate font-semibold text-slate-100">{preset.name}</span>
+                        <span className="rounded border border-white/10 bg-white/5 px-1 text-[9px] text-slate-400">
+                          {preset.formatLabel}
+                        </span>
+                        <span className="font-semibold text-emerald-300">
+                          {preset.projectedTotal.toFixed(1)} pts
+                        </span>
+                      </div>
+                      <div className="truncate text-[10px] text-slate-400">
+                        {preset.playerNames.join(", ")}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void applyLineupHighlight(
+                            preset.playerNames,
+                            preset.formatLabel,
+                            preset.projectedTotal,
+                          )
+                        }
+                        className="rounded-lg border border-sky-400/35 bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold text-sky-200 hover:bg-sky-500/25"
+                      >
+                        Load
+                      </button>
+                      {onDeleteRoster && (
+                        <button
+                          type="button"
+                          onClick={() => onDeleteRoster(preset.id)}
+                          aria-label={`Delete preset ${preset.name}`}
+                          className="rounded-lg border border-white/10 p-1 text-slate-400 hover:border-rose-400/40 hover:text-rose-300"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
       {/* Current Submitted/Open Lineups & Upgrade Swaps */}
-      {arenaMode === "pro" && gallery && (
+      {gallery && (
         <details id="sec-swaps"
           open={currentLineupComparisons.length > 0}
           className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]"
@@ -990,6 +1210,36 @@ export function LineupsTab({
                       )}
                     </div>
                   </div>
+
+                  {/* Visual 5-Card Artwork Preview Strip & p10-mean-p90 Range Bar */}
+                  {submittedCards.length > 0 && (
+                    <div className="mt-2 space-y-1.5">
+                      <LineupCardStrip
+                        compact
+                        cards={submittedCards.slice(0, 5).map((gc) => ({
+                          key: gc.slug,
+                          playerName: gc.playerName,
+                          teamSlug: gc.teamSlug,
+                          rarity: gc.rarity,
+                          pictureUrl: gc.pictureUrl,
+                          starCost: gc.starCost,
+                          projectedPts: gc.sorareClassicProjected ?? gc.l10,
+                          l10: gc.l10,
+                          l5: gc.l5,
+                          gamesInSlate: gc.teamSlug ? (gallery?.gamesPerTeam?.[gc.teamSlug] ?? null) : null,
+                          powerMultiplier: gc.powerMultiplier,
+                          isCaptain: cmp.entry.captainCardSlug === gc.slug,
+                        }))}
+                      />
+                      <LineupRangeBar
+                        p10={cmp.overlaySummary?.p10Floor ?? Math.max(0, cmp.currentProjected * 0.78)}
+                        mean={cmp.currentProjected}
+                        p90={cmp.overlaySummary?.p90Ceiling ?? cmp.currentProjected * 1.24}
+                        cutLine={essTarget}
+                        label={cmp.entry.leaderboardName}
+                      />
+                    </div>
+                  )}
                   <div className="mt-1 flex items-center gap-2 text-[9.5px] text-slate-400">
                     <div className="h-1 flex-1 overflow-hidden rounded-full bg-black/50">
                       <div
@@ -1156,7 +1406,7 @@ export function LineupsTab({
       )}
 
       {/* Optimal Entry Disclosure + Recommended Competition Priority */}
-      {arenaMode === "pro" && formatRec && (
+      {formatRec && (
         <div id="sec-entry" className="rounded-2xl border border-white/8 bg-[#101829] p-3">
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-start gap-2">
@@ -1246,23 +1496,25 @@ export function LineupsTab({
                 </tbody>
               </table>
               {(() => {
-                const tiers = formatRec.candidates[0]?.rewardTiers ?? [];
-                if (tiers.length === 0) return null;
-                const kinds: Array<{ kind: "cash" | "essence" | "xp"; name: string }> = [
-                  { kind: "cash", name: "Cash" },
-                  { kind: "essence", name: "Essence" },
-                  { kind: "xp", name: "XP" },
-                ];
-                const parts = kinds
-                  .map(({ kind, name }) => {
-                    const t = tiers.filter((x) => x.kind === kind);
-                    if (t.length === 0) return null;
-                    return `${name} #${t[0].fromRank}-${t[t.length - 1].toRank} (${t[0].label}${t.length > 1 ? ` to ${t[t.length - 1].label}` : ""})`;
-                  })
-                  .filter(Boolean);
+                const topCand = formatRec.candidates[0];
+                const tiers = topCand?.rewardTiers ?? [];
+                if (
+                  tiers.length === 0 &&
+                  !topCand?.expectedCashUsd &&
+                  !topCand?.expectedEssence
+                ) {
+                  return null;
+                }
                 return (
-                  <div className="mt-1 text-[9.5px] text-slate-400">
-                    Rewards ({formatRec.candidates[0].label}, live from Sorare, last GW): {parts.join(" • ")}
+                  <div className="mt-2 space-y-1 border-t border-white/6 pt-2">
+                    <div className="text-[9.5px] font-medium text-slate-400">
+                      Live Reward Preview ({topCand.label}, last GW):
+                    </div>
+                    <RewardPreviewStrip
+                      tiers={tiers}
+                      expectedCashUsd={topCand.expectedCashUsd}
+                      expectedEssence={topCand.expectedEssence}
+                    />
                   </div>
                 );
               })()}
@@ -1272,18 +1524,31 @@ export function LineupsTab({
       )}
 
       {/* Pro Daily Play pickers */}
-      {arenaMode === "pro" && (
-        <div id="sec-pro-daily"><DailyPlayHub gallery={gallery} pool={dailyPool} poolLoading={dailyPoolLoading} onRefreshPool={() => loadDailyPool(true)} missions={["pro_daily", "double_double", "rebounds"]} /></div>
+      <div id="sec-pro-daily"><DailyPlayHub gallery={gallery} pool={dailyPool} poolLoading={dailyPoolLoading} onRefreshPool={() => loadDailyPool(true)} missions={["pro_daily", "double_double", "rebounds", "playmaker"]} /></div>
+        </div>
       )}
 
       {/* SET / COMMON MODE WORKSPACE */}
       {arenaMode === "set_common" && (
         <div className="space-y-3">
           {/* Set packs: Daily Pack, Bronze+, Live Today, 3★+ odds */}
-          <div id="sec-set-packs"><PackAdvisorCard /></div>
+          <div
+            role="tabpanel"
+            aria-label="Packs"
+            hidden={setSubTab !== "packs"}
+            className={setSubTab === "packs" ? "jam-panel-enter" : "hidden"}
+          >
+            <div id="sec-set-packs"><PackAdvisorCard commonEssence={commonEssence} /></div>
+          </div>
 
-          {/* Set Squad: who has a team in the live stage */}
-          <div id="sec-set-squad"><SquadActivityCard mySlug={gallery?.username ?? null} /></div>
+          {/* Set Squad & Solo Team Builder */}
+          <div
+            role="tabpanel"
+            aria-label="Solo & Squad"
+            hidden={setSubTab !== "solo_squad"}
+            className={setSubTab === "solo_squad" ? "jam-panel-enter space-y-3" : "hidden"}
+          >
+            <div id="sec-set-squad"><SquadActivityCard mySlug={gallery?.username ?? null} /></div>
 
           {/* Configurable N Teams Auto-Builder for Solo / Squad */}
           <div id="sec-set-builder" className="space-y-2.5 rounded-2xl border border-white/8 bg-[#111726] p-3">
@@ -1403,6 +1668,57 @@ export function LineupsTab({
                         <span className="flex items-center gap-1">
                           <button
                             type="button"
+                            onClick={() => {
+                              const shareKey = `solo-${idx}`;
+                              void handleShareLineupCard(shareKey, {
+                                title: label,
+                                subtitle: team.avgBoostPct > 0 ? `+${team.avgBoostPct}% avg boost` : "Set Arcade",
+                                username: gallery?.username ?? null,
+                                rarity: "common",
+                                projectedTotal: team.projectedTotal,
+                                capLabel: lu.capLimit ? `${lu.capUsed}/${lu.capLimit}★` : `${lu.totalStars}★`,
+                                slots: lu.slots.map((sl) => {
+                                  const t = sl.evaluated.card.teamSlug;
+                                  const isToday = !dailyPool || (t !== null && dailyPool.window.teamSlugs.includes(t));
+                                  const w = soloTiming === "today_first" && !isToday ? SET_SOLO_LATER_WEIGHT : 1;
+                                  return {
+                                    playerName: sl.evaluated.card.playerName,
+                                    teamSlug: sl.evaluated.card.teamSlug,
+                                    rarity: sl.evaluated.card.rarity,
+                                    pictureUrl: sl.evaluated.card.pictureUrl,
+                                    starCost: sl.evaluated.card.starCost,
+                                    projectedPts: sl.slotScore / w,
+                                    boostPct:
+                                      sl.evaluated.card.powerMultiplier > 1.005
+                                        ? Math.round((sl.evaluated.card.powerMultiplier - 1) * 100)
+                                        : null,
+                                  };
+                                }),
+                                stats: team.stepOdds.slice(0, 3).map((o) => ({
+                                  label: `${o.target} pts`,
+                                  value: `${o.hitPct}%`,
+                                  tone: o.hitPct >= 60 ? "emerald" : o.hitPct >= 30 ? "amber" : "neutral",
+                                })),
+                              });
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] font-semibold text-slate-200 hover:border-sky-400/45 hover:text-sky-200"
+                            title="Copy or save a shareable 16:9 PNG lineup card"
+                            aria-label="Share Set Solo lineup card PNG"
+                          >
+                            {sharedCardState?.key === `solo-${idx}` ? (
+                              <>
+                                <Check className="h-2.5 w-2.5 text-emerald-400" />
+                                <span className="text-emerald-300">{sharedCardState.label}</span>
+                              </>
+                            ) : (
+                              <>
+                                <ImageDown className="h-2.5 w-2.5 text-sky-300" />
+                                <span>Card</span>
+                              </>
+                            )}
+                          </button>
+                          <button
+                            type="button"
                             onClick={() =>
                               void applyLineupHighlight(
                                 names,
@@ -1415,6 +1731,10 @@ export function LineupsTab({
                                   rarity: sl.evaluated.card.rarity,
                                   seasonYear: sl.evaluated.card.seasonYear,
                                   isCaptain: sl.isCaptainOrMvp,
+                                  pictureUrl: sl.evaluated.card.pictureUrl,
+                                  starCost: sl.evaluated.card.starCost,
+                                  projectedPts: sl.slotScore,
+                                  teamSlug: sl.evaluated.card.teamSlug,
                                 })),
                               )
                             }
@@ -1426,17 +1746,34 @@ export function LineupsTab({
                           <GoButton url={buildSetPlayUrl("arcade")} title="Open Set Solo play on Sorare" />
                         </span>
                       </div>
-                      <div className="text-[11px] text-slate-300">
-                        {lu.slots
-                          .map((sl) => {
-                            const t = sl.evaluated.card.teamSlug;
-                            const isToday = !dailyPool || (t !== null && dailyPool.window.teamSlugs.includes(t));
-                            const w = soloTiming === "today_first" && !isToday ? SET_SOLO_LATER_WEIGHT : 1;
-                            return `${sl.evaluated.card.playerName} ${(sl.slotScore / w).toFixed(0)}${
-                              soloTiming !== "today_only" ? (isToday ? " (today)" : " (tmrw)") : ""
-                            }`;
-                          })
-                          .join(" • ")}
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-300">
+                        {lu.slots.map((sl, idx) => {
+                          const t = sl.evaluated.card.teamSlug;
+                          const isToday = !dailyPool || (t !== null && dailyPool.window.teamSlugs.includes(t));
+                          const w = soloTiming === "today_first" && !isToday ? SET_SOLO_LATER_WEIGHT : 1;
+                          const avgMin = dailyPool?.statsByName?.[normalizePlayerName(sl.evaluated.card.playerName)]?.avgMinutes;
+                          return (
+                            <span key={sl.evaluated.card.slug} className="inline-flex items-center gap-1">
+                              {idx > 0 && <span className="text-slate-600">•</span>}
+                              <span>
+                                {sl.evaluated.card.playerName} {(sl.slotScore / w).toFixed(0)}
+                                {soloTiming !== "today_only" ? (isToday ? " (today)" : " (tmrw)") : ""}
+                              </span>
+                              {typeof avgMin === "number" && avgMin > 0 && (
+                                <span
+                                  className={
+                                    avgMin < 20
+                                      ? "rounded border border-amber-400/35 bg-amber-500/15 px-1 text-[9px] font-semibold text-amber-200"
+                                      : "rounded bg-white/8 px-1 text-[9px] font-medium text-slate-300"
+                                  }
+                                  title={avgMin < 20 ? `Bench role (${Math.round(avgMin)} min/game)` : `Season average ${Math.round(avgMin)} min/game`}
+                                >
+                                  {avgMin < 20 ? "Bench (<20m)" : `${Math.round(avgMin)}m`}
+                                </span>
+                              )}
+                            </span>
+                          );
+                        })}
                       </div>
                       {soloTiming !== "today_only" && (
                         <div className="mt-0.5 flex flex-wrap gap-x-2 text-[9.5px] text-sky-300">
@@ -1481,45 +1818,119 @@ export function LineupsTab({
                           Set Squad #{team.rank} • {team.totalScore.toFixed(1)}{" "}
                           pts
                         </span>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void applyLineupHighlight(
-                              names,
-                              `Set Squad #${team.rank}`,
-                              team.totalScore,
-                              team.slots.map((s) => ({
-                                slotLabel: s.slotLabel,
-                                cardSlug: s.evaluated.card.slug,
-                                playerName: s.evaluated.card.playerName,
-                                rarity: s.evaluated.card.rarity,
-                                seasonYear: s.evaluated.card.seasonYear,
-                                isCaptain: s.isCaptainOrMvp,
-                              })),
-                            )
-                          }
-                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-200"
-                        >
-                          <Send className="h-2.5 w-2.5" />
-                          Apply
-                        </button>
-                        <GoButton url={buildSetPlayUrl("squad")} title="Open Set Squad on Sorare" />
+                        <span className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const shareKey = `squad-${team.rank}`;
+                              void handleShareLineupCard(shareKey, {
+                                title: `Set Squad #${team.rank}`,
+                                subtitle: "Set Squad Mode",
+                                username: gallery?.username ?? null,
+                                rarity: "common",
+                                projectedTotal: team.totalScore,
+                                capLabel: team.capLimit ? `${team.capUsed}/${team.capLimit}★` : `${team.totalStars}★`,
+                                slots: team.slots.map((s) => ({
+                                  playerName: s.evaluated.card.playerName,
+                                  teamSlug: s.evaluated.card.teamSlug,
+                                  rarity: s.evaluated.card.rarity,
+                                  pictureUrl: s.evaluated.card.pictureUrl,
+                                  starCost: s.evaluated.card.starCost,
+                                  projectedPts: s.slotScore,
+                                  boostPct:
+                                    s.evaluated.card.powerMultiplier > 1.005
+                                      ? Math.round((s.evaluated.card.powerMultiplier - 1) * 100)
+                                      : null,
+                                  badge: s.isCaptainOrMvp ? "MVP" : null,
+                                })),
+                                stats: [
+                                  { label: "Total Stars", value: `${team.totalStars}★`, tone: "amber" },
+                                  { label: "Projected", value: `${team.totalScore.toFixed(1)}`, tone: "emerald" },
+                                ],
+                              });
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] font-semibold text-slate-200 hover:border-sky-400/45 hover:text-sky-200"
+                            title="Copy or save a shareable 16:9 PNG lineup card"
+                            aria-label="Share Set Squad lineup card PNG"
+                          >
+                            {sharedCardState?.key === `squad-${team.rank}` ? (
+                              <>
+                                <Check className="h-2.5 w-2.5 text-emerald-400" />
+                                <span className="text-emerald-300">{sharedCardState.label}</span>
+                              </>
+                            ) : (
+                              <>
+                                <ImageDown className="h-2.5 w-2.5 text-sky-300" />
+                                <span>Card</span>
+                              </>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void applyLineupHighlight(
+                                names,
+                                `Set Squad #${team.rank}`,
+                                team.totalScore,
+                                team.slots.map((s) => ({
+                                  slotLabel: s.slotLabel,
+                                  cardSlug: s.evaluated.card.slug,
+                                  playerName: s.evaluated.card.playerName,
+                                  rarity: s.evaluated.card.rarity,
+                                  seasonYear: s.evaluated.card.seasonYear,
+                                  isCaptain: s.isCaptainOrMvp,
+                                  pictureUrl: s.evaluated.card.pictureUrl,
+                                  starCost: s.evaluated.card.starCost,
+                                  projectedPts: s.slotScore,
+                                  teamSlug: s.evaluated.card.teamSlug,
+                                })),
+                              )
+                            }
+                            className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-200"
+                          >
+                            <Send className="h-2.5 w-2.5" />
+                            Apply
+                          </button>
+                          <GoButton url={buildSetPlayUrl("squad")} title="Open Set Squad on Sorare" />
+                        </span>
                       </div>
-                      <div className="text-[11px] text-slate-300">
-                        {names.join(" • ")}
-                      </div>
+                      <LineupCardStrip
+                        compact
+                        cards={team.slots.map((s) => ({
+                          key: s.evaluated.card.slug,
+                          playerName: s.evaluated.card.playerName,
+                          teamSlug: s.evaluated.card.teamSlug,
+                          rarity: s.evaluated.card.rarity,
+                          pictureUrl: s.evaluated.card.pictureUrl,
+                          starCost: s.evaluated.card.starCost,
+                          projectedPts: s.slotScore,
+                          l10: s.evaluated.card.l10,
+                          l5: s.evaluated.card.l5,
+                          gamesInSlate: s.evaluated.gamesInSlate,
+                          powerMultiplier: s.evaluated.card.powerMultiplier,
+                          avgMinutes: dailyPool?.statsByName?.[normalizePlayerName(s.evaluated.card.playerName)]?.avgMinutes ?? null,
+                          isCaptain: s.isCaptainOrMvp,
+                        }))}
+                      />
                     </div>
                   );
                 })}
               </div>
             )}
           </div>
+          </div>
 
           {/* Daily Play: Set Daily Picker (best / safe / risk picks, owned vs not owned) */}
-          <div id="sec-set-daily"><DailyPlayHub gallery={gallery} pool={dailyPool} poolLoading={dailyPoolLoading} onRefreshPool={() => loadDailyPool(true)} missions={["set_daily"]} /></div>
+          <div
+            role="tabpanel"
+            aria-label="Daily Play"
+            hidden={setSubTab !== "daily"}
+            className={setSubTab === "daily" ? "jam-panel-enter space-y-3" : "hidden"}
+          >
+              <div id="sec-set-daily"><DailyPlayHub gallery={gallery} pool={dailyPool} poolLoading={dailyPoolLoading} onRefreshPool={() => loadDailyPool(true)} missions={["set_daily"]} /></div>
 
-          {/* Set Quests & Arcade Guide */}
-          <details id="sec-set-guide" className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
+              {/* Set Quests & Arcade Guide */}
+              <details id="sec-set-guide" className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
             <summary className="flex w-full items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
               <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
                 <ChevronRight className="cascade-chevron h-3.5 w-3.5 shrink-0 text-emerald-400" />
@@ -1551,12 +1962,19 @@ export function LineupsTab({
               </div>
             </div>
           </details>
+          </div>
         </div>
       )}
 
-      {/* PRO MODE: Format & Projection Reference Controls */}
+      {/* PRO MODE: Format & Projection Reference Controls (Builder & Upgrades Sub-Tabs) */}
       {arenaMode === "pro" && (
         <>
+          <div
+            role="tabpanel"
+            aria-label="Builder"
+            hidden={proSubTab !== "builder"}
+            className={proSubTab === "builder" ? "jam-panel-enter space-y-3" : "hidden"}
+          >
           <div id="sec-builder" className="space-y-2 rounded-2xl border border-white/8 bg-[#111726] p-3">
         <div className="grid grid-cols-3 gap-1 sm:grid-cols-5">
           {FORMAT_OPTIONS.map((opt) => {
@@ -1731,6 +2149,17 @@ export function LineupsTab({
               >
                 <Lock className="h-2.5 w-2.5" />
                 Skip Locked ({submittedCardsCount})
+              </button>
+            )}
+            {lockedCardSlugs.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setLockedCardSlugs([])}
+                className="inline-flex items-center gap-1 rounded-lg border border-sky-400/40 bg-sky-500/15 px-2 py-0.5 text-sky-200 hover:bg-sky-500/25"
+                title="Clear all manually locked (must-start) cards"
+              >
+                <Lock className="h-2.5 w-2.5" />
+                Reset ({lockedCardSlugs.length} locked)
               </button>
             )}
             {excludedCardSlugs.length > 0 && (
@@ -1911,9 +2340,28 @@ export function LineupsTab({
       )}
       {built && built.lineups.length === 0 ? (
         <div className="rounded-xl border border-white/8 bg-[#111726] p-4 text-center text-xs text-slate-400">
-          Not enough eligible cards ({built.evaluatedPool.length} available) to
-          form a 5-card lineup under current filters. Try switching to{" "}
-          <strong>All Rarities</strong> or <strong>Uncapped</strong>.
+          {lockedCardSlugs.length > 0 ? (
+            <div className="space-y-2">
+              <div>
+                No valid 5-card lineup can fit your {lockedCardSlugs.length} locked must-start card
+                {lockedCardSlugs.length > 1 ? "s" : ""} under the current star, team, or season rules.
+              </div>
+              <button
+                type="button"
+                onClick={() => setLockedCardSlugs([])}
+                className="inline-flex items-center gap-1 rounded-lg border border-sky-400/40 bg-sky-500/15 px-2.5 py-1 text-[11px] font-semibold text-sky-200 hover:bg-sky-500/25"
+              >
+                <Lock className="h-3 w-3" />
+                Clear {lockedCardSlugs.length} locked card{lockedCardSlugs.length > 1 ? "s" : ""}
+              </button>
+            </div>
+          ) : (
+            <>
+              Not enough eligible cards ({built.evaluatedPool.length} available) to
+              form a 5-card lineup under current filters. Try switching to{" "}
+              <strong>All Rarities</strong> or <strong>Uncapped</strong>.
+            </>
+          )}
         </div>
       ) : (
         shownLineups.map((lineup, shownIdx) => {
@@ -1973,6 +2421,107 @@ export function LineupsTab({
                   </button>
                   <button
                     type="button"
+                    onClick={() => {
+                      const shareKey = `pro-${lineup.rank}`;
+                      const p10 =
+                        typeof lineup.stdDev === "number" && lineup.stdDev > 0
+                          ? Math.max(0, lineup.totalScore - 1.2816 * lineup.stdDev)
+                          : null;
+                      const p90 =
+                        typeof lineup.stdDev === "number" && lineup.stdDev > 0
+                          ? lineup.totalScore + 1.2816 * lineup.stdDev
+                          : null;
+                      const capLabel =
+                        lineup.format === "daily_120_mvp"
+                          ? `${lineup.capUsed}/120 + MVP`
+                          : lineup.capLimit
+                            ? `${lineup.capUsed}/${lineup.capLimit}★`
+                            : `${lineup.totalStars}★ total`;
+                      void handleShareLineupCard(shareKey, {
+                        title: fmtLabel,
+                        subtitle: `${lineup.inSeasonCount}/5 In-Season`,
+                        username: gallery?.username ?? null,
+                        rarity: rarityScope === "ALL" ? activeRarity : rarityScope,
+                        projectedTotal: lineup.totalScore,
+                        rangeLabel:
+                          p10 !== null && p90 !== null
+                            ? `Floor ${p10.toFixed(0)} - Ceiling ${p90.toFixed(0)} pts`
+                            : null,
+                        capLabel,
+                        slots: lineup.slots.map((s) => ({
+                          playerName: s.evaluated.card.playerName,
+                          teamSlug: s.evaluated.card.teamSlug,
+                          rarity: s.evaluated.card.rarity,
+                          pictureUrl: s.evaluated.card.pictureUrl,
+                          starCost: s.evaluated.card.starCost,
+                          projectedPts: s.slotScore,
+                          boostPct:
+                            s.evaluated.card.powerMultiplier > 1.005
+                              ? Math.round((s.evaluated.card.powerMultiplier - 1) * 100)
+                              : null,
+                          badge: s.isCaptainOrMvp
+                            ? lineup.format === "daily_120_mvp"
+                              ? "MVP"
+                              : "C"
+                            : null,
+                        })),
+                        stats: [
+                          { label: lineup.odds.paidLabel ?? "Reward", value: `${lineup.odds.essencePct}%`, tone: "emerald" },
+                          { label: lineup.odds.tierLabel ?? "Tier 1", value: `${lineup.odds.tier1Pct}%`, tone: "sky" },
+                          {
+                            label:
+                              lineup.odds.estRank && lineup.odds.totalEntries
+                                ? `Est. Rank (Top ${lineup.odds.topPercentilePct}%)`
+                                : "Podium",
+                            value:
+                              lineup.odds.estRank && lineup.odds.totalEntries
+                                ? `#${lineup.odds.estRank.toLocaleString()}`
+                                : `${lineup.odds.podiumPct}%`,
+                            tone: "amber",
+                          },
+                        ],
+                      });
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-[#0b101b] px-1.5 py-1 text-[10px] font-semibold text-slate-200 hover:border-sky-400/45 hover:text-sky-200"
+                    title="Copy or save a shareable 16:9 PNG lineup card"
+                    aria-label="Share lineup card PNG"
+                  >
+                    {sharedCardState?.key === `pro-${lineup.rank}` ? (
+                      <>
+                        <Check className="h-3 w-3 text-emerald-400" />
+                        <span className="text-emerald-300">{sharedCardState.label}</span>
+                      </>
+                    ) : (
+                      <>
+                        <ImageDown className="h-3 w-3 text-sky-300" />
+                        <span>Card</span>
+                      </>
+                    )}
+                  </button>
+                  {onSaveRoster && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSaveRoster({
+                          id: `roster-${Date.now()}-${lineup.rank}`,
+                          name: `${fmtLabel} #${lineup.rank}`,
+                          formatLabel: fmtLabel,
+                          cardSlugs: lineup.slots.map((s) => s.evaluated.card.slug),
+                          playerNames: names,
+                          projectedTotal: Math.round(lineup.totalScore * 10) / 10,
+                          createdAtMs: Date.now(),
+                        });
+                      }}
+                      className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-[#0b101b] px-1.5 py-1 text-[10px] font-semibold text-slate-200 hover:border-amber-400/45 hover:text-amber-200"
+                      title="Save this 5-card lineup as a reusable roster preset"
+                      aria-label={`Save roster preset ${fmtLabel} #${lineup.rank}`}
+                    >
+                      <Bookmark className="h-3 w-3 text-amber-300" />
+                      <span>Save</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
                     onClick={() =>
                       void applyLineupHighlight(
                         names,
@@ -1985,6 +2534,10 @@ export function LineupsTab({
                           rarity: s.evaluated.card.rarity,
                           seasonYear: s.evaluated.card.seasonYear,
                           isCaptain: s.isCaptainOrMvp,
+                          pictureUrl: s.evaluated.card.pictureUrl,
+                          starCost: s.evaluated.card.starCost,
+                          projectedPts: s.slotScore,
+                          teamSlug: s.evaluated.card.teamSlug,
                         })),
                       )
                     }
@@ -1996,6 +2549,36 @@ export function LineupsTab({
                   </button>
                   <GoButton url={proGoUrl} title="Open the Sorare lineup page" />
                 </div>
+              </div>
+
+              {/* Visual 5-Card Artwork Preview Strip + p10-mean-p90 Range Bar */}
+              <div className="mb-2.5 space-y-2">
+                <LineupCardStrip
+                  cards={lineup.slots.map((slot) => ({
+                    key: slot.evaluated.card.slug,
+                    playerName: slot.evaluated.card.playerName,
+                    teamSlug: slot.evaluated.card.teamSlug,
+                    rarity: slot.evaluated.card.rarity,
+                    pictureUrl: slot.evaluated.card.pictureUrl,
+                    starCost: slot.evaluated.card.starCost,
+                    projectedPts: slot.slotScore,
+                    l10: slot.evaluated.card.l10,
+                    l5: slot.evaluated.card.l5,
+                    gamesInSlate: slot.evaluated.gamesInSlate,
+                    powerMultiplier: slot.evaluated.card.powerMultiplier,
+                    badge: slot.isCaptainOrMvp ? (lineup.format === "daily_120_mvp" ? "MVP" : "C") : null,
+                    isCaptain: slot.isCaptainOrMvp,
+                  }))}
+                />
+                {typeof lineup.stdDev === "number" && lineup.stdDev > 0 && (
+                  <LineupRangeBar
+                    p10={Math.max(0, lineup.totalScore - 1.2816 * lineup.stdDev)}
+                    mean={lineup.totalScore}
+                    p90={lineup.totalScore + 1.2816 * lineup.stdDev}
+                    cutLine={lineup.odds.essenceTarget}
+                    label={`Lineup #${shownIdx + 1}`}
+                  />
+                )}
               </div>
 
               {/* Estimated Win Odds Strip */}
@@ -2061,6 +2644,8 @@ export function LineupsTab({
                         gallery?.scheduleByTeam?.[c.teamSlug]?.difficultyTag
                       : undefined;
                   const isSlotOpen = expandedSlotSlug === `${lineup.rank}:${c.slug}`;
+                  const isLockedCard = lockedCardSlugs.includes(c.slug);
+                  const avgMinutes = dailyPool?.statsByName?.[normalizePlayerName(c.playerName)]?.avgMinutes;
 
                   return (
                     <PlayerCardRow
@@ -2082,6 +2667,28 @@ export function LineupsTab({
                       }
                       statusBadge={
                         <div className="flex flex-wrap items-center gap-1">
+                          {isLockedCard && (
+                            <span className="inline-flex shrink-0 items-center gap-0.5 rounded border border-sky-400/45 bg-sky-500/20 px-1 text-[9px] font-semibold text-sky-200">
+                              <Lock className="h-2 w-2" />
+                              Locked
+                            </span>
+                          )}
+                          {typeof avgMinutes === "number" && avgMinutes > 0 && (
+                            <span
+                              className={
+                                avgMinutes < 20
+                                  ? "shrink-0 rounded border border-amber-400/35 bg-amber-500/15 px-1 text-[9px] font-semibold text-amber-200"
+                                  : "shrink-0 rounded border border-white/10 bg-white/5 px-1 text-[9px] font-medium text-slate-300"
+                              }
+                              title={
+                                avgMinutes < 20
+                                  ? `Bench role (${Math.round(avgMinutes)} min/game)`
+                                  : `Season average ${Math.round(avgMinutes)} min/game`
+                              }
+                            >
+                              {avgMinutes < 20 ? "Bench (<20m)" : `${Math.round(avgMinutes)}m`}
+                            </span>
+                          )}
                           {inj && (
                             <span
                               className={`shrink-0 rounded border px-1 text-[9px] font-semibold ${inj.cls}`}
@@ -2197,19 +2804,40 @@ export function LineupsTab({
                                 </div>
                               )}
                             </div>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setExcludedCardSlugs((prev) =>
-                                  prev.includes(c.slug)
-                                    ? prev
-                                    : [...prev, c.slug],
-                                )
-                              }
-                              className="rounded border border-rose-400/40 bg-rose-500/15 px-2 py-0.5 text-[10px] font-semibold text-rose-200 hover:bg-rose-500/25"
-                            >
-                              Skip Card
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => toggleLockCard(c.slug, c.playerSlug)}
+                                disabled={!isLockedCard && lockedCardSlugs.length >= 5}
+                                className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] font-semibold transition disabled:opacity-40 ${
+                                  isLockedCard
+                                    ? "border-sky-400/50 bg-sky-500/20 text-sky-100 hover:bg-sky-500/30"
+                                    : "border-sky-400/35 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20"
+                                }`}
+                                title={
+                                  isLockedCard
+                                    ? "Remove must-start lock on this card"
+                                    : "Lock this card as a must-start in generated lineups (max 5)"
+                                }
+                              >
+                                <Lock className="h-2.5 w-2.5" />
+                                {isLockedCard ? "Unlock Card" : "Lock (Must-Start)"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setLockedCardSlugs((prev) => prev.filter((s) => s !== c.slug));
+                                  setExcludedCardSlugs((prev) =>
+                                    prev.includes(c.slug)
+                                      ? prev
+                                      : [...prev, c.slug],
+                                  );
+                                }}
+                                className="rounded border border-rose-400/40 bg-rose-500/15 px-2 py-0.5 text-[10px] font-semibold text-rose-200 hover:bg-rose-500/25"
+                              >
+                                Skip Card
+                              </button>
+                            </div>
                           </div>
                         ) : undefined
                       }
@@ -2222,6 +2850,16 @@ export function LineupsTab({
         })
       )}
       </div>
+          </div>
+
+      {/* Position-Aware "Who Steps Up" Injury Impact Panel (Upgrades Sub-Tab) */}
+      <div
+        role="tabpanel"
+        aria-label="Upgrades & Schedule"
+        hidden={proSubTab !== "upgrades"}
+        className={proSubTab === "upgrades" ? "jam-panel-enter space-y-3" : "hidden"}
+      >
+          <InjuryImpactPanel impacts={injuryImpacts} />
 
       {/* Dual Lineup Market Buy Advisor (Out-of-Season 1-Slot Classic vs. In-Season) */}
       <details id="sec-market"
@@ -2479,7 +3117,15 @@ export function LineupsTab({
               )}
         </div>
       </details>
-      {/* Multi-Competition Portfolio Optimizer (Joint 3-Lineup Slate) */}
+      </div>
+
+      {/* Multi-Competition Portfolio Optimizer & Hybrid Budget (Builder Sub-Tab) */}
+      <div
+        role="tabpanel"
+        aria-label="Portfolio & Budget"
+        hidden={proSubTab !== "builder"}
+        className={proSubTab === "builder" ? "jam-panel-enter space-y-3" : "hidden"}
+      >
       {portfolio && portfolio.lineups.length > 0 && (
         <details className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
           <summary className="flex w-full items-center justify-between px-3 py-2.5 text-left text-xs hover:bg-white/[0.03]">
@@ -2544,6 +3190,10 @@ export function LineupsTab({
                               rarity: s.evaluated.card.rarity,
                               seasonYear: s.evaluated.card.seasonYear,
                               isCaptain: s.isCaptainOrMvp,
+                              pictureUrl: s.evaluated.card.pictureUrl,
+                              starCost: s.evaluated.card.starCost,
+                              projectedPts: s.slotScore,
+                              teamSlug: s.evaluated.card.teamSlug,
                             })),
                           )
                         }
@@ -2769,11 +3419,13 @@ export function LineupsTab({
           )}
         </div>
       </details>
+      </div>
         </>
       )}
 
       {/* 4-Day Gameweek Schedule & Matchups */}
       {arenaMode === "pro" && sortedSchedule.length > 0 && (
+        <div hidden={proSubTab !== "upgrades"} className={proSubTab === "upgrades" ? "jam-panel-enter" : "hidden"}>
         <details id="sec-schedule" className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
           <summary className="flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
             <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
@@ -2842,9 +3494,14 @@ export function LineupsTab({
             ))}
           </div>
         </details>
+        </div>
       )}
 
       {/* Collapsible Boosting & Multiplier Guide (2026-27 Verified Rules) */}
+      <div
+        hidden={arenaMode === "pro" && proSubTab !== "upgrades"}
+        className={arenaMode !== "pro" || proSubTab === "upgrades" ? "space-y-3" : "hidden"}
+      >
       <details id="sec-guides" className="cascade-section overflow-hidden rounded-2xl border border-white/8 bg-[#111726]">
         <summary className="flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left text-[11px] hover:bg-white/[0.03]">
           <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
@@ -2924,6 +3581,7 @@ export function LineupsTab({
           ))}
         </div>
       </details>
+      </div>
     </div>
   );
 }

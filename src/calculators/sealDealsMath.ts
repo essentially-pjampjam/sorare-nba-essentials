@@ -52,11 +52,80 @@ export function rankSealDeals(
     .sort((a, b) => b.pointsPerUnit - a.pointsPerUnit || b.sealingPoints - a.sealingPoints || a.priceCents - b.priceCents);
 }
 
-/** Best deals that fit a budget (greedy by points per euro). */
+/**
+ * Exact 0/1 Knapsack budget planner maximizing total Sealing Points within budgetCents
+ * (breaking ties by lowest total cost). Falls back to greedy only for extreme point sums.
+ */
 export function planSealBudget(deals: SealDeal[], budgetCents: number): SealPlan {
+  if (!Number.isFinite(budgetCents) || budgetCents <= 0 || deals.length === 0) {
+    return { deals: [], totalPoints: 0, totalCents: 0 };
+  }
+  const feasible = deals.filter(
+    (d) =>
+      Number.isFinite(d.priceCents) &&
+      d.priceCents > 0 &&
+      d.priceCents <= budgetCents &&
+      Number.isFinite(d.sealingPoints) &&
+      Math.floor(d.sealingPoints) > 0,
+  );
+  if (feasible.length === 0) {
+    return { deals: [], totalPoints: 0, totalCents: 0 };
+  }
+
+  const maxPts = feasible.reduce((sum, d) => sum + Math.floor(d.sealingPoints), 0);
+  if (maxPts <= 50_000 && feasible.length * (maxPts + 1) <= 5_000_000) {
+    const stride = maxPts + 1;
+    const minCost = new Float64Array(stride);
+    minCost.fill(Number.POSITIVE_INFINITY);
+    minCost[0] = 0;
+    const take = new Uint8Array(feasible.length * stride);
+
+    let runningMax = 0;
+    for (let i = 0; i < feasible.length; i += 1) {
+      const pts = Math.floor(feasible[i].sealingPoints);
+      const cost = feasible[i].priceCents;
+      const rowOffset = i * stride;
+      for (let p = runningMax; p >= 0; p -= 1) {
+        const nextCost = minCost[p] + cost;
+        if (nextCost <= budgetCents && nextCost < minCost[p + pts]) {
+          minCost[p + pts] = nextCost;
+          take[rowOffset + p + pts] = 1;
+        }
+      }
+      runningMax += pts;
+    }
+
+    let bestPts = 0;
+    for (let p = runningMax; p >= 0; p -= 1) {
+      if (minCost[p] <= budgetCents) {
+        bestPts = p;
+        break;
+      }
+    }
+
+    const picked: SealDeal[] = [];
+    let curPts = bestPts;
+    for (let i = feasible.length - 1; i >= 0 && curPts > 0; i -= 1) {
+      if (take[i * stride + curPts] === 1) {
+        picked.push(feasible[i]);
+        curPts -= Math.floor(feasible[i].sealingPoints);
+      }
+    }
+    picked.reverse();
+    return {
+      deals: picked,
+      totalPoints: picked.reduce((s, d) => s + d.sealingPoints, 0),
+      totalCents: picked.reduce((s, d) => s + d.priceCents, 0),
+    };
+  }
+
+  // Fallback for synthetic inputs with huge point totals
+  const sorted = [...feasible].sort(
+    (a, b) => b.pointsPerUnit - a.pointsPerUnit || b.sealingPoints - a.sealingPoints || a.priceCents - b.priceCents,
+  );
   const picked: SealDeal[] = [];
   let spent = 0;
-  for (const d of deals) {
+  for (const d of sorted) {
     if (spent + d.priceCents > budgetCents) continue;
     picked.push(d);
     spent += d.priceCents;

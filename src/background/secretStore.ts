@@ -19,6 +19,7 @@ const KEY_ID = "api_key_wrap_v1";
 export const MASK_PREFIX = "••••";
 
 let cachedKey: CryptoKey | null = null;
+let pendingKey: Promise<CryptoKey> | null = null;
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -39,15 +40,24 @@ function idb<T>(db: IDBDatabase, mode: IDBTransactionMode, run: (s: IDBObjectSto
 
 async function getAesKey(): Promise<CryptoKey> {
   if (cachedKey) return cachedKey;
-  const db = await openDb();
-  let key = await idb<CryptoKey | undefined>(db, "readonly", (s) => s.get(KEY_ID));
-  if (!key) {
-    key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
-    await idb(db, "readwrite", (s) => s.put(key, KEY_ID));
+  if (!pendingKey) {
+    pendingKey = (async () => {
+      const db = await openDb();
+      try {
+        let key = await idb<CryptoKey | undefined>(db, "readonly", (s) => s.get(KEY_ID));
+        if (!key) {
+          key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+          await idb(db, "readwrite", (s) => s.put(key, KEY_ID));
+        }
+        cachedKey = key;
+        return key;
+      } finally {
+        db.close();
+        pendingKey = null;
+      }
+    })();
   }
-  db.close();
-  cachedKey = key;
-  return key;
+  return pendingKey;
 }
 
 const toB64 = (buf: ArrayBuffer | Uint8Array) => btoa(String.fromCharCode(...new Uint8Array(buf)));
@@ -60,7 +70,13 @@ export async function encryptSecret(plain: string): Promise<EncryptedSecret> {
 }
 
 export function isEncryptedSecret(v: unknown): v is EncryptedSecret {
-  return Boolean(v) && typeof v === "object" && (v as EncryptedSecret).v === 1 && typeof (v as EncryptedSecret).ct === "string";
+  return (
+    Boolean(v) &&
+    typeof v === "object" &&
+    (v as EncryptedSecret).v === 1 &&
+    typeof (v as EncryptedSecret).iv === "string" &&
+    typeof (v as EncryptedSecret).ct === "string"
+  );
 }
 
 /** Decrypts a stored secret; returns "" when it cannot be read (the user re-enters the key). */
