@@ -1665,7 +1665,9 @@ import {
   function extractVisitedClubUsername(href: string): string | null {
     try {
       const u = new URL(href);
-      const m = u.pathname.match(/^\/(?:nba\/(?:my-club|club)|u)\/([a-z0-9_-]{2,40})(?:\/|$)/i);
+      const m = u.pathname.match(
+        /^(?:\/[a-z]{2}(?:-[a-z]{2,4})?)?\/(?:nba\/(?:my-club|club)|u)\/([a-z0-9_-]{2,40})(?:\/|$)/i,
+      );
       const slug = m?.[1]?.toLowerCase() ?? null;
       return slug && isValidUserSlug(slug) ? slug : null;
     } catch {
@@ -1690,9 +1692,13 @@ import {
       })) as { ok?: boolean; data?: { tags?: Record<string, string> } } | undefined;
       if (resp?.ok && resp.data?.tags && publicGalleryTagsUser === visitedUser) {
         publicGalleryTagsMap = resp.data.tags;
+      } else if (publicGalleryTagsUser === visitedUser) {
+        publicGalleryTagsUser = "";
       }
     } catch {
-      // Ignore if worker not configured or background unavailable
+      if (publicGalleryTagsUser === visitedUser) {
+        publicGalleryTagsUser = "";
+      }
     }
   }
 

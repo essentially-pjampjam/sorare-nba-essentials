@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { normalizeCloudWorkerUrl } from "../../calculators/cardTagsMath";
 import { APP_THEMES, RARITIES } from "../../shared/constants";
 import type { CloudAuthChallenge, ProjectionSource, Rarity, UserSettings } from "../../shared/types";
 import {
@@ -579,7 +580,19 @@ export function SettingsModal({
           <button
             type="button"
             onClick={() => {
-              onUpdateSettings({ cloudSyncWorkerUrl: workerUrlDraft.trim() });
+              const trimmed = workerUrlDraft.trim();
+              if (!trimmed) {
+                onUpdateSettings({ cloudSyncWorkerUrl: "" });
+                setCloudMsg("Cleared Worker URL.");
+                return;
+              }
+              const normalized = normalizeCloudWorkerUrl(trimmed);
+              if (!normalized) {
+                setCloudMsg("Enter a valid HTTPS Worker URL (or http://localhost for dev).");
+                return;
+              }
+              setWorkerUrlDraft(normalized);
+              onUpdateSettings({ cloudSyncWorkerUrl: normalized });
               setCloudMsg("Saved Worker URL.");
             }}
             className="rounded-lg border border-white/10 bg-[#141c2f] px-2.5 py-1 text-[10.5px] font-semibold text-slate-200 hover:border-sky-400/40"

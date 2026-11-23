@@ -123,7 +123,7 @@ export function renderWrappedShareCanvas(data: WrappedSummaryData): HTMLCanvasEl
       value: data.bestAuctionStealLabel ?? "Scan P&L History",
       sub:
         data.totalFloorCents > 0
-          ? `Est. Pro Floor: €${(data.totalFloorCents / 100).toFixed(2)}`
+          ? `Est. Pro Floor: ${data.currency === "USD" ? "$" : "€"}${(data.totalFloorCents / 100).toFixed(2)}`
           : `${data.totalCardsOwned} cards in gallery`,
       color: "#f9a8d4",
     },

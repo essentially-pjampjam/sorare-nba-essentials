@@ -246,6 +246,7 @@ describe("v2.7.5-exp18 portfolioMath", () => {
 
     const all = computePortfolioPnl(records, { activeSeasonYear: 2026 });
     expect(all.includedCards).toBe(3);
+    expect(all.pairedCards).toBe(3);
     expect(all.totalCostBasisCents).toBe(10700);
     expect(all.totalCurrentValueCents).toBe(14700);
     expect(all.unrealizedPnlCents).toBe(4000);
@@ -258,8 +259,67 @@ describe("v2.7.5-exp18 portfolioMath", () => {
       activeSeasonYear: 2026,
     });
     expect(priorOnly.includedCards).toBe(2);
+    expect(priorOnly.pairedCards).toBe(2);
     expect(priorOnly.excludedCurrentSeasonCards).toBe(1);
     expect(priorOnly.biggestSpend?.playerName).toBe("Jalen Williams");
+  });
+
+  it("does not fabricate fake P&L from unpaired cards missing cost basis or floor price", () => {
+    const records: CardOwnershipRecord[] = [
+      {
+        cardSlug: "unpriced-paid",
+        playerSlug: "p1",
+        playerName: "Paid Unpriced",
+        teamSlug: "boston-celtics",
+        rarity: "limited",
+        seasonYear: 2025,
+        acquiredAtMs: 1000,
+        acquiredPriceCents: 10000,
+        acquisitionType: "instant_buy",
+        currentFloorCents: null,
+        currency: "EUR",
+      },
+      {
+        cardSlug: "priced-unknown-cost",
+        playerSlug: "p2",
+        playerName: "Priced Unknown Cost",
+        teamSlug: "boston-celtics",
+        rarity: "limited",
+        seasonYear: 2025,
+        acquiredAtMs: 1000,
+        acquiredPriceCents: null,
+        acquisitionType: "unknown",
+        currentFloorCents: 5000,
+        currency: "EUR",
+      },
+      {
+        cardSlug: "paired-card",
+        playerSlug: "p3",
+        playerName: "Paired Card",
+        teamSlug: "boston-celtics",
+        rarity: "limited",
+        seasonYear: 2025,
+        acquiredAtMs: 1000,
+        acquiredPriceCents: 2000,
+        acquisitionType: "auction",
+        currentFloorCents: 3000,
+        currency: "EUR",
+      },
+    ];
+    const summary = computePortfolioPnl(records, { activeSeasonYear: 2026 });
+    expect(summary.includedCards).toBe(3);
+    expect(summary.pairedCards).toBe(1);
+    expect(summary.totalCostBasisCents).toBe(12000);
+    expect(summary.totalCurrentValueCents).toBe(8000);
+    // Only the paired card (+1000 on 2000 cost = +50%) counts toward unrealized P&L
+    expect(summary.unrealizedPnlCents).toBe(1000);
+    expect(summary.unrealizedPnlPct).toBe(50);
+
+    // When zero cards are paired, P&L is 0 and pct is null
+    const unpairedOnly = computePortfolioPnl(records.slice(0, 2), { activeSeasonYear: 2026 });
+    expect(unpairedOnly.pairedCards).toBe(0);
+    expect(unpairedOnly.unrealizedPnlCents).toBe(0);
+    expect(unpairedOnly.unrealizedPnlPct).toBeNull();
   });
 
   it("filters player price history cleanly across Day / Week / Month ranges", () => {
@@ -327,7 +387,34 @@ describe("v2.7.5-exp18 wrappedMath", () => {
     expect(wrapped.favoriteTeamName).toBe("Los Angeles Lakers");
     expect(wrapped.favoriteTeamCount).toBe(2);
     expect(wrapped.totalEssence).toBe(1500);
+    expect(wrapped.currency).toBe("EUR");
     expect(buildWrappedFilename("playoffs", "pjampjam")).toBe("sorare-wrapped-playoffs-pjampjam.png");
+
+    const usdWrapped = buildWrappedSummary({
+      mode: "regular_season",
+      username: "pjampjam",
+      progressHistory: history,
+      galleryCards: cards,
+      currency: "USD",
+      ownershipRecords: [
+        {
+          cardSlug: "c1",
+          playerSlug: "luka-doncic",
+          playerName: "Luka Doncic",
+          teamSlug: "los-angeles-lakers",
+          rarity: "limited",
+          seasonYear: 2026,
+          acquiredAtMs: 1000,
+          acquiredPriceCents: 1500,
+          acquisitionType: "auction",
+          currentFloorCents: 2500,
+          currency: "USD",
+        },
+      ],
+    });
+    expect(usdWrapped.currency).toBe("USD");
+    expect(usdWrapped.bestAuctionStealLabel).toContain("+$10.00");
+    expect(usdWrapped.slides.find((s) => s.id === "market")?.subtext).toContain("$75.00");
   });
 });
 
@@ -338,14 +425,15 @@ describe("v2.7.5-exp18 cardTagsMath", () => {
     expect(isValidCardTag("custom_spam")).toBe(false);
 
     const raw: Record<string, unknown> = {
-      "valid-card-1": "keep",
+      "Valid-Card-1": "keep",
+      "valid-card-1": "core",
       "valid-card-2": "trade",
       "bad-tag-card": "delete_me",
       "bad slug with spaces": "keep",
     };
     const clean = sanitizeCardTagsMap(raw);
-    expect(clean).toEqual({ "valid-card-1": "keep", "valid-card-2": "trade" });
-    expect(countCardTags(clean)).toEqual({ keep: 1, sell: 0, core: 0, trade: 1 });
+    expect(clean).toEqual({ "valid-card-1": "core", "valid-card-2": "trade" });
+    expect(countCardTags(clean)).toEqual({ keep: 0, sell: 0, core: 1, trade: 1 });
 
     // 500-tag cap
     const bloated: Record<string, string> = {};

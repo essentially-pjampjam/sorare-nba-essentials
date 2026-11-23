@@ -4,6 +4,7 @@ import { buildWrappedSummary } from "../../calculators/wrappedMath";
 import { getActiveNbaSeasonYear } from "../../shared/constants";
 import type {
   CardOwnershipRecord,
+  Currency,
   EssenceBalances,
   GalleryCard,
   ProProgressRecord,
@@ -20,6 +21,7 @@ interface WrappedModalProps {
   ownershipRecords?: CardOwnershipRecord[];
   essenceByRarity?: EssenceBalances;
   commonEssence?: number;
+  currency?: Currency;
 }
 
 const ACCENT_STYLES: Record<
@@ -61,6 +63,7 @@ export function WrappedModal({
   ownershipRecords = [],
   essenceByRarity,
   commonEssence = 0,
+  currency = "EUR",
 }: WrappedModalProps) {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const [mode, setMode] = useState<WrappedMode>("regular_season");
@@ -89,8 +92,18 @@ export function WrappedModal({
         ownershipRecords,
         essenceByRarity,
         commonEssence,
+        currency,
       }),
-    [mode, username, progressHistory, galleryCards, ownershipRecords, essenceByRarity, commonEssence],
+    [
+      mode,
+      username,
+      progressHistory,
+      galleryCards,
+      ownershipRecords,
+      essenceByRarity,
+      commonEssence,
+      currency,
+    ],
   );
 
   const slides = summary.slides;

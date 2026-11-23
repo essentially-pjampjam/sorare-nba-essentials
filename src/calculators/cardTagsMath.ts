@@ -46,12 +46,12 @@ export function sanitizeCardTagsMap(raw: unknown): Record<string, CardTag> {
   let count = 0;
   for (const [slug, tag] of Object.entries(raw as Record<string, unknown>)) {
     if (count >= MAX_TAGS_PER_USER) break;
-    const cleanSlug = slug.trim();
+    const cleanSlug = slug.trim().toLowerCase();
     if (!cleanSlug || cleanSlug.length > MAX_CARD_SLUG_LENGTH) continue;
     if (!/^[a-z0-9][a-z0-9_-]*$/i.test(cleanSlug)) continue;
     if (!isValidCardTag(tag)) continue;
+    if (!(cleanSlug in out)) count += 1;
     out[cleanSlug] = tag;
-    count += 1;
   }
   return out;
 }
@@ -61,7 +61,7 @@ export function setCardTagInMap(
   cardSlug: string,
   tag: CardTag | null,
 ): Record<string, CardTag> {
-  const cleanSlug = cardSlug.trim();
+  const cleanSlug = cardSlug.trim().toLowerCase();
   if (!cleanSlug || cleanSlug.length > MAX_CARD_SLUG_LENGTH) return tags;
   const next = { ...tags };
   if (tag === null) {

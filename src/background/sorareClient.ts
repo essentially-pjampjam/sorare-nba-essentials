@@ -2618,6 +2618,19 @@ export class SorareClient {
       }
     >();
 
+    const hashSlugs = (list: string[]): string => {
+      let h = 2166136261;
+      for (const s of list) {
+        for (let j = 0; j < s.length; j++) {
+          h ^= s.charCodeAt(j);
+          h = Math.imul(h, 16777619);
+        }
+        h ^= 44;
+        h = Math.imul(h, 16777619);
+      }
+      return (h >>> 0).toString(36);
+    };
+
     for (let i = 0; i < proCards.length; i += chunkSize) {
       const slice = proCards.slice(i, i + chunkSize);
       const slugs = slice.map((c) => c.slug);
@@ -2631,16 +2644,25 @@ export class SorareClient {
               amounts?: MonetaryAmountsRaw | null;
             }> | null;
           }> | null;
-        }>(query, { slugs }, `pnl_hist_${slugs[0]}_${slugs.length}`, signal);
+        }>(query, { slugs }, `pnl_hist_v2_${slugs.length}_${hashSlugs(slugs)}`, signal);
 
         for (const node of data.anyCards ?? []) {
           const hist = node.ownershipHistory ?? [];
-          const latest = hist.length > 0 ? hist[hist.length - 1] : null;
-          if (!latest) continue;
-          const parsedFrom = latest.from ? Date.parse(latest.from) : NaN;
+          if (hist.length === 0) continue;
+          // Pick the entry with the most recent `from` timestamp (order-independent);
+          // fall back to the last entry if timestamps are absent.
+          let latest = hist[hist.length - 1];
+          let latestTs = latest.from ? Date.parse(latest.from) : NaN;
+          for (const entry of hist) {
+            const ts = entry.from ? Date.parse(entry.from) : NaN;
+            if (Number.isFinite(ts) && (!Number.isFinite(latestTs) || ts >= latestTs)) {
+              latest = entry;
+              latestTs = ts;
+            }
+          }
           const cents = convertAmountsToCurrencyCents(latest.amounts, currency);
           bySlug.set(node.slug, {
-            acquiredAtMs: Number.isFinite(parsedFrom) ? parsedFrom : null,
+            acquiredAtMs: Number.isFinite(latestTs) ? latestTs : null,
             acquiredPriceCents: cents,
             acquisitionType: mapTransferType(latest.transferType),
           });

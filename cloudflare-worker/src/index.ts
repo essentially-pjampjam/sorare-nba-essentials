@@ -82,19 +82,25 @@ async function signJwt(
 }
 
 async function verifyJwt(token: string, secret: string): Promise<{ sub: string } | null> {
-  const parts = token.split(".");
-  if (parts.length !== 3) return null;
-  const [header, body, sig] = parts;
-  const key = await importHmacKey(secret);
-  const valid = await crypto.subtle.verify(
-    "HMAC",
-    key,
-    base64UrlDecode(sig),
-    new TextEncoder().encode(`${header}.${body}`),
-  );
-  if (!valid) return null;
   try {
-    const parsed = JSON.parse(new TextDecoder().decode(base64UrlDecode(body))) as {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const [headerB64, bodyB64, sigB64] = parts;
+    const header = JSON.parse(new TextDecoder().decode(base64UrlDecode(headerB64))) as {
+      alg?: string;
+    };
+    if (header.alg !== "HS256") return null;
+
+    const key = await importHmacKey(secret);
+    const valid = await crypto.subtle.verify(
+      "HMAC",
+      key,
+      base64UrlDecode(sigB64),
+      new TextEncoder().encode(`${headerB64}.${bodyB64}`),
+    );
+    if (!valid) return null;
+
+    const parsed = JSON.parse(new TextDecoder().decode(base64UrlDecode(bodyB64))) as {
       sub?: string;
       exp?: number;
     };
@@ -299,7 +305,7 @@ export default {
         return json({ error: `Max ${maxTags} tags per manager.` }, 400);
       }
 
-      const sanitized: Array<[string, CardTag]> = [];
+      const deduped = new Map<string, CardTag>();
       for (const [slug, rawTag] of entries) {
         const cleanSlug = slug.trim().toLowerCase();
         if (!CARD_SLUG_RE.test(cleanSlug)) continue;
@@ -309,18 +315,27 @@ export default {
             400,
           );
         }
-        sanitized.push([cleanSlug, rawTag as CardTag]);
+        deduped.set(cleanSlug, rawTag as CardTag);
       }
 
+      const sanitized = Array.from(deduped.entries());
       const nowIso = new Date().toISOString();
       const statements: D1PreparedStatement[] = [
         env.DB.prepare("DELETE FROM card_tags WHERE username = ?").bind(claims.sub),
       ];
-      for (const [slug, tag] of sanitized) {
+      // Multi-row INSERT OR REPLACE in chunks of 20 rows (80 bound params < D1's 100-param limit)
+      const CHUNK_ROWS = 20;
+      for (let i = 0; i < sanitized.length; i += CHUNK_ROWS) {
+        const chunk = sanitized.slice(i, i + CHUNK_ROWS);
+        const placeholders = chunk.map(() => "(?, ?, ?, ?)").join(", ");
+        const binds: string[] = [];
+        for (const [slug, tag] of chunk) {
+          binds.push(claims.sub, slug, tag, nowIso);
+        }
         statements.push(
           env.DB.prepare(
-            "INSERT INTO card_tags (username, card_slug, tag, updated_at) VALUES (?, ?, ?, ?)",
-          ).bind(claims.sub, slug, tag, nowIso),
+            `INSERT OR REPLACE INTO card_tags (username, card_slug, tag, updated_at) VALUES ${placeholders}`,
+          ).bind(...binds),
         );
       }
       await env.DB.batch(statements);

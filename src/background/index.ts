@@ -2107,7 +2107,11 @@ async function handleMessage(
       }
       case "CLOUD_FETCH_PUBLIC_TAGS": {
         const settings = await loadSettings();
-        const url = msg.workerUrl ?? settings.cloudSyncWorkerUrl;
+        // Content scripts must never override the configured worker URL (prevents SSRF).
+        const url =
+          sender && isExtensionPageSender(sender)
+            ? (msg.workerUrl ?? settings.cloudSyncWorkerUrl)
+            : settings.cloudSyncWorkerUrl;
         const res = await fetchPublicCloudTags(url, msg.username);
         return { ok: true, data: res };
       }

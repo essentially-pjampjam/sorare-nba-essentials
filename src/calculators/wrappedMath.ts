@@ -1,5 +1,6 @@
 import type {
   CardOwnershipRecord,
+  Currency,
   EssenceBalances,
   GalleryCard,
   ProProgressRecord,
@@ -39,6 +40,7 @@ export interface WrappedSummaryData {
   favoriteTeamCount: number;
   totalCardsOwned: number;
   totalFloorCents: number;
+  currency: Currency;
   slides: WrappedSlide[];
 }
 
@@ -86,6 +88,7 @@ export function buildWrappedSummary(params: {
   ownershipRecords?: CardOwnershipRecord[];
   essenceByRarity?: EssenceBalances;
   commonEssence?: number;
+  currency?: Currency;
 }): WrappedSummaryData {
   const {
     mode,
@@ -96,7 +99,9 @@ export function buildWrappedSummary(params: {
     ownershipRecords = [],
     essenceByRarity,
     commonEssence = 0,
+    currency = "EUR",
   } = params;
+  const currencySymbol = currency === "USD" ? "$" : "€";
 
   const meta = MODE_META[mode];
   const seasonLabel = `${seasonYear}-${String((seasonYear + 1) % 100).padStart(2, "0")}`;
@@ -168,8 +173,8 @@ export function buildWrappedSummary(params: {
   let bestAuctionStealLabel: string | null = null;
   if (pnl.bestAuctionWon && pnl.bestAuctionWon.pnlCents !== null) {
     const sign = pnl.bestAuctionWon.pnlCents >= 0 ? "+" : "-";
-    const absEur = (Math.abs(pnl.bestAuctionWon.pnlCents) / 100).toFixed(2);
-    bestAuctionStealLabel = `${pnl.bestAuctionWon.playerName} (${sign}€${absEur})`;
+    const absAmt = (Math.abs(pnl.bestAuctionWon.pnlCents) / 100).toFixed(2);
+    bestAuctionStealLabel = `${pnl.bestAuctionWon.playerName} (${sign}${currencySymbol}${absAmt})`;
   } else {
     const pricedCards = cardPool.filter((c) => c.lowestAskCents && c.lowestAskCents > 0);
     const stealCard =
@@ -228,7 +233,7 @@ export function buildWrappedSummary(params: {
       metric: `${totalEssence.toLocaleString()} E`,
       subtext:
         totalFloorCents > 0
-          ? `Est. Pro Gallery Floor: €${(totalFloorCents / 100).toFixed(2)} across ${proCards.length} Pro cards`
+          ? `Est. Pro Gallery Floor: ${currencySymbol}${(totalFloorCents / 100).toFixed(2)} across ${proCards.length} Pro cards`
           : "Scan Gallery floors & P&L history to unlock your best auction steal.",
       accent: "violet",
     },
@@ -264,6 +269,7 @@ export function buildWrappedSummary(params: {
     favoriteTeamCount,
     totalCardsOwned: galleryCards.length,
     totalFloorCents,
+    currency,
     slides,
   };
 }

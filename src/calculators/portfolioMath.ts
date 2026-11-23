@@ -99,6 +99,7 @@ export interface CardPnlHighlight {
 
 export interface PortfolioPnlSummary {
   includedCards: number;
+  pairedCards: number;
   excludedCurrentSeasonCards: number;
   totalCostBasisCents: number;
   totalCurrentValueCents: number;
@@ -156,23 +157,33 @@ export function computePortfolioPnl(
 
   let totalCostBasisCents = 0;
   let totalCurrentValueCents = 0;
+  let pairedCostBasisCents = 0;
+  let pairedCurrentValueCents = 0;
+  let pairedCards = 0;
   const highlights: CardPnlHighlight[] = [];
 
   for (const r of filtered) {
-    if (r.acquiredPriceCents !== null && r.acquiredPriceCents >= 0) {
-      totalCostBasisCents += r.acquiredPriceCents;
+    const hasCost = r.acquiredPriceCents !== null && r.acquiredPriceCents >= 0;
+    const hasFloor = r.currentFloorCents !== null && r.currentFloorCents >= 0;
+    if (hasCost) {
+      totalCostBasisCents += r.acquiredPriceCents as number;
     }
-    if (r.currentFloorCents !== null && r.currentFloorCents >= 0) {
-      totalCurrentValueCents += r.currentFloorCents;
+    if (hasFloor) {
+      totalCurrentValueCents += r.currentFloorCents as number;
+    }
+    if (hasCost && hasFloor) {
+      pairedCards += 1;
+      pairedCostBasisCents += r.acquiredPriceCents as number;
+      pairedCurrentValueCents += r.currentFloorCents as number;
     }
     const h = toHighlight(r);
     if (h) highlights.push(h);
   }
 
-  const unrealizedPnlCents = totalCurrentValueCents - totalCostBasisCents;
+  const unrealizedPnlCents = pairedCurrentValueCents - pairedCostBasisCents;
   const unrealizedPnlPct =
-    totalCostBasisCents > 0
-      ? Math.round((unrealizedPnlCents / totalCostBasisCents) * 1000) / 10
+    pairedCards > 0 && pairedCostBasisCents > 0
+      ? Math.round((unrealizedPnlCents / pairedCostBasisCents) * 1000) / 10
       : null;
 
   const paidHighlights = highlights.filter((h) => h.acquiredPriceCents > 0);
@@ -198,6 +209,7 @@ export function computePortfolioPnl(
 
   return {
     includedCards: filtered.length,
+    pairedCards,
     excludedCurrentSeasonCards,
     totalCostBasisCents,
     totalCurrentValueCents,

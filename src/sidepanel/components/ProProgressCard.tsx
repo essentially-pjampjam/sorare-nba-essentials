@@ -85,17 +85,17 @@ export function ProProgressCard({
     }
   };
 
-  const recapData = useMemo(
-    () =>
-      buildGameWeekRecapData({
-        username: gallery?.username ?? null,
-        group: groups[0] ?? null,
-        weekSummary: weeks[0] ?? null,
-        historyRecords: history,
-        pulse,
-      }),
-    [gallery?.username, groups, weeks, history, pulse],
-  );
+  const recapData = useMemo(() => {
+    const scoredGroup =
+      groups.find((g) => g.phase !== "upcoming") ?? (weeks[0] ? null : (groups[0] ?? null));
+    return buildGameWeekRecapData({
+      username: gallery?.username ?? null,
+      group: scoredGroup,
+      weekSummary: weeks[0] ?? null,
+      historyRecords: history,
+      pulse,
+    });
+  }, [gallery?.username, groups, weeks, history, pulse]);
 
   const exportRecap = async () => {
     if (!recapData) return;

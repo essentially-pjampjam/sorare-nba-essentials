@@ -155,28 +155,6 @@ export function PortfolioTrackerSection({
   const [pricePoints, setPricePoints] = useState<PlayerPricePoint[]>([]);
   const [priceLoading, setPriceLoading] = useState(false);
 
-  useEffect(() => {
-    getPortfolioSnapshots()
-      .then(setSnapshots)
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (selectedPricePlayer) {
-      setActivePlayer(selectedPricePlayer);
-      setExpanded(true);
-    }
-  }, [selectedPricePlayer]);
-
-  useEffect(() => {
-    if (!activePlayer) return;
-    setPriceLoading(true);
-    fetchPlayerPriceHistory(activePlayer.playerSlug, rarity, currency)
-      .then(setPricePoints)
-      .catch(() => setPricePoints([]))
-      .finally(() => setPriceLoading(false));
-  }, [activePlayer, rarity, currency]);
-
   const activeSeasonYear = getActiveNbaSeasonYear();
   const matchingCards = useMemo(
     () => cards.filter((c) => c.rarity === rarity),
@@ -196,20 +174,56 @@ export function PortfolioTrackerSection({
     return { totalFloorCents, pricedCardCount, cardCount: matchingCards.length };
   }, [matchingCards]);
 
+  useEffect(() => {
+    getPortfolioSnapshots()
+      .then(setSnapshots)
+      .catch(() => {});
+  }, [rarity, currency, liveFloorStats.totalFloorCents, liveFloorStats.pricedCardCount]);
+
+  useEffect(() => {
+    if (selectedPricePlayer) {
+      setActivePlayer(selectedPricePlayer);
+      setExpanded(true);
+    }
+  }, [selectedPricePlayer]);
+
+  useEffect(() => {
+    if (!activePlayer) return;
+    setPriceLoading(true);
+    fetchPlayerPriceHistory(activePlayer.playerSlug, rarity, currency)
+      .then(setPricePoints)
+      .catch(() => setPricePoints([]))
+      .finally(() => setPriceLoading(false));
+  }, [activePlayer, rarity, currency]);
+
   const series = useMemo(
     () => summarizePortfolioSeries(snapshots, rarity, currency, range),
     [snapshots, rarity, currency, range],
   );
 
+  const mergedPnlRecords = useMemo(() => {
+    if (!pnlResult) return null;
+    const liveFloorBySlug = new Map<string, number>();
+    for (const c of matchingCards) {
+      if (typeof c.lowestAskCents === "number" && c.lowestAskCents > 0) {
+        liveFloorBySlug.set(c.slug, c.lowestAskCents);
+      }
+    }
+    return pnlResult.records.map((r) => {
+      const liveFloor = liveFloorBySlug.get(r.cardSlug);
+      return liveFloor !== undefined ? { ...r, currentFloorCents: liveFloor } : r;
+    });
+  }, [pnlResult, matchingCards]);
+
   const pnlSummary = useMemo(
     () =>
-      pnlResult
-        ? computePortfolioPnl(pnlResult.records, {
+      mergedPnlRecords
+        ? computePortfolioPnl(mergedPnlRecords, {
             excludeCurrentSeason,
             activeSeasonYear,
           })
         : null,
-    [pnlResult, excludeCurrentSeason, activeSeasonYear],
+    [mergedPnlRecords, excludeCurrentSeason, activeSeasonYear],
   );
 
   const filteredPricePoints = useMemo(
@@ -400,14 +414,24 @@ export function PortfolioTrackerSection({
                     <div className="text-[9px] uppercase text-slate-500">Unrealized P&amp;L</div>
                     <div
                       className={`text-[11.5px] font-bold tabular-nums ${
-                        pnlSummary.unrealizedPnlCents >= 0 ? "text-emerald-300" : "text-rose-300"
+                        pnlSummary.pairedCards === 0
+                          ? "text-slate-400"
+                          : pnlSummary.unrealizedPnlCents >= 0
+                            ? "text-emerald-300"
+                            : "text-rose-300"
                       }`}
                     >
-                      {pnlSummary.unrealizedPnlCents >= 0 ? "+" : ""}
-                      {formatMoney(pnlSummary.unrealizedPnlCents, currency)}
-                      {pnlSummary.unrealizedPnlPct !== null
-                        ? ` (${pnlSummary.unrealizedPnlPct >= 0 ? "+" : ""}${pnlSummary.unrealizedPnlPct}%)`
-                        : ""}
+                      {pnlSummary.pairedCards === 0 ? (
+                        "--"
+                      ) : (
+                        <>
+                          {pnlSummary.unrealizedPnlCents >= 0 ? "+" : ""}
+                          {formatMoney(pnlSummary.unrealizedPnlCents, currency)}
+                          {pnlSummary.unrealizedPnlPct !== null
+                            ? ` (${pnlSummary.unrealizedPnlPct >= 0 ? "+" : ""}${pnlSummary.unrealizedPnlPct}%)`
+                            : ""}
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>

@@ -2047,6 +2047,7 @@ export function App() {
             ownershipRecords={pnlRecords}
             essenceByRarity={settings.essenceByRarity}
             commonEssence={settings.commonEssence}
+            currency={settings.currency}
           />
         )}
 
