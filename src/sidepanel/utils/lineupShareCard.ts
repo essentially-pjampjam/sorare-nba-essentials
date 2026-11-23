@@ -130,7 +130,7 @@ export async function renderLineupShareCanvas(
   ctx.font = "800 34px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
   ctx.fillStyle = "#f8fafc";
   ctx.textBaseline = "alphabetic";
-  ctx.fillText(data.title, 48, 118);
+  ctx.fillText(data.title, 48, 118, 680);
 
   const subParts: string[] = [];
   if (data.username) subParts.push(`@${data.username.replace(/^@/, "")}`);
@@ -138,7 +138,7 @@ export async function renderLineupShareCanvas(
   if (subParts.length > 0) {
     ctx.font = "500 16px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
     ctx.fillStyle = "#94a3b8";
-    ctx.fillText(subParts.join("  •  "), 48, 144);
+    ctx.fillText(subParts.join("  •  "), 48, 144, 680);
   }
 
   // Header right: Projected Total + range
@@ -149,12 +149,12 @@ export async function renderLineupShareCanvas(
 
   ctx.font = "800 48px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
   ctx.fillStyle = "#6ee7b7";
-  ctx.fillText(`${data.projectedTotal.toFixed(1)}`, CANVAS_W - 48, 118);
+  ctx.fillText(`${data.projectedTotal.toFixed(1)}`, CANVAS_W - 48, 118, 360);
 
   if (data.rangeLabel) {
     ctx.font = "600 15px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
     ctx.fillStyle = "#cbd5e1";
-    ctx.fillText(data.rangeLabel, CANVAS_W - 48, 144);
+    ctx.fillText(data.rangeLabel, CANVAS_W - 48, 144, 360);
   }
   ctx.textAlign = "left";
 
@@ -272,20 +272,21 @@ export async function renderLineupShareCanvas(
     ctx.textAlign = "center";
     ctx.textBaseline = "alphabetic";
     const cx = x + cardW / 2;
+    const textMaxW = cardW - 20;
 
     if (parsedName.first) {
       ctx.font = "500 13px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
       ctx.fillStyle = "#cbd5e1";
-      ctx.fillText(parsedName.first, cx, cardY + cardH - 76);
+      ctx.fillText(parsedName.first, cx, cardY + cardH - 82, textMaxW);
     }
 
     ctx.font = "800 20px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
     ctx.fillStyle = "#ffffff";
-    ctx.fillText(parsedName.last, cx, cardY + cardH - 52);
+    ctx.fillText(parsedName.last, cx, cardY + cardH - 58, textMaxW);
 
     ctx.font = "800 24px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
     ctx.fillStyle = "#6ee7b7";
-    ctx.fillText(`${slot.projectedPts.toFixed(1)}`, cx, cardY + cardH - 22);
+    ctx.fillText(`${slot.projectedPts.toFixed(1)}`, cx, cardY + cardH - 29, textMaxW);
 
     // Subtle boost tag or team abbr
     const footerChip =
@@ -294,7 +295,7 @@ export async function renderLineupShareCanvas(
         : team.abbr;
     ctx.font = "600 11px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
     ctx.fillStyle = "#94a3b8";
-    ctx.fillText(footerChip, cx, cardY + cardH - 7);
+    ctx.fillText(footerChip, cx, cardY + cardH - 13, textMaxW);
 
     ctx.textAlign = "left";
     ctx.restore();
@@ -311,8 +312,9 @@ export async function renderLineupShareCanvas(
   const stats = data.stats.slice(0, 4);
   let statX = 48;
   for (const stat of stats) {
-    const boxW = 172;
+    const boxW = 176;
     const boxH = 74;
+    const innerMaxW = boxW - 28;
     roundRectPath(ctx, statX, footerY, boxW, boxH, 14);
     ctx.fillStyle = "rgba(15, 23, 42, 0.72)";
     ctx.fill();
@@ -320,15 +322,15 @@ export async function renderLineupShareCanvas(
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    ctx.font = "600 12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+    ctx.font = "600 11.5px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
     ctx.fillStyle = "#94a3b8";
-    ctx.fillText(stat.label.toUpperCase(), statX + 16, footerY + 25);
+    ctx.fillText(stat.label.toUpperCase(), statX + 14, footerY + 25, innerMaxW);
 
-    ctx.font = "800 24px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+    ctx.font = "800 23px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
     ctx.fillStyle = statToneColor(stat.tone);
-    ctx.fillText(stat.value, statX + 16, footerY + 56);
+    ctx.fillText(stat.value, statX + 14, footerY + 56, innerMaxW);
 
-    statX += boxW + 14;
+    statX += boxW + 12;
   }
 
   // Subtle bottom-right watermark

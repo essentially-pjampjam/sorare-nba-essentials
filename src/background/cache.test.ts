@@ -98,6 +98,50 @@ describe("cache quota recovery and expiration", () => {
     expect(store.get("jamassist_settings_v1")).toEqual({ username: "pjampjam" });
   });
 
+  it("clears remaining cache entries when 50% eviction is still insufficient for a large write", async () => {
+    const store = new Map<string, unknown>();
+    const maxBytes = 400;
+    const sizeOf = (map: Map<string, unknown>) =>
+      Array.from(map.values()).reduce<number>((sum, v) => sum + JSON.stringify(v).length, 0);
+
+    (globalThis as unknown as { chrome: unknown }).chrome = {
+      storage: {
+        local: {
+          get: vi.fn(async (keys: string | string[] | null) => {
+            if (keys === null) return Object.fromEntries(store.entries());
+            if (typeof keys === "string") return store.has(keys) ? { [keys]: store.get(keys) } : {};
+            const out: Record<string, unknown> = {};
+            for (const k of keys) if (store.has(k)) out[k] = store.get(k);
+            return out;
+          }),
+          set: vi.fn(async (obj: Record<string, unknown>) => {
+            const next = new Map(store);
+            for (const [k, v] of Object.entries(obj)) next.set(k, v);
+            if (sizeOf(next) > maxBytes) throw new Error("QUOTA_BYTES quota exceeded");
+            for (const [k, v] of Object.entries(obj)) store.set(k, v);
+          }),
+          remove: vi.fn(async (keys: string | string[]) => {
+            for (const k of Array.isArray(keys) ? keys : [keys]) store.delete(k);
+          }),
+        },
+      },
+    };
+
+    store.set("jamassist_settings_v1", { username: "pjampjam" });
+    await setCached("c1", "a".repeat(60), 60_000);
+    vi.advanceTimersByTime(1000);
+    await setCached("c2", "b".repeat(60), 60_000);
+    vi.advanceTimersByTime(1000);
+
+    // Writing a 220-char payload needs both c1 and c2 evicted (50% only removes c1)
+    await setCached("big", "x".repeat(220), 60_000);
+
+    expect(store.get("jamassist_settings_v1")).toEqual({ username: "pjampjam" });
+    expect(await getCached("c1", 60_000)).toBeNull();
+    expect(await getCached("c2", 60_000)).toBeNull();
+    expect((await getCached<string>("big", 60_000))?.value).toBe("x".repeat(220));
+  });
+
   it("pruneExpiredCache and clearAllCache only touch cache prefix keys", async () => {
     const { store } = installMockStorage();
     store.set("jamassist_settings_v1", { username: "pjampjam" });

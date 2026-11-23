@@ -114,8 +114,13 @@ export async function setCached<T>(
         await evictOldestCacheEntries(0.5);
         await chrome.storage.local.set({ [fullKey]: envelope });
       } catch {
-        // Still over quota (e.g. oversized single payload): skip caching gracefully.
-        return storedAt;
+        try {
+          await evictOldestCacheEntries(1);
+          await chrome.storage.local.set({ [fullKey]: envelope });
+        } catch {
+          // Still over quota (e.g. oversized single payload): skip caching gracefully.
+          return storedAt;
+        }
       }
     }
   }

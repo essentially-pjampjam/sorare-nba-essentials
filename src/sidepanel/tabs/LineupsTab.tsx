@@ -1605,18 +1605,23 @@ export function LineupsTab({
                                 rarity: "common",
                                 projectedTotal: team.projectedTotal,
                                 capLabel: lu.capLimit ? `${lu.capUsed}/${lu.capLimit}★` : `${lu.totalStars}★`,
-                                slots: lu.slots.map((sl) => ({
-                                  playerName: sl.evaluated.card.playerName,
-                                  teamSlug: sl.evaluated.card.teamSlug,
-                                  rarity: sl.evaluated.card.rarity,
-                                  pictureUrl: sl.evaluated.card.pictureUrl,
-                                  starCost: sl.evaluated.card.starCost,
-                                  projectedPts: sl.slotScore,
-                                  boostPct:
-                                    sl.evaluated.card.powerMultiplier > 1.005
-                                      ? Math.round((sl.evaluated.card.powerMultiplier - 1) * 100)
-                                      : null,
-                                })),
+                                slots: lu.slots.map((sl) => {
+                                  const t = sl.evaluated.card.teamSlug;
+                                  const isToday = !dailyPool || (t !== null && dailyPool.window.teamSlugs.includes(t));
+                                  const w = soloTiming === "today_first" && !isToday ? SET_SOLO_LATER_WEIGHT : 1;
+                                  return {
+                                    playerName: sl.evaluated.card.playerName,
+                                    teamSlug: sl.evaluated.card.teamSlug,
+                                    rarity: sl.evaluated.card.rarity,
+                                    pictureUrl: sl.evaluated.card.pictureUrl,
+                                    starCost: sl.evaluated.card.starCost,
+                                    projectedPts: sl.slotScore / w,
+                                    boostPct:
+                                      sl.evaluated.card.powerMultiplier > 1.005
+                                        ? Math.round((sl.evaluated.card.powerMultiplier - 1) * 100)
+                                        : null,
+                                  };
+                                }),
                                 stats: team.stepOdds.slice(0, 3).map((o) => ({
                                   label: `${o.target} pts`,
                                   value: `${o.hitPct}%`,
@@ -1741,33 +1746,81 @@ export function LineupsTab({
                           Set Squad #{team.rank} • {team.totalScore.toFixed(1)}{" "}
                           pts
                         </span>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void applyLineupHighlight(
-                              names,
-                              `Set Squad #${team.rank}`,
-                              team.totalScore,
-                              team.slots.map((s) => ({
-                                slotLabel: s.slotLabel,
-                                cardSlug: s.evaluated.card.slug,
-                                playerName: s.evaluated.card.playerName,
-                                rarity: s.evaluated.card.rarity,
-                                seasonYear: s.evaluated.card.seasonYear,
-                                isCaptain: s.isCaptainOrMvp,
-                                pictureUrl: s.evaluated.card.pictureUrl,
-                                starCost: s.evaluated.card.starCost,
-                                projectedPts: s.slotScore,
-                                teamSlug: s.evaluated.card.teamSlug,
-                              })),
-                            )
-                          }
-                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-200"
-                        >
-                          <Send className="h-2.5 w-2.5" />
-                          Apply
-                        </button>
-                        <GoButton url={buildSetPlayUrl("squad")} title="Open Set Squad on Sorare" />
+                        <span className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const shareKey = `squad-${team.rank}`;
+                              void handleShareLineupCard(shareKey, {
+                                title: `Set Squad #${team.rank}`,
+                                subtitle: "Set Squad Mode",
+                                username: gallery?.username ?? null,
+                                rarity: "common",
+                                projectedTotal: team.totalScore,
+                                capLabel: team.capLimit ? `${team.capUsed}/${team.capLimit}★` : `${team.totalStars}★`,
+                                slots: team.slots.map((s) => ({
+                                  playerName: s.evaluated.card.playerName,
+                                  teamSlug: s.evaluated.card.teamSlug,
+                                  rarity: s.evaluated.card.rarity,
+                                  pictureUrl: s.evaluated.card.pictureUrl,
+                                  starCost: s.evaluated.card.starCost,
+                                  projectedPts: s.slotScore,
+                                  boostPct:
+                                    s.evaluated.card.powerMultiplier > 1.005
+                                      ? Math.round((s.evaluated.card.powerMultiplier - 1) * 100)
+                                      : null,
+                                  badge: s.isCaptainOrMvp ? "MVP" : null,
+                                })),
+                                stats: [
+                                  { label: "Total Stars", value: `${team.totalStars}★`, tone: "amber" },
+                                  { label: "Projected", value: `${team.totalScore.toFixed(1)}`, tone: "emerald" },
+                                ],
+                              });
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] font-semibold text-slate-200 hover:border-sky-400/45 hover:text-sky-200"
+                            title="Copy or save a shareable 16:9 PNG lineup card"
+                            aria-label="Share Set Squad lineup card PNG"
+                          >
+                            {sharedCardState?.key === `squad-${team.rank}` ? (
+                              <>
+                                <Check className="h-2.5 w-2.5 text-emerald-400" />
+                                <span className="text-emerald-300">{sharedCardState.label}</span>
+                              </>
+                            ) : (
+                              <>
+                                <ImageDown className="h-2.5 w-2.5 text-sky-300" />
+                                <span>Card</span>
+                              </>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void applyLineupHighlight(
+                                names,
+                                `Set Squad #${team.rank}`,
+                                team.totalScore,
+                                team.slots.map((s) => ({
+                                  slotLabel: s.slotLabel,
+                                  cardSlug: s.evaluated.card.slug,
+                                  playerName: s.evaluated.card.playerName,
+                                  rarity: s.evaluated.card.rarity,
+                                  seasonYear: s.evaluated.card.seasonYear,
+                                  isCaptain: s.isCaptainOrMvp,
+                                  pictureUrl: s.evaluated.card.pictureUrl,
+                                  starCost: s.evaluated.card.starCost,
+                                  projectedPts: s.slotScore,
+                                  teamSlug: s.evaluated.card.teamSlug,
+                                })),
+                              )
+                            }
+                            className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-200"
+                          >
+                            <Send className="h-2.5 w-2.5" />
+                            Apply
+                          </button>
+                          <GoButton url={buildSetPlayUrl("squad")} title="Open Set Squad on Sorare" />
+                        </span>
                       </div>
                       <LineupCardStrip
                         compact
@@ -2346,11 +2399,11 @@ export function LineupsTab({
                           {
                             label:
                               lineup.odds.estRank && lineup.odds.totalEntries
-                                ? "Est. Rank"
+                                ? `Est. Rank (Top ${lineup.odds.topPercentilePct}%)`
                                 : "Podium",
                             value:
                               lineup.odds.estRank && lineup.odds.totalEntries
-                                ? `#${lineup.odds.estRank.toLocaleString()} (Top ${lineup.odds.topPercentilePct}%)`
+                                ? `#${lineup.odds.estRank.toLocaleString()}`
                                 : `${lineup.odds.podiumPct}%`,
                             tone: "amber",
                           },
